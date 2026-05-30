@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NodalMergePackageVersion>0.1.0-local</NodalMergePackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NodalMerge.Host.Abstractions" Version="$(NodalMergePackageVersion)" />
+    <PackageReference Include="NodalMerge.Host.Composition" Version="$(NodalMergePackageVersion)" />
+    <PackageReference Include="NodalMerge.DotNetHost.Native.win-x64" Version="$(NodalMergePackageVersion)" />
+    <PackageReference Include="NodalMerge.DotNetHost.Native.linux-x64" Version="$(NodalMergePackageVersion)" />
+  </ItemGroup>
+</Project>

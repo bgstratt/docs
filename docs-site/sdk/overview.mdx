@@ -92,6 +92,20 @@ Presence APIs are for real-time ephemeral collaboration state:
 
 Do not model durable business state in presence channels.
 
+## Blob and file handling in SDK integrations
+
+Blob/file transfer is not only a protocol concern. SDK integrations should model binary payload workflows explicitly.
+
+Use the SDK CAS surface when your app needs file-like payload behavior:
+
+- `sdk.cas.setBlob(key, bytes)` to attach content-addressed bytes and receive a hash pointer
+- `sdk.cas.getBlob(hashHex)` to resolve bytes when available locally
+- `sdk.cas.requestMissingBlobs()` to trigger retrieval of missing blob payloads
+
+Keep app state as hash references (for example in `world/files/**`) rather than embedding raw bytes in normal sync keys.
+
+For wire-level transfer mechanics and direct I/O fallback behavior, see `protocol/blob-flow`.
+
 ## Persistence strategy
 
 For production local-first behavior, define and test persistence ownership explicitly:
@@ -131,6 +145,7 @@ Then layer advanced query/projection/topology behavior.
 - Skipping local persistence drills until late
 - Mixing intent and canonical writes in the same namespace
 - Choosing map/list/text primitives based on convenience instead of merge semantics
+- Treating large binary payloads as normal string/map state instead of using blob references + CAS
 
 ## Related pages
 
@@ -139,3 +154,4 @@ Then layer advanced query/projection/topology behavior.
 - `sdk/presence`
 - `sdk/undo-and-conflicts`
 - `sdk/subscriptions`
+- `protocol/blob-flow`

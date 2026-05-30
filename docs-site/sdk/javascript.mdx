@@ -69,6 +69,34 @@ sdk.presence.set({ cursor: { x: 120, y: 220 } }, { ttlMs: 5_000 });
 
 Use presence for cursor/typing/view state. Persist durable facts via sync state instead.
 
+## Blob and file storage patterns
+
+For file-like payloads, use the SDK CAS APIs and keep sync state as references:
+
+```ts
+const bytes = new Uint8Array([1, 2, 3, 4]);
+const hash = sdk.cas.setBlob("files/avatar.png", bytes);
+sdk.sync.set("world/files/avatar", hash);
+sdk.sync.push();
+```
+
+Later, resolve bytes by hash:
+
+```ts
+const hash = sdk.sync.get("world/files/avatar");
+if (hash) {
+  const payload = sdk.cas.getBlob(hash);
+}
+```
+
+When a referenced blob is missing locally, request retrieval:
+
+```ts
+sdk.cas.requestMissingBlobs();
+```
+
+This keeps large binary payloads out of normal key/value state while preserving deterministic references.
+
 ## Runtime events
 
 Subscribe to runtime messages for observability and integration hooks:
@@ -156,6 +184,7 @@ In policy-governed systems, rejection handling is part of normal operation.
 
 - Forgetting `sdk.sync.push()` after local writes
 - Using presence for durable domain state
+- Storing file/blob bytes directly in sync string keys instead of hash references
 - Mixing optimistic and canonical writes in one keyspace
 - Assuming online-only behavior during QA
 - Ignoring rejection pathways until late integration
@@ -166,3 +195,4 @@ In policy-governed systems, rejection handling is part of normal operation.
 - `sdk/react`
 - `sdk/presence`
 - `sdk/subscriptions`
+- `protocol/blob-flow`

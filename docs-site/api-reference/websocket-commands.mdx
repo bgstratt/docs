@@ -1,0 +1,1182 @@
+---
+title: "WebSocket commands"
+description: "Contract-grade reference for NodalMerge WebSocket request/response schemas, capability gates, and rejection taxonomy."
+---
+
+# WebSocket commands
+
+NodalMerge is WebSocket-first. This page documents the current runtime command contract from server routing and shared envelope structs.
+
+Use this with:
+
+- `protocol/synchronization` for lifecycle flow
+- `protocol/blob-flow` for transfer behavior
+
+## Endpoint and handshake
+
+- Route: `GET /ws/:room_id` (WebSocket upgrade)
+- First client frame must be a valid `hello` payload
+- If first payload is invalid/non-hello, server sends `error` (`msg: "expected hello"`) and closes
+
+### `hello` (client -> server)
+
+```json
+{
+  "type": "hello",
+  "pubkey": "<hex>",
+  "known": ["<node_id_hex>"],
+  "subscribe": ["**"],
+  "caps": {
+    "supports_ibf": true,
+    "supports_mst": true,
+    "supports_direct_blob_io": true
+  }
+}
+```
+
+- Required:
+  - `type`
+- Common fields:
+  - `pubkey`, `known`, `subscribe`, `caps`
+- Behavior:
+  - If room is locked, token validation happens during hello handling
+  - Capabilities are negotiated server-side from `caps`
+
+### `welcome` (server -> client)
+
+Envelope fields (from shared `WelcomeEnvelope`):
+
+- Required:
+  - `type: "welcome"`
+  - `root`
+  - `frontier`
+  - `missing`
+  - `caps`
+  - `server_pubkey`
+  - `peers`
+- Optional:
+  - `mst_root`
+
+Server may immediately send a catch-up `pack` after `welcome` when needed.
+
+## Coverage status (current)
+
+Currently routed client command types:
+
+- Core sync: `subscribe`, `pack`, `request`, `mst-request`, `mst-done`
+- Blob: `blob-upload`, `blob-request`, `request-upload`, `blob-uploaded`
+- Presence/relay: `presence`, `webrtc-offer`, `webrtc-answer`, `webrtc-ice`
+- Room admin: `set-room-key`, `set-policy`, `server-info`, `start-tick`, `stop-tick`, `compact-room`
+- Archive: `archive.describe`, `archive.validate`, `archive.import`, `archive.export`
+- Query/read-model: `query.register`, `projection.build`, `projection.read`, `projection.invalidate`, `projection.list`, `replay.read-range`
+- Topology: `topology.create-child`, `topology.describe-lineage`, `topology.list-children`, `topology.propose-promotion`, `topology.validate-promotion`, `topology.apply-promotion`
+
+## Core sync command schemas
+
+### `subscribe`
+
+Request:
+
+```json
+{
+  "type": "subscribe",
+  "patterns": ["world/**", "notes/**"]
+}
+```
+
+- Required:
+  - `type`
+- Optional:
+  - `patterns` (defaults effectively to full scope when absent/invalid shape)
+- Success emits:
+  - `subscribe-ack`
+
+### `pack`
+
+Request:
+
+```json
+{
+  "type": "pack",
+  "nodes": "<base64_postcard_pack>"
+}
+```
+
+- Required:
+  - `type`
+  - `nodes` (base64-encoded postcard node pack)
+- Success emits:
+  - `pack` relay to peers with fields from `PeerPackRelayEnvelope` (`type`, `from`, `nodes`, `root`)
+- Reject/error emits:
+  - `error` with `msg = "invalid pack: bad base64"`
+  - `error` with `msg = "invalid pack: bad postcard"`
+  - close `4008` on peer rate-limit abuse
+
+### `request`
+
+Request:
+
+```json
+{
+  "type": "request",
+  "known": ["<node_id_hex>"]
+}
+```
+
+- Required:
+  - `type`
+- Optional:
+  - `known` (defaults to empty set behavior when omitted)
+Response (`ServerPackReplyEnvelope`):
+
+```json
+{
+  "type": "pack",
+  "from": "server",
+  "nodes": "<base64_postcard_pack>",
+  "root": "<hex>"
+}
+```
+
+### `mst-request`
+
+Request:
+
+```json
+{
+  "type": "mst-request",
+  "paths": ["<path>"]
+}
+```
+
+- Required:
+  - `type`
+- Optional:
+  - `paths`
+Response:
+
+```json
+{
+  "type": "mst-response",
+  "nodes": []
+}
+```
+
+### `mst-done`
+
+Request:
+
+```json
+{
+  "type": "mst-done",
+  "missing_ids": ["<node_id_hex>"]
+}
+```
+
+- Required:
+  - `type`
+- Optional:
+  - `missing_ids`
+Response (when IDs present):
+
+- `pack` (`type`, `from: "server"`, `nodes`, `root`)
+
+## Blob commands
+
+### `blob-upload`
+
+Request:
+
+```json
+{
+  "type": "blob-upload",
+  "blobs": [
+    { "hash": "<hex>", "data_b64": "<base64_bytes>" }
+  ]
+}
+```
+
+- Required:
+  - `type`
+  - `blobs[]` with `hash` and `data_b64`
+- Success emits:
+  - `blob-available` broadcast with `hashes`
+
+### `blob-request`
+
+Request:
+
+```json
+{
+  "type": "blob-request",
+  "hashes": ["<hex>"]
+}
+```
+
+- Required:
+  - `type`
+  - `hashes[]`
+- Success emits one or both:
+  - `blob-redirect` with `redirects[]` (`hash`, `url`, `expires_at_unix`)
+  - `blob-pack` with `blobs[]` (`hash`, `data`) and `requested[]`
+
+### `request-upload`
+
+Request:
+
+```json
+{
+  "type": "request-upload",
+  "hash": "<hex>",
+  "size": 12345,
+  "content_type": "application/octet-stream"
+}
+```
+
+- Required:
+  - `type`
+  - `hash`
+  - `size`
+- Optional:
+  - `content_type`
+- Success emits:
+  - `upload-granted` (`hash`, `url`, `expires_at_unix`)
+  - or `upload-denied` (`hash`, `reason`)
+- Reject/error emits:
+  - `error` for unsupported direct blob I/O negotiation or invalid hash
+
+### `blob-uploaded`
+
+Request:
+
+```json
+{
+  "type": "blob-uploaded",
+  "hash": "<hex>"
+}
+```
+
+- Required:
+  - `type`
+  - `hash`
+- Success emits:
+  - `blob-available` broadcast
+- Reject emits:
+  - `upload-rejected` (`hash`, `reason`) when verify fails
+
+## Presence and relay
+
+### `presence`
+
+Request:
+
+```json
+{
+  "type": "presence",
+  "data": {
+    "name": "Alice",
+    "cursor": { "x": 120, "y": 220 }
+  }
+}
+```
+
+- Required:
+  - `type`
+  - `data`
+- Success emits:
+  - `presence` relay with fields from `PresenceEnvelope` (`type`, `from`, `data`)
+- Behavior:
+  - Presence is ephemeral and not persisted in room DAG
+
+### WebRTC relay messages
+
+Client commands:
+
+- `webrtc-offer`
+- `webrtc-answer`
+- `webrtc-ice`
+
+Server behavior:
+
+- Normalizes relay payload
+- Adds `from`
+- Broadcasts to room; receiver selection is client-side via `to`
+
+Example request:
+
+```json
+{
+  "type": "webrtc-offer",
+  "to": "<peer_pubkey_hex>",
+  "sdp": { "type": "offer", "sdp": "..." }
+}
+```
+
+## Control-plane capability gates
+
+Denied control-plane commands return:
+
+```json
+{
+  "type": "error",
+  "msg": "reject.control_plane_forbidden: command=<name> requires=<capability>"
+}
+```
+
+Capability mapping:
+
+- `set-policy` -> `policy.admin`
+- `set-room-key` -> `room.admin`
+- `start-tick`, `stop-tick` -> `tick.admin`
+- `archive.describe` -> `archive.read`
+- `archive.validate`, `archive.import`, `archive.export` -> `archive.admin`
+- `query.register`, `projection.build`, `projection.invalidate` -> `query.admin`
+- `projection.read`, `projection.list`, `replay.read-range` -> `query.read`
+- `topology.*` -> `topology.admin`
+
+## Room, policy, and tick admin commands
+
+### `set-room-key`
+
+Locks an open room with an Ed25519 verifying key.
+
+Client request:
+
+```json
+{
+  "type": "set-room-key",
+  "pubkey": "<hex_ed25519_verifying_key>"
+}
+```
+
+- Required:
+  - `type`
+  - `pubkey`
+- Optional:
+  - none
+Success response:
+
+```json
+{
+  "type": "room-locked",
+  "pubkey": "<hex_ed25519_verifying_key>"
+}
+```
+
+Rejection paths:
+
+- `error.msg = "reject.control_plane_forbidden: command=set-room-key requires=room.admin"`
+- `error` with set-room-key-specific reason message for invalid key or already-locked room
+
+### `set-policy`
+
+Installs room write policy.
+
+Client request:
+
+```json
+{
+  "type": "set-policy",
+  "default": "allow",
+  "rules": [
+    { "path_glob": "world/**", "can_write": ["<hex_pubkey>"] }
+  ]
+}
+```
+
+- Required:
+  - `type`
+  - `default` (`allow` or `deny`)
+  - `rules[]` with `path_glob`
+- Optional:
+  - `can_write` entries per rule
+Success response:
+
+```json
+{
+  "type": "policy-set"
+}
+```
+
+Rejection paths:
+
+- `error.msg = "reject.control_plane_forbidden: command=set-policy requires=policy.admin"`
+- payload-parse errors returned as `error`
+
+### `server-info`
+
+Returns server identity info used for policy wiring.
+
+Client request:
+
+```json
+{
+  "type": "server-info"
+}
+```
+
+- Required:
+  - `type`
+- Optional:
+  - none
+Success envelope:
+
+```json
+{
+  "type": "server-info",
+  "pubkey": "<hex_ed25519_verifying_key>"
+}
+```
+
+### `start-tick`
+
+Starts authoritative tick loop for room.
+
+Client request:
+
+```json
+{
+  "type": "start-tick",
+  "interval_ms": 16,
+  "intent_prefix": "intent/"
+}
+```
+
+- Required:
+  - `type`
+- Optional:
+  - `interval_ms` (defaults to server default)
+  - `intent_prefix` (defaults to server default)
+Success response:
+
+- `tick-started` (new loop started)
+- `tick-already-running` (idempotent no-op)
+
+### `stop-tick`
+
+Stops authoritative tick loop for room.
+
+Client request:
+
+```json
+{
+  "type": "stop-tick"
+}
+```
+
+- Required:
+  - `type`
+- Optional:
+  - none
+Success response:
+
+```json
+{
+  "type": "tick-stopped"
+}
+```
+
+## Query and projection commands
+
+### `query.register`
+
+Client request:
+
+```json
+{
+  "type": "query.register",
+  "query_spec_id": "q.world",
+  "version": "v1",
+  "descriptor": { "prefix": "world/" }
+}
+```
+
+- Required:
+  - `type`
+  - `query_spec_id`
+  - `version`
+  - `descriptor` object
+- Optional:
+  - descriptor fields depend on query implementation
+Success:
+
+```json
+{
+  "type": "query.registered",
+  "query_spec_id": "q.world",
+  "version": "v1",
+  "accepted": true
+}
+```
+
+Reject:
+
+- `query.register.rejected` with `reason_class: "reject.invalid_payload"`
+
+### `projection.build`
+
+Client request:
+
+```json
+{
+  "type": "projection.build",
+  "projection_id": "p.world",
+  "query_spec_id": "q.world",
+  "target_checkpoint": { "selector": "latest" }
+}
+```
+
+- Required:
+  - `type`
+  - `projection_id`
+  - `query_spec_id`
+- Optional:
+  - `target_checkpoint`
+Success:
+
+```json
+{
+  "type": "projection.build.completed",
+  "projection_id": "p.world",
+  "checkpoint": {
+    "selector": "seq",
+    "canonical_seq": 42,
+    "canonical_hash": "<hex>",
+    "frontier": ["seq:42"]
+  },
+  "digest": "<hex>"
+}
+```
+
+Reject classes include:
+
+- `reject.invalid_payload`
+- `reject.query_spec_not_found`
+- `reject.checkpoint_selector_invalid`
+- `reject.checkpoint_not_found`
+- `reject.query_backpressure`
+
+### `projection.read`
+
+Client request:
+
+```json
+{
+  "type": "projection.read",
+  "projection_id": "p.world",
+  "limit": 100,
+  "page_token": "offset:0"
+}
+```
+
+- Required:
+  - `type`
+  - `projection_id`
+- Optional:
+  - `limit`
+  - `page_token`
+Success:
+
+```json
+{
+  "type": "projection.read.result",
+  "projection_id": "p.world",
+  "rows": [{ "k": "world/name", "v": "Alice" }],
+  "digest": "<hex>",
+  "next_page_token": null
+}
+```
+
+### `projection.invalidate`
+
+Client request:
+
+```json
+{
+  "type": "projection.invalidate",
+  "projection_id": "p.world",
+  "reason": "manual"
+}
+```
+
+- Required:
+  - `type`
+  - `projection_id`
+- Optional:
+  - `reason`
+Success type: `projection.invalidated`
+
+### `projection.list`
+
+Client request:
+
+```json
+{
+  "type": "projection.list",
+  "query_spec_id": "q.world",
+  "state_filter": "active"
+}
+```
+
+- Required:
+  - `type`
+- Optional:
+  - `query_spec_id`
+  - `state_filter`
+Success type: `projection.list.result`
+
+### `replay.read-range`
+
+Client request:
+
+```json
+{
+  "type": "replay.read-range",
+  "key_prefix": "world/",
+  "from_lamport": 0,
+  "limit": 100,
+  "cursor": "offset:0"
+}
+```
+
+- Required:
+  - `type`
+  - `key_prefix`
+- Optional:
+  - `from_lamport`
+  - `limit`
+  - `cursor`
+Success type: `replay.read-range.result` with `items` and `next_cursor`.
+
+## Archive control-plane commands
+
+Archive commands serialize through shared `ArchiveWsRequest` and `ArchiveWsResponse` contracts from `core/archive_contracts.rs`.
+
+### Archive request schema summary
+
+- `archive.describe`
+  - required: `type`, `room`, `archive_ref`
+- `archive.validate`
+  - required: `type`, `room`, `archive_ref`, `mode`
+- `archive.import`
+  - required: `type`, `room`, `archive_ref`, `import_mode`
+  - optional: `expected_checkpoint`
+- `archive.export`
+  - required: `type`, `room`, `source_room`, `archive_ref`
+
+### Archive response schema summary
+
+- `archive.describe.result` payload fields:
+  - `room`, `archive_ref`, `manifest_id`, `format_version`, `archive_kind`, `checkpoint`, `payload_digest_set`
+  - optional: `compatibility_window`, `provenance`
+- `archive.validate.result` payload fields:
+  - `room`, `archive_ref`, `accepted`, `mode`, `checks`
+  - optional: `compatibility_window`
+- `archive.import.completed` payload fields:
+  - `room`, `archive_ref`, `canonical_hash`, `checkpoint`, `imported_nodes`, `imported_blobs`
+- `archive.export.result` payload fields:
+  - `room`, `source_room`, `archive_ref`, `manifest_id`, `checkpoint`, `payload_digest_set`, `compatibility_window`
+  - `payload_digest_policy`, `policy_timeline_hash`, `policy_timeline_cutover_lamport`, `policy_timeline_transition_cutovers`
+- Rejected payload shape (`archive.*.rejected` variants):
+  - `room`, `archive_ref`, `reason_class`, `reason_message`
+
+### `archive.describe`
+
+Client request:
+
+```json
+{
+  "type": "archive.describe",
+  "room": "main",
+  "archive_ref": "file:///tmp/room.nmar"
+}
+```
+
+Success type: `archive.describe.result`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "archive.describe.result",
+  "room": "main",
+  "archive_ref": "file:///tmp/room.nmar",
+  "manifest_id": "m.main.abcd1234ef56",
+  "format_version": "1",
+  "archive_kind": "full_clone",
+  "checkpoint": { "frontier": ["seq:42"], "canonical_hash": "<hex>" },
+  "payload_digest_set": { "nodes": "<hex>", "blobs": "<hex>" }
+}
+```
+
+Reject path:
+
+- Handler-level rejection may surface as generic `error` (`"<reason_class>: <reason_message>"`) for describe failures
+
+### `archive.validate`
+
+Client request:
+
+```json
+{
+  "type": "archive.validate",
+  "room": "main",
+  "archive_ref": "file:///tmp/room.nmar",
+  "mode": "metadata_only"
+}
+```
+
+Success type: `archive.validate.result`  
+Reject type: `archive.validate.rejected`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "archive.validate.result",
+  "room": "main",
+  "archive_ref": "file:///tmp/room.nmar",
+  "accepted": true,
+  "mode": "metadata_only",
+  "checks": ["manifest", "compatibility"]
+}
+```
+
+Canonical reject envelope:
+
+```json
+{
+  "type": "archive.validate.rejected",
+  "room": "main",
+  "archive_ref": "file:///tmp/room.nmar",
+  "reason_class": "reject.archive_manifest_invalid",
+  "reason_message": "unsupported validate mode"
+}
+```
+
+### `archive.import`
+
+Client request:
+
+```json
+{
+  "type": "archive.import",
+  "room": "main",
+  "archive_ref": "file:///tmp/room.nmar",
+  "import_mode": "full_apply"
+}
+```
+
+Success type: `archive.import.completed`  
+Reject type: `archive.import.rejected`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "archive.import.completed",
+  "room": "main",
+  "archive_ref": "file:///tmp/room.nmar",
+  "canonical_hash": "<hex>",
+  "checkpoint": { "frontier": ["seq:84"], "canonical_hash": "<hex>" },
+  "imported_nodes": 1024,
+  "imported_blobs": 16
+}
+```
+
+Canonical reject envelope:
+
+```json
+{
+  "type": "archive.import.rejected",
+  "room": "main",
+  "archive_ref": "file:///tmp/room.nmar",
+  "reason_class": "reject.archive_policy_timeline_mismatch",
+  "reason_message": "external archive manifest policy timeline parity metadata mismatches target room policy"
+}
+```
+
+### `archive.export`
+
+Client request:
+
+```json
+{
+  "type": "archive.export",
+  "room": "main",
+  "source_room": "main",
+  "archive_ref": "file:///tmp/export.nmar"
+}
+```
+
+Success type: `archive.export.result`  
+Reject type: `archive.export.rejected`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "archive.export.result",
+  "room": "main",
+  "source_room": "main",
+  "archive_ref": "file:///tmp/export.nmar",
+  "manifest_id": "m.main.abcd1234ef56",
+  "checkpoint": { "frontier": ["seq:84"], "canonical_hash": "<hex>" },
+  "payload_digest_set": { "nodes": "<hex>", "blobs": "<hex>" },
+  "compatibility_window": { "min_supported": "1", "max_supported": "1" },
+  "payload_digest_policy": "strict-sha256-v1",
+  "policy_timeline_hash": "<hex>",
+  "policy_timeline_cutover_lamport": 0,
+  "policy_timeline_transition_cutovers": []
+}
+```
+
+Canonical reject envelope:
+
+```json
+{
+  "type": "archive.export.rejected",
+  "room": "main",
+  "archive_ref": "file:///tmp/export.nmar",
+  "reason_class": "reject.archive_unsupported_format",
+  "reason_message": "archive_ref scheme is not supported"
+}
+```
+
+## Topology control-plane commands
+
+Topology success responses serialize through shared `TopologyWsResponse` contracts from `core/topology_contracts.rs`.
+
+### Topology request schema summary
+
+- `topology.create-child`
+  - required: `type`, `child_room_id`, `child_purpose`, `promotion_policy_id`, `parent_checkpoint`
+  - optional: `parent_room_id` (defaults to current room), `created_by`
+- `topology.describe-lineage`
+  - optional: `room_id` (defaults to current room)
+- `topology.list-children`
+  - optional: `parent_room_id` (defaults to current room)
+- `topology.propose-promotion`
+  - required: `type`, `parent_room_id`, `child_room_id`, `child_checkpoint_hash`, `payload_ref`
+  - optional: `idempotency_key`
+- `topology.validate-promotion`
+  - required: `type`, `proposal_id`
+- `topology.apply-promotion`
+  - required: `type`, `proposal_id`
+
+### Topology response schema summary (success)
+
+- `topology.create-child.completed` payload:
+  - `child_room_id`, `lineage`
+- `topology.describe-lineage.result` payload:
+  - `room_id`, `lineage`, `ancestors`
+- `topology.list-children.result` payload:
+  - `parent_room_id`, `children`
+- `topology.propose-promotion.completed` payload:
+  - `proposal_id`, `parent_room_id`, `child_room_id`, `child_checkpoint_hash`, `payload_ref`, `proposal_digest`
+- `topology.validate-promotion.completed` payload:
+  - `proposal_id`, `validation_digest`
+- `topology.apply-promotion.completed` payload:
+  - `proposal_id`, `parent_room_id`, `parent_new_canonical_hash`, `audit_key`
+
+Topology reject path:
+
+- Rejects are emitted as generic `error` messages (`"<reason_class>: <reason_message>"`) from ingress handlers
+
+### `topology.create-child`
+
+Client request:
+
+```json
+{
+  "type": "topology.create-child",
+  "parent_room_id": "main",
+  "child_room_id": "main-work-1",
+  "child_purpose": "workroom",
+  "created_by": "user:123",
+  "promotion_policy_id": "promotion-based",
+  "parent_checkpoint": {
+    "canonical_hash": "<hex>",
+    "frontier": ["<node_id_hex>"]
+  }
+}
+```
+
+Success type: `topology.create-child.completed`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "topology.create-child.completed",
+  "child_room_id": "main-work-1",
+  "lineage": {
+    "parent_room_id": "main",
+    "parent_checkpoint": { "frontier": ["seq:84"], "canonical_hash": "<hex>" },
+    "child_purpose": "workroom",
+    "created_by": "user:123",
+    "created_at_hlc": 84,
+    "promotion_policy_id": "promotion-based"
+  }
+}
+```
+
+Canonical reject envelope (ingress `error` format):
+
+```json
+{
+  "type": "error",
+  "msg": "reject.lineage_parent_checkpoint_mismatch: parent canonical_hash does not match declared parent_checkpoint"
+}
+```
+
+### `topology.describe-lineage`
+
+Client request:
+
+```json
+{
+  "type": "topology.describe-lineage",
+  "room_id": "main-work-1"
+}
+```
+
+Success type: `topology.describe-lineage.result`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "topology.describe-lineage.result",
+  "room_id": "main-work-1",
+  "lineage": {
+    "parent_room_id": "main",
+    "parent_checkpoint": { "frontier": ["seq:84"], "canonical_hash": "<hex>" },
+    "child_purpose": "workroom",
+    "created_by": "user:123",
+    "created_at_hlc": 84,
+    "promotion_policy_id": "promotion-based"
+  },
+  "ancestors": []
+}
+```
+
+### `topology.list-children`
+
+Client request:
+
+```json
+{
+  "type": "topology.list-children",
+  "parent_room_id": "main"
+}
+```
+
+Success type: `topology.list-children.result`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "topology.list-children.result",
+  "parent_room_id": "main",
+  "children": [
+    {
+      "child_room_id": "main-work-1",
+      "child_purpose": "workroom",
+      "promotion_policy_id": "promotion-based",
+      "created_by": "user:123"
+    }
+  ]
+}
+```
+
+### `topology.propose-promotion`
+
+Client request:
+
+```json
+{
+  "type": "topology.propose-promotion",
+  "parent_room_id": "main",
+  "child_room_id": "main-work-1",
+  "child_checkpoint_hash": "<hex>",
+  "payload_ref": "archive://promotion/123",
+  "idempotency_key": "promotion-123"
+}
+```
+
+Success type: `topology.propose-promotion.completed`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "topology.propose-promotion.completed",
+  "proposal_id": "promotion-123",
+  "parent_room_id": "main",
+  "child_room_id": "main-work-1",
+  "child_checkpoint_hash": "<hex>",
+  "payload_ref": "archive://promotion/123",
+  "proposal_digest": "<hex>"
+}
+```
+
+Canonical reject envelope (ingress `error` format):
+
+```json
+{
+  "type": "error",
+  "msg": "reject.promotion_policy_denied: promotion_policy_id is not promotion-based"
+}
+```
+
+### `topology.validate-promotion`
+
+Client request:
+
+```json
+{
+  "type": "topology.validate-promotion",
+  "proposal_id": "promotion-123"
+}
+```
+
+Success type: `topology.validate-promotion.completed`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "topology.validate-promotion.completed",
+  "proposal_id": "promotion-123",
+  "validation_digest": "<hex>"
+}
+```
+
+### `topology.apply-promotion`
+
+Client request:
+
+```json
+{
+  "type": "topology.apply-promotion",
+  "proposal_id": "promotion-123"
+}
+```
+
+Success type: `topology.apply-promotion.completed`
+
+Canonical success envelope:
+
+```json
+{
+  "type": "topology.apply-promotion.completed",
+  "proposal_id": "promotion-123",
+  "parent_room_id": "main",
+  "parent_new_canonical_hash": "<hex>",
+  "audit_key": "_topology/promotion/promotion-123"
+}
+```
+
+Canonical reject envelope (ingress `error` format):
+
+```json
+{
+  "type": "error",
+  "msg": "reject.promotion_not_validated: proposal must be validated before apply"
+}
+```
+
+## Compaction command
+
+### `compact-room`
+
+Client request:
+
+```json
+{
+  "type": "compact-room"
+}
+```
+
+Server behavior:
+
+1. Compacts graph into snapshot
+2. Verifies snapshot metadata
+3. Rebuilds graph from snapshot
+4. Broadcasts `snapshot-pack` to room peers
+5. Replies to requester with `compact-ack`
+
+Failure path returns `error` with compaction/verify/rebuild reason text.
+
+## Rejection taxonomy
+
+### Generic ingress errors
+
+- `error` envelope shape:
+  - `type: "error"`
+  - `msg: "<reason>"`
+- Common `msg` categories:
+  - protocol/input validation (for example malformed pack)
+  - auth (`auth: ...`)
+  - capability denial (`reject.control_plane_forbidden: ...`)
+  - archive/topology rejection surfaced as formatted text
+
+### Archive reason classes (`ArchiveReasonClass`)
+
+- `reject.archive_unsupported_format`
+- `reject.archive_manifest_invalid`
+- `reject.archive_digest_mismatch`
+- `reject.archive_signature_invalid`
+- `reject.archive_checkpoint_not_found`
+- `reject.archive_policy_timeline_mismatch`
+
+### Lineage reason classes (`LineageReasonClass`)
+
+- `reject.lineage_parent_checkpoint_mismatch`
+- `reject.lineage_policy_unknown`
+- `reject.lineage_parent_not_found`
+- `reject.lineage_child_already_exists`
+- `reject.room_not_found`
+- `reject.lineage_invalid_checkpoint`
+
+### Promotion reason classes (`PromotionReasonClass`)
+
+- `reject.promotion_child_checkpoint_mismatch`
+- `reject.promotion_policy_denied`
+- `reject.promotion_invalid_lineage`
+- `reject.promotion_stale_parent`
+- `reject.promotion_apply_conflict`
+- `reject.promotion_not_found`
+- `reject.promotion_not_validated`
+
+## Close-frame contract
+
+Close codes used by server runtime:
+
+- `4001`: resync required
+- `4002`: token expired
+- `4008`: rate limit exceeded
+- `1011`: server overload
+
+Use these codes in client reconnect/error handling policies.
+
+## Source-of-truth pointers
+
+- `nodalmerge/server/src/ws_handler.rs`
+- `nodalmerge/server/src/adapter_context.rs`
+- `nodalmerge/server/src/query_control.rs`
+- `nodalmerge/core/src/archive_contracts.rs`
+- `nodalmerge/core/src/room_lineage.rs`
+- `nodalmerge/core/src/topology_contracts.rs`
+- `nodalmerge/host-core/src/protocol.rs`
+- `nodalmerge/docs/operations-inventory.md`
+- `protocol/websocket-messages`
+
+## Related pages
+
+- `protocol/websocket-messages`
+- `protocol/synchronization`
+- `protocol/blob-flow`
+- `api-reference/http-endpoints`

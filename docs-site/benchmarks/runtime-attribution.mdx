@@ -1,0 +1,116 @@
+---
+title: Runtime attribution
+description: Interpret NodalMerge performance by separating core merge cost from boundary, transport, and runtime orchestration overhead.
+---
+
+# Runtime attribution
+
+Runtime attribution explains **where time is spent**, not just how fast a benchmark finished.
+
+Use this page to avoid incorrect optimization decisions (for example, over-tuning core CRDT logic when overhead is actually transport or host-boundary related).
+
+## Why attribution matters
+
+End-to-end latency in collaborative systems is a composite of multiple layers:
+
+- Core merge/replay logic
+- Serialization and envelope processing
+- Host/runtime boundary crossings
+- Persistence and I/O paths
+- Transport delivery and reconnect behavior
+
+Without attribution, teams often optimize the wrong layer.
+
+## Attribution layers
+
+Use this conceptual breakdown:
+
+1. **Core engine layer**
+   - Deterministic CRDT/replay operations
+   - Signature checks and hash work
+2. **Runtime boundary layer**
+   - FFI/bridge marshaling
+   - Host/runtime adapter overhead
+3. **Transport layer**
+   - WebSocket flow control
+   - Reconnect, fan-out, and relay filtering behavior
+4. **Persistence/lifecycle layer**
+   - Node/blob persistence latency
+   - Hydration, GC, and room lifecycle effects
+
+## Reading benchmark outcomes correctly
+
+When analyzing benchmark results:
+
+1. Separate **steady-state throughput** from **cold-path setup** costs.
+2. Compare like-for-like topology and auth posture.
+3. Track per-layer metrics with benchmark outputs.
+4. Use multi-run alternation to reduce drift bias.
+
+A single “ops/sec” number is rarely enough for actionable decisions.
+
+## Known sensitivity axes
+
+In NodalMerge workloads, overhead sensitivity often differs by operation type:
+
+- Map/list operations often show modest overhead shifts across runtime profiles.
+- Blob-heavy paths are usually more sensitive to transport/storage choices.
+- Auth/policy features may add measurable but acceptable overhead depending on host profile.
+
+Treat blob and auth-heavy scenarios as first-class benchmark dimensions.
+
+## Methodology baseline
+
+Use repeatable benchmark methodology:
+
+1. Fixed command mix and payload sizes
+2. Explicit peer-count tiers
+3. Repeated runs per cell
+4. Alternating baseline/candidate sequences to expose drift
+5. Environment capture (host hardware/runtime/OS)
+
+Without environment parity, cross-run comparisons are often misleading.
+
+## Practical interpretation rubric
+
+Use simple decision zones for candidate vs baseline deltas:
+
+- **Green**: within tolerated overhead budget for target workload
+- **Yellow**: investigate likely boundary/transport/storage causes
+- **Red**: regressions large enough to block promotion until explained/fixed
+
+Keep operation-specific thresholds (map/list/blob) instead of one global threshold.
+
+## Attribution-to-action mapping
+
+When a benchmark degrades, map symptom to likely layer:
+
+- Merge/replay CPU increase -> core or signature path investigation
+- Large host variance with stable core microbench -> boundary/runtime overhead
+- Blob regressions with stable map/list -> transport/blob storage path
+- Tail spikes with reconnect/queue signals -> backpressure and session lifecycle
+
+This keeps remediation targeted.
+
+## Operator/CI integration guidance
+
+For release confidence:
+
+1. Keep benchmark artifacts versioned per run.
+2. Record baseline and candidate with identical scenario matrix.
+3. Gate promotion on agreed delta budgets per operation family.
+4. Pair benchmark verdict with observability metrics from realistic workloads.
+
+## Common mistakes
+
+- Treating all overhead as CRDT-core overhead
+- Ignoring environment drift between runs
+- Using only average latency and ignoring tail behavior
+- Comparing different topology/auth profiles as if equivalent
+- Optimizing hot paths that are not current bottlenecks
+
+## Related pages
+
+- `benchmarks/performance-overview`
+- `operators/metrics-and-observability`
+- `operators/deployment-topologies`

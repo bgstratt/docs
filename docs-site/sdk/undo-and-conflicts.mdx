@@ -1,0 +1,107 @@
+---
+title: Undo and conflicts
+description: Implement user-safe undo/redo and conflict-aware UX with NodalMerge SDK surfaces.
+---
+
+# Undo and conflicts
+
+NodalMerge exposes app-layer undo/redo helpers plus conflict/rejection signals so your UI can remain user-friendly under concurrent edits and authority rules.
+
+This page explains how to use those surfaces without assuming perfect single-writer conditions.
+
+## Undo model
+
+Undo in the SDK is app-layer behavior built on compensating operations.
+
+Initialize an undo manager:
+
+```ts
+const undo = doc.undoManager({
+  scope: ["world/**"],
+  captureTimeout: 250,
+  maxItems: 100
+});
+```
+
+Then call your undo/redo actions through the manager surface exposed by the SDK.
+
+## Important undo limitation
+
+Destructive operations are intentionally constrained for undo safety.
+
+Plan UX accordingly when working with delete-heavy flows, especially text/list destructive edits.
+
+Treat undo as product-layer behavior, not guaranteed universal CRDT inverse for every operation type.
+
+## Conflict surfacing
+
+Use conflict hooks to surface concurrency outcomes:
+
+```ts
+doc.onConflict((ev) => {
+  showConflictBanner(ev);
+});
+
+const recent = doc.recentConflicts();
+```
+
+Conflict surfacing is valuable for:
+
+- Operator diagnostics
+- Developer debugging
+- User-facing “what changed” feedback in sensitive workflows
+
+## Rejection handling (authority/policy)
+
+Use typed rejection events for policy/capability-denied actions:
+
+```ts
+doc.onRejection((ev) => {
+  renderActionDenied(ev.reasonClass, ev.message);
+});
+```
+
+This is distinct from conflict events. A rejection indicates command/authority denial, not just concurrent-write resolution.
+
+## UX strategy for collaborative safety
+
+Recommended pattern:
+
+1. Apply optimistic local interaction
+2. Track undo groups with sensible capture windows
+3. Surface conflicts non-destructively
+4. Surface rejections with actionable UI
+5. Keep canonical updates visible and auditable
+
+Avoid silent correction flows that confuse users.
+
+## Practical heuristics
+
+- Use smaller undo scopes for high-risk areas
+- Group rapid keystroke-like edits with capture windows
+- Log rejection/conflict metadata for support tooling
+- Test undo behavior under multi-client concurrent scenarios
+
+## Testing checklist
+
+Before shipping:
+
+- Undo/redo across reconnect boundaries
+- Undo behavior with concurrent remote edits
+- Conflict event handling in active collaboration sessions
+- Rejection handling for insufficient capability scenarios
+- UI clarity when canonical outcome differs from optimistic expectation
+
+## Common mistakes
+
+- Assuming all operation types are perfectly reversible
+- Treating rejections as generic transport errors
+- Ignoring conflict signals in shared-edit surfaces
+- Overly broad undo scope that creates surprising reversions
+
+## Related pages
+
+- `sdk/javascript`
+- `sdk/subscriptions`
+- `sdk/presence`
+- `architecture/speculative-vs-authoritative`

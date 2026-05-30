@@ -1,0 +1,106 @@
+---
+title: AI workspace patterns
+description: Build AI-assisted collaborative workspaces on NodalMerge using intent/canonical lanes, replay-safe actions, and room-family governance where needed.
+---
+
+# AI workspace patterns
+
+AI-assisted products need fast local interaction, deterministic shared state, and auditable action trails.
+
+NodalMerge is a good fit when you model agent actions explicitly instead of hiding them behind opaque side effects.
+
+## Workspace model
+
+A practical AI workspace usually has:
+
+- Shared canonical context (`world/**`)
+- Agent/user intent streams (`intent/**`)
+- Optional room-family orchestration for sub-task rooms
+
+Keep these lanes explicit so AI actions can be observed, reviewed, and replayed.
+
+## Pattern 1: intent-first agent actions
+
+Have agents write intent records first, not direct opaque canonical mutations.
+
+Benefits:
+
+- Better user trust and observability
+- Easier policy/validation enforcement
+- Cleaner replay/debug workflows
+
+Canonical promotion can be handled by policy-governed runtime logic.
+
+## Pattern 2: human-in-the-loop refinement
+
+AI-generated updates should support user review paths.
+
+Recommended flow:
+
+1. Agent emits structured intent
+2. UI renders pending proposal
+3. Human or policy logic accepts/rejects
+4. Canonical lane reflects accepted outcome
+
+This avoids silent auto-mutation in shared workspaces.
+
+## Pattern 3: room scoping by task
+
+For larger systems, use room families:
+
+- Mainline room for canonical workspace truth
+- Child work rooms for bounded agent sub-tasks
+- Promotion flow for deterministic aggregation back to mainline
+
+Use reference-only topology first if deterministic promotion isn’t required yet.
+
+## Pattern 4: replay-ready agent traces
+
+Store enough context in room state to replay critical AI actions:
+
+- Intent payload
+- Actor identity/source
+- Relevant checkpoints/ids
+
+This supports post-incident explanation and deterministic recovery workflows.
+
+## Pattern 5: ephemeral collaboration channel
+
+Use presence for live workspace affordances:
+
+- “Agent is thinking” indicator
+- Live cursor focus
+- Participant attention hints
+
+Do not store durable AI decision records in presence.
+
+## Pattern 6: conflict and rejection UX
+
+AI workspaces must handle:
+
+- Concurrent user/agent edits
+- Policy-based rejection of unsafe actions
+
+Expose these outcomes clearly in UI. Hidden correction loops reduce trust.
+
+## Safety and governance checklist
+
+- Capability scopes restrict agent write surface
+- Intent/canonical namespaces are separated
+- Rejections are user-visible and logged
+- Replay artifacts retained for critical workflows
+- Promotion/lineage metadata enabled when using room families
+
+## Common mistakes
+
+- Letting AI mutate canonical state directly without intent trace
+- Mixing user and agent writes in ambiguous namespaces
+- Treating transport success as action acceptance
+- Skipping replay/debug readiness for AI-generated workflows
+
+## Related pages
+
+- `architecture/speculative-vs-authoritative`
+- `architecture/authority-and-topology`
+- `guides/replay-debugging`
+- `sdk/javascript`

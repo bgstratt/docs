@@ -1,0 +1,125 @@
+---
+title: "Security and auth"
+description: "Operator guidance for room access control, capability tokens, transport security, and control-plane hardening."
+---
+
+# Security and auth
+
+This page defines a practical security baseline for running NodalMerge in production-like environments.
+
+## Security model at a glance
+
+NodalMerge security posture has four layers:
+
+1. Transport and network perimeter (`wss://`, trusted proxies, internal segmentation)
+2. Room admission (open room vs locked room token validation)
+3. Capability authorization for control-plane commands
+4. Runtime abuse controls (rate limits, backpressure behavior, observability)
+
+## Room access posture
+
+### Open room mode
+
+Open rooms do not require token validation at handshake.
+
+Use open mode only for:
+
+- local development
+- trusted internal test environments
+- short-lived demos with no sensitive data
+
+Do not use open mode for internet-exposed production traffic.
+
+### Locked room mode
+
+Locked rooms require a valid room token at handshake.
+
+Token capability sets determine which control-plane commands are authorized.
+
+## Capability model (control-plane)
+
+Control-plane commands are capability-gated and return deterministic deny errors when unauthorized.
+
+Core capability classes:
+
+- `policy.admin`
+- `room.admin`
+- `tick.admin`
+- `archive.read`
+- `archive.admin`
+- `query.read`
+- `query.admin`
+- `topology.admin`
+
+Use least privilege:
+
+- grant only read scopes where possible
+- issue admin scopes to short-lived operator sessions
+- avoid broad long-lived admin tokens in application clients
+
+## Token lifecycle guidance
+
+### Minting and scope
+
+- Mint room-scoped tokens from a trusted backend service
+- Encode only required capabilities per caller role
+- Keep expiries short for interactive/operator sessions
+
+### Expiry and refresh
+
+- Expect sessions to close when token expires
+- Client reconnection paths should request fresh token before reconnect
+- Monitor token-expiry close behavior during load/soak tests
+
+### Revocation posture
+
+Current runtime behavior is expiry-driven; plan revocation through:
+
+- short token TTLs
+- key rotation and re-issuance workflows
+- scoped token issuance boundaries
+
+## Transport and perimeter hardening
+
+- Terminate TLS and require `wss://` for remote clients
+- Restrict metrics and control-plane exposure by network boundary
+- Run runtime behind a reverse proxy or service mesh with explicit ingress policy
+- Separate public client traffic from operator/admin network paths where possible
+
+## Key and secret handling
+
+- Store signing keys in your secrets manager, not in repo or image layers
+- Rotate room-signing and token-minting keys on a documented cadence
+- Log key IDs and rotation events for audit traceability
+- Redact tokens/secrets from logs and diagnostics payloads
+
+## Abuse controls and runtime safety
+
+Set and monitor:
+
+- `--peer-rate-nodes`
+- `--peer-rate-bytes`
+- `--broadcast-capacity`
+
+Design expectations:
+
+- peers exceeding ingress budgets are disconnected
+- lagged/broken sessions can be forced to resync
+- server overload should surface clear close/error signals
+
+## Deployment security checklist
+
+1. Confirm `wss://` path and TLS termination in target environment
+2. Validate locked-room handshake using least-privilege token
+3. Validate capability denies for unauthorized control-plane commands
+4. Confirm metrics/admin paths are not publicly exposed
+5. Verify token expiry handling and reconnect token refresh logic
+6. Validate rate-limit behavior with synthetic abuse traffic
+
+## Related pages
+
+- `operators/server-setup`
+- `operators/metrics-and-observability`
+- `api-reference/http-endpoints`
+- `protocol/websocket-messages`
+- `api-reference/websocket-commands`

@@ -1,0 +1,117 @@
+---
+title: Collaborative notes
+description: Build a multi-user notes experience with NodalMerge using text CRDTs, presence, and local-first UX patterns.
+---
+
+# Collaborative notes
+
+This guide walks through a practical collaborative notes pattern using NodalMerge.
+
+You will implement:
+
+- Shared note content with text CRDT semantics
+- Metadata and list/index state with map/list primitives
+- Presence-driven collaboration signals (cursors, active users)
+- Local-first writes with eventual canonical refinement
+
+## Data model
+
+Use separate namespaces by concern:
+
+- `notes/<noteId>/content` for text body
+- `notes/<noteId>/meta/*` for title/tags/author metadata
+- `notes/index` (list or map) for ordering and note references
+- `presence` payloads for ephemeral cursor/selection state
+
+Keep note content durable in room state. Keep ephemeral editing signals in presence only.
+
+## Step 1: connect the room
+
+```ts
+import { createNodalMergeSdk } from "nodalmerge-sdk-js";
+
+const sdk = await createNodalMergeSdk({
+  wsUrl: "ws://127.0.0.1:7878/ws/runtime",
+  roomId: "notes-room",
+  transport: { mode: "auto" },
+  reconnect: { enabled: true, initialDelayMs: 500, maxDelayMs: 8000 }
+});
+
+await sdk.room.connect();
+```
+
+## Step 2: model note content and metadata
+
+```ts
+const noteId = "welcome";
+
+sdk.sync.set(`notes/${noteId}/meta/title`, "Welcome note");
+sdk.sync.insertTextAt(`notes/${noteId}/content`, 0, "Hello team");
+sdk.sync.push();
+```
+
+Use text APIs for editable body content and map-style keys for note metadata.
+
+## Step 3: wire UI updates
+
+Subscribe to runtime or note-specific signals and re-read current note projection for rendering.
+
+Pattern:
+
+1. Event arrives
+2. Read current text + metadata keys
+3. Re-render note UI
+
+Avoid mutating UI state from assumptions about event ordering.
+
+## Step 4: add presence
+
+```ts
+sdk.presence.set({ noteId, cursor: { line: 12, ch: 4 } }, { ttlMs: 5_000 });
+```
+
+Render remote collaborator cursors from presence peer snapshots.
+
+Presence should disappear naturally on disconnect/staleness.
+
+## Step 5: support offline editing
+
+Enable local persistence and treat edits as optimistic:
+
+- Apply edits immediately
+- Push when connected
+- Reconcile canonical updates after reconnect
+
+Do offline/reopen drills to validate note durability and convergence behavior.
+
+## Suggested UX states
+
+Use explicit editor states:
+
+- `connected`
+- `reconnecting`
+- `offline-local`
+- `syncing`
+- `conflict-or-rejection-visible`
+
+Clear UX states reduce user confusion during network churn.
+
+## Common pitfalls
+
+- Storing note content in presence
+- Using map writes for rich editable text
+- Ignoring reconnect state transitions in editor UI
+- Not separating note metadata and body keys
+
+## Verification checklist
+
+- Two clients edit same note concurrently and converge
+- Offline edit then reconnect merges as expected
+- Presence appears/disappears correctly per peer lifecycle
+- Metadata updates do not corrupt text content rendering
+
+## Related pages
+
+- `sdk/javascript`
+- `sdk/presence`
+- `guides/offline-first-patterns`

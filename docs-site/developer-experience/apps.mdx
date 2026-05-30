@@ -1,0 +1,110 @@
+---
+title: "Apps and local runtime"
+description: "Run the NodalMerge demo host, infinite room workspace demo, and replay lab playground from this repository."
+icon: "window-maximize"
+---
+
+## What this page covers
+
+This repo now includes interactive app surfaces alongside docs:
+
+- `apps/hosts/nodalmerge-demo-host`
+- `apps/demos/infinite-room-workspace`
+- `apps/demos/collab-maps`
+- `apps/playground/replay-lab`
+- `apps/playground/protocol-inspector`
+
+Use this page as the canonical local run and smoke-validation entrypoint.
+
+## Start the local host
+
+From `apps/hosts/nodalmerge-demo-host`:
+
+```powershell
+dotnet run --project .\NodalMerge.DemoHost.csproj -p:NodalMergePackageVersion=0.1.0-local
+```
+
+Verify:
+
+- `http://127.0.0.1:5074/api/host/health`
+- `http://127.0.0.1:5074/api/host/providers`
+
+## Start the app surfaces
+
+From repo root:
+
+```powershell
+npm run dev:apps
+```
+
+Apps:
+
+- `http://127.0.0.1:4173` (`infinite-room-workspace`)
+- `http://127.0.0.1:4174` (`replay-lab`)
+- `http://127.0.0.1:4175` (`collab-maps`)
+- `http://127.0.0.1:4176` (`protocol-inspector`)
+
+## Infinite room workspace
+
+### What to validate
+
+1. Connect to a room in `direct websocket` mode.
+2. Switch to `npm sdk + wasm`.
+3. Connect again and confirm diagnostics show an open sdk session.
+4. Use **Shared document action** to update `workspace/doc/main`.
+
+### Why this matters
+
+This is the first non-placeholder interactive path proving sdk/wasm runtime behavior in-browser from local package artifacts.
+
+## Replay lab
+
+### What to validate
+
+1. Connect to a room.
+2. Capture one or more replay snapshots.
+3. Select a snapshot and inspect event payload summary lines.
+4. Adjust replay range start/size controls to inspect event windows.
+
+### Why this matters
+
+This provides a lightweight replay-oriented inspection surface aligned with protocol and diagnostics docs.
+
+## Protocol inspector
+
+### What to validate
+
+1. Connect to a room.
+2. Observe incoming runtime message stream.
+3. Apply command-family presets (`Presence`, `Peer lifecycle`, `Welcome/session`, `Replay/query`).
+4. Select a message and inspect raw payload.
+5. Export a filtered trace snippet.
+
+### Why this matters
+
+This is the first dedicated Phase C playground for learning websocket/runtime behavior through direct observation.
+
+## Collab maps
+
+### What to validate
+
+1. Connect to a room.
+2. Click on map board to add shared pins.
+3. Confirm pin list and board markers update.
+4. Confirm diagnostics panel remains healthy while map interactions occur.
+
+### Why this matters
+
+This is the second flagship demo path for Phase B and validates spatial shared-state interactions beyond document workflows.
+
+## Browser smoke checklist
+
+Use the detailed runbook in `plans/slice-8-browser-smoke-and-runbook.md` for package-mode smoke validation and troubleshooting.
+
+## Related docs
+
+- `quickstart`
+- `sdk/javascript`
+- `protocol/websocket-messages`
+- `api-reference/websocket-commands`
+- `operators/troubleshooting`

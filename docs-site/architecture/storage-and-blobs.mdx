@@ -1,0 +1,126 @@
+---
+title: Storage and blobs
+description: Understand how NodalMerge persists DAG nodes and blob content, and how lifecycle controls preserve correctness.
+---
+
+# Storage and blobs
+
+NodalMerge separates transaction history storage from blob payload storage.
+
+That split is intentional:
+
+- Node history is small, frequent, and query-oriented
+- Blob bytes are large, less frequent, and lifecycle-oriented
+
+This page explains the architecture-level model that keeps persistence durable without breaking deterministic replay.
+
+## Core storage model
+
+NodalMerge persists two data classes:
+
+- **Nodes**: signed transaction DAG entries
+- **Blobs**: content-addressed binary payloads referenced by hash
+
+Structured state is reconstructed by replaying nodes. Blobs are fetched and retained by hash reference, not embedded inline in every transaction.
+
+## Why nodes and blobs are split
+
+This split supports practical backend composition:
+
+- Node backends can use SQL/document stores optimized for many small writes
+- Blob backends can use filesystem or object storage optimized for larger objects
+
+The server persistence surface is designed so these halves can be mixed without changing replication semantics.
+
+## Durability modes
+
+### In-memory mode
+
+Without a configured persistent store, server state is memory-only.
+
+Use this for:
+
+- Local development
+- Ephemeral demos
+- Short-lived test environments
+
+In-memory mode is intentionally conservative about lifecycle automation that could cause data loss.
+
+### Durable mode
+
+With store configuration enabled, server state survives restarts.
+
+A common built-in durable layout uses:
+
+- SQLite-backed node persistence
+- File-based blob persistence in content-addressed paths
+
+Durability enables safe room hydration and lifecycle jobs like idle eviction and blob GC.
+
+## Hydration and runtime behavior
+
+When a room is created in durable mode, persisted state is loaded into in-memory runtime structures.
+
+Hydration flow is conceptually:
+
+1. Load persisted nodes for the room
+2. Apply nodes into runtime graph state
+3. Load persisted blobs into runtime blob store
+4. Resume room processing from hydrated state
+
+This preserves replayability while keeping hot room access fast after load.
+
+## Blob architecture
+
+Blobs are content-addressed and referenced from map keys via blob hashes.
+
+Key properties:
+
+- Hash identity allows deduplication semantics
+- Binary payload transport stays separate from transaction DAG exchange
+- Blob retrieval can use direct URL flows where backend supports it
+
+This keeps DAG replication efficient while still supporting large media/file payloads.
+
+## Blob lifecycle and GC safety
+
+Blob retention is governed by reachability, not peer presence.
+
+At a high level:
+
+- A blob is live if referenced by authoritative room history/state rules
+- Unreferenced blobs are first tombstoned, then deleted after grace period
+- Re-referenced blobs during grace must be preserved
+
+The two-phase model avoids accidental hard delete from transient state churn.
+
+## Important correctness rule
+
+Blob GC must be driven by deterministic reachability semantics from room data, not transport/session behavior.
+
+That ensures storage cleanup does not change replay outcomes or cause missing payloads during normal catch-up flows.
+
+## Operational implications
+
+From an architecture perspective:
+
+- Enable durable storage before relying on long-lived room history
+- Treat node backups as replay-critical artifacts
+- Treat blob retention policy as part of product data governance
+- Keep grace windows explicit and environment-specific
+
+Detailed tuning, flags, and runbook guidance belong in operator docs.
+
+## Common design mistakes
+
+- Treating in-memory mode as production durability
+- Coupling blob liveness to active WebSocket sessions
+- Deleting blobs without grace/tombstone phase
+- Designing app state that assumes inline blob payloads in map values
+
+## Related pages
+
+- `architecture/overview`
+- `architecture/crdt-model`
+- `operators/persistence`
+- `operators/gc-and-lifecycle`

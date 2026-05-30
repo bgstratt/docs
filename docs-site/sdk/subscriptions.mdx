@@ -1,0 +1,107 @@
+---
+title: Subscriptions
+description: Scope what your client materializes and receives with path-pattern subscriptions to reduce bandwidth and UI noise.
+---
+
+# Subscriptions
+
+Subscriptions control which paths a client materializes and receives during sync.
+
+They are a visibility/bandwidth mechanism, not an authority mechanism.
+
+## Why subscriptions exist
+
+Large rooms often contain more state than one client view needs.
+
+Subscriptions help by:
+
+- Reducing client-side materialization scope
+- Reducing relayed traffic for non-matching paths
+- Keeping UI selectors focused on relevant data
+
+## Initial subscription
+
+Set subscription patterns at document creation:
+
+```ts
+const doc = await createDoc({
+  serverUrl,
+  room,
+  subscribe: ["world/**", "notes/welcome"]
+});
+```
+
+Default is broad (`["**"]`) when no subscription is provided.
+
+## Runtime subscription updates
+
+Update patterns dynamically:
+
+```ts
+doc.subscribe(["world/**"]);
+doc.onSubscriptionChange(({ patterns }) => {
+  rerender(patterns);
+});
+```
+
+Use runtime updates for route/view changes in single-page apps.
+
+## Path checks
+
+Use helper checks before expensive reads:
+
+```ts
+doc.isSubscribed("world/player1"); // true/false
+```
+
+This is useful for conditional data access and UI guardrails.
+
+## Glob semantics (practical)
+
+Typical pattern behavior:
+
+- `**` matches everything
+- `foo/**` matches `foo` and descendants
+- `*` matches one path segment
+
+Keep patterns simple and intentional; over-broad patterns defeat subscription benefits.
+
+## What subscriptions affect
+
+Subscriptions affect client materialization and relay filtering behavior.
+
+They do **not** replace write authority enforcement.
+
+Authority remains governed by policy/capability rules.
+
+## Design pattern: route-scoped subscriptions
+
+In UI apps:
+
+1. Map each route/view to a small set of patterns
+2. Apply `doc.subscribe(...)` on route activation
+3. Expand only when user workflows demand wider context
+
+This keeps bandwidth and memory pressure predictable.
+
+## Debugging subscription issues
+
+If expected updates are missing:
+
+1. Confirm path actually matches active patterns
+2. Check runtime subscription updates are applied
+3. Verify view code is not reading outside subscribed scope
+4. Confirm issue is visibility-scope related, not authority rejection
+
+## Common mistakes
+
+- Treating subscription as access control
+- Leaving stale narrow patterns active after navigation
+- Using complex overlapping patterns without tests
+- Assuming `doc.onChange` always implies subscribed materialized changes
+
+## Related pages
+
+- `sdk/javascript`
+- `sdk/presence`
+- `protocol/synchronization`

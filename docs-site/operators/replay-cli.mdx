@@ -1,0 +1,115 @@
+---
+title: Replay CLI
+description: Use the server replay CLI to validate deterministic state reconstruction and troubleshoot divergence with optional policy timeline context.
+---
+
+# Replay CLI
+
+The replay CLI is an operator-grade verification tool for deterministic state reconstruction.
+
+It replays packed node history and outputs:
+
+- Resolved state projection
+- Canonical hash
+
+Use it for audit checks, migration validation, and incident triage.
+
+## What replay validates
+
+Replay verifies that a node pack can be deterministically reconstructed under expected policy context.
+
+It is useful when you need to answer:
+
+- “Do these nodes still reconstruct cleanly?”
+- “Did canonical hash change unexpectedly?”
+- “Is this divergence due to data or policy timeline context?”
+
+## Basic usage
+
+```bash
+nodalmerge-server replay <pack-file>
+```
+
+You can also read from stdin:
+
+```bash
+cat ./pack.b64 | nodalmerge-server replay -
+```
+
+Input is expected as base64-encoded node pack.
+
+## Replay with policy timeline
+
+Use policy timeline input when validation must reflect policy-at-lamport semantics.
+
+File-based timeline:
+
+```bash
+nodalmerge-server replay ./pack.b64 --policy-timeline ./timeline.json
+```
+
+Inline JSON timeline:
+
+```bash
+nodalmerge-server replay ./pack.b64 --policy-timeline-json '[{"effective_lamport":0,"policy":{"rules":[],"default":"AllowAll"}}]'
+```
+
+Supported timeline payload shapes:
+
+- Bare array of entries
+- Wrapped object containing `timeline`
+
+## Typical operator workflows
+
+### Determinism check after incident
+
+1. Capture suspect pack artifact
+2. Replay with expected policy context
+3. Compare canonical hash with expected baseline
+4. Investigate mismatch using room/policy history
+
+### Migration/cutover validation
+
+1. Replay before and after cutover artifacts
+2. Confirm expected hash behavior under timeline transitions
+3. Record outputs in change evidence
+
+### Promotion workflow verification
+
+In room-family deployments, replay parent artifacts to confirm accepted promotion outcomes remain deterministic.
+
+## Output interpretation
+
+Replay prints:
+
+- Number of replayed nodes
+- Resolved key/value state (UTF-8 or hex representation)
+- Canonical hash
+
+Treat canonical hash as the primary compact validation artifact for automation and audit logs.
+
+## Common errors and causes
+
+- Invalid base64 input -> artifact corruption or wrong file format
+- Pack decode failure -> incompatible or malformed pack payload
+- Missing parent errors -> incomplete history set
+- Replay policy mismatch -> timeline context not aligned with expected environment
+
+## Operational best practices
+
+- Version and retain replay input artifacts for critical environments
+- Store canonical hash outputs alongside deployment/change evidence
+- Replay with explicit timeline context in policy-governed systems
+- Automate replay checks for high-risk migration and restore workflows
+
+## Safety notes
+
+Replay is a validation tool, not a state mutation path.
+
+Use replay results to guide operator actions; do not assume replay success alone proves runtime environment is healthy (also verify transport, persistence, and lifecycle signals).
+
+## Related pages
+
+- `architecture/replay-and-branching`
+- `operators/persistence`
+- `operators/deployment-topologies`

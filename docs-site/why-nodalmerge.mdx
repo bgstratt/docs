@@ -1,0 +1,114 @@
+---
+title: Why NodalMerge
+description: Understand when NodalMerge is a strong fit and how it differs from conventional sync architectures.
+---
+
+# Why NodalMerge
+
+NodalMerge is built for products that need low-latency collaboration without giving up deterministic correctness.
+
+If your team is building editors, operational consoles, multiplayer workflows, or AI-assisted workspaces, NodalMerge gives you a replayable state graph instead of fragile last-write snapshots.
+
+## Where it fits best
+
+NodalMerge is a strong fit when you need:
+
+- Multi-writer collaboration with frequent concurrent edits
+- Local-first UX with offline writes and later convergence
+- Replayable history for debugging, audit, and deterministic recovery
+- Fine-grained room and path capability controls
+
+It is usually not the right first choice for:
+
+- Simple request/response CRUD apps with no collaboration
+- Workloads where eventual consistency is unacceptable
+- Teams that do not want to run stateful sync infrastructure
+
+## Decision shortcut
+
+Use this fast rule:
+
+- If your product requires collaborative correctness, offline-first UX, and replayable trust, NodalMerge is likely a strong fit.
+- If your product is primarily single-writer CRUD with no collaboration pressure, a simpler real-time stack is often faster to ship.
+
+## Core advantages
+
+### Deterministic convergence
+
+NodalMerge resolves identical history into identical state on every peer.
+
+You reconcile **history**, not ad-hoc snapshots. This makes divergence easier to reason about and test.
+
+### Local-first by default
+
+Clients can accept writes locally, then sync and merge when connectivity returns.
+
+This improves perceived performance and resilience in unstable networks.
+
+### Replayable DAG history
+
+Transactions form a directed acyclic graph. You can:
+
+- Reconstruct historical states
+- Debug merge outcomes from first principles
+- Verify behavior across runtime and host implementations
+
+### Speculative and authoritative lanes
+
+You can separate optimistic intent from canonical accepted state, then converge both lanes in one model.
+
+This is useful when policy validation or server-side simulation decides final outcomes.
+
+### Capability-scoped access
+
+Room tokens can encode path-scoped capabilities such as `read:world/**` and `write:intent/**`.
+
+That lets you keep collaboration broad while still controlling who can mutate sensitive namespaces.
+
+## How it compares to simpler sync models
+
+Many systems replicate a mutable document snapshot and patch conflicts heuristically.
+
+NodalMerge instead persists immutable operations in a graph, then deterministically materializes state. You trade some conceptual complexity for stronger replay, audit, and merge guarantees.
+
+## Typical adoption path
+
+Most teams adopt in stages:
+
+1. Start with one room and core map/text/list workflows
+2. Introduce intent/canonical separation for sensitive flows
+3. Add capability-scoped governance where needed
+4. Add operator lifecycle and replay tooling before scale
+
+This staged approach reduces risk and keeps complexity proportional to product needs.
+
+## Operational posture
+
+Running NodalMerge in production means planning for:
+
+- Room lifecycle and persistence policy
+- Blob storage and garbage collection windows
+- Metrics, SLOs, and replay tooling for incident response
+- Token minting and capability policy management
+
+If your product requires those controls anyway, NodalMerge gives you an explicit architecture instead of hidden complexity.
+
+## Decision checklist
+
+Choose NodalMerge when most answers are "yes":
+
+- Do you need concurrent multi-user editing?
+- Do you need offline-capable writes?
+- Do you need deterministic replay for debugging and trust?
+- Do you need policy-scoped collaboration across namespaces?
+- Do you expect product complexity to grow over time?
+
+If the answers are mostly "no," a simpler real-time stack may be faster to ship.
+
+## Next steps
+
+- Run `quickstart` for an end-to-end baseline
+- Read `architecture/overview` for system-level understanding
+- Read `operators/server-setup` for production posture
+- Review `operators/security-and-auth` for deployment hardening
+- Review `api-reference/websocket-commands` for command-level integration

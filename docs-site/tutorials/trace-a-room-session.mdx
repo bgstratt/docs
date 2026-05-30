@@ -1,0 +1,75 @@
+---
+title: "Trace a room session"
+description: "Tutorial for capturing protocol and replay evidence from one collaborative room workflow."
+icon: "timeline"
+---
+
+## Outcome
+
+By the end of this tutorial you will have:
+
+- a filtered protocol trace snippet from `protocol-inspector`
+- replay snapshot windows from `replay-lab`
+- a mapped timeline from user action to runtime message patterns
+
+## Setup
+
+1. Start host and app surfaces from `developer-experience/apps`.
+2. Open two browser windows for `infinite-room-workspace`.
+3. Open one window each for `protocol-inspector` and `replay-lab`.
+4. Set all windows to the same room id.
+
+## Step 1: Establish baseline session
+
+In first workspace window:
+
+- connect in `npm sdk + wasm`
+- apply shared document action once
+
+In second workspace window:
+
+- connect in `npm sdk + wasm`
+- publish presence
+
+Expected:
+
+- peer lifecycle and presence events appear in protocol inspector.
+
+## Step 2: Capture protocol evidence
+
+In `protocol-inspector`:
+
+1. apply preset `Peer lifecycle`
+2. apply preset `Presence`
+3. export trace snippet
+
+Record:
+
+- timestamp, event types, and message ordering
+
+## Step 3: Capture replay evidence
+
+In `replay-lab`:
+
+1. capture snapshot before new action
+2. perform new workspace action (text update or signal)
+3. capture snapshot after action
+4. use range controls to inspect event windows around the change
+
+Record:
+
+- before/after snapshot event windows
+
+## Step 4: Build your action-to-runtime map
+
+Create a short mapping:
+
+- **Action**: what user did
+- **Protocol message types**: what you observed
+- **Replay window evidence**: what changed in captured event ranges
+
+## Related docs
+
+- `protocol/websocket-messages`
+- `api-reference/websocket-commands`
+- `guides/replay-debugging`

@@ -1,0 +1,117 @@
+---
+title: "Troubleshooting"
+description: "Operator triage runbook for connectivity, sync divergence, blob failures, and control-plane rejections."
+---
+
+# Troubleshooting
+
+Use this runbook to narrow incidents quickly before deep code-level debugging.
+
+## Start with this triage order
+
+1. Check server health and metrics reachability
+2. Verify WebSocket connectivity and auth outcomes
+3. Confirm room sync progression (pack/request/reconcile)
+4. Inspect blob availability and upload verification outcomes
+5. Validate control-plane command authorization and payload shape
+
+## Fast symptom index
+
+### Clients cannot connect
+
+- Check bind/listener route and proxy upgrade support (`/ws/:room_id`)
+- Verify TLS/`wss://` config and cert trust chain
+- Inspect handshake errors (`expected hello`, `auth: ...`)
+- Confirm token is valid for room and not expired
+- Review close codes (`4002`, `4008`, `4001`, `1011`)
+
+### Room does not converge
+
+- Confirm peers exchange `pack` and `request` as expected
+- Check for malformed pack errors (`bad base64`, `bad postcard`)
+- Verify subscription scope is not unintentionally filtering required paths
+- Compare canonical hash behavior using replay workflows
+- Look for frequent resync-required disconnect patterns
+
+### Blob operations fail
+
+- Verify `blob-upload` hash/data integrity
+- For direct blob I/O, check capability negotiation and URL grant path
+- Distinguish `upload-denied` (fallback path) vs `upload-rejected` (verify failed)
+- Confirm `blob-available` broadcasts and follow-up `blob-request` behavior
+- Validate storage backend permissions and object availability
+
+### Presence looks stale
+
+- Confirm client heartbeat/update cadence is active
+- Validate disconnect cleanup behavior in UI logic
+- Ensure stale presence is not treated as durable room state
+- Check reconnect path restores local presence writes
+
+### Control-plane commands rejected
+
+- Confirm capability scopes for command family (archive/query/topology/tick/policy/room)
+- Validate required payload fields and value constraints
+- Check preconditions (query spec exists, proposal validated, lineage checkpoint valid)
+- Parse reject reason class for deterministic next action
+
+## Close codes and what they usually mean
+
+- `4001` resync required: peer fell behind or stream budget issue; perform full resync
+- `4002` token expired: refresh token and reconnect
+- `4008` rate limit exceeded: tune client send behavior and/or ingress limits
+- `1011` server overload: investigate capacity/backpressure and retry policy
+
+## Debug workflows
+
+### 1) Connectivity + handshake workflow
+
+1. Confirm listener and route exposure
+2. Run a known-good client hello
+3. Inspect initial `welcome` envelope and negotiated caps
+4. Verify token/capability state for locked rooms
+
+### 2) Convergence workflow
+
+1. Capture message window around divergence (`pack`, `request`, `mst-*`)
+2. Compare one healthy vs failing peer command stream
+3. Re-run with minimal subscription scope to isolate filter behavior
+4. Use replay evidence to validate deterministic state
+
+### 3) Blob workflow
+
+1. Verify hash and payload encoding at producer
+2. Trace request path (`blob-upload`/`request-upload`/`blob-uploaded`)
+3. Confirm availability relay and consumer fetch path
+4. Validate backing store read/write permissions
+
+### 4) Control-plane workflow
+
+1. Check capability required for command
+2. Validate command payload schema
+3. Validate domain preconditions (archive ref, lineage, promotion lifecycle, query spec)
+4. Retry with operator token scoped to exact required capability
+
+## Evidence bundle to capture
+
+- Relevant server logs and timestamps
+- Metrics snapshots around incident window
+- Representative command payloads (with secrets redacted)
+- Replay output when deterministic-state validation is needed
+- Close codes and reconnect attempts from clients
+- Capability scope used for failing control-plane requests
+
+## Preventive practices
+
+- Keep rate-limit and broadcast settings explicit in config
+- Add canary tests for handshake, sync, blob flow, and one control-plane command per family
+- Alert on spikes in `error` responses, close codes, and reject classes
+- Keep a redaction-safe incident template for command payload capture
+
+## Related pages
+
+- `operators/metrics-and-observability`
+- `operators/replay-cli`
+- `operators/security-and-auth`
+- `protocol/synchronization`
+- `api-reference/websocket-commands`

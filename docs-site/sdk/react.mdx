@@ -1,0 +1,165 @@
+---
+title: React SDK integration
+description: Integrate NodalMerge into React apps with lifecycle-safe connection management, local-first UI updates, and clean subscription patterns.
+---
+
+# React SDK integration
+
+Use this guide to wire `nodalmerge-sdk-js` into a React app without leaking subscriptions or fighting React render lifecycles.
+
+The pattern below works for small apps and scales into larger state architectures.
+
+## Install
+
+```bash
+npm install nodalmerge-sdk-js
+```
+
+## Integration strategy
+
+In React, treat the SDK instance as long-lived room/session state.
+
+Recommended approach:
+
+1. Create SDK once per room/session boundary
+2. Connect on mount
+3. Subscribe to runtime/change events
+4. Unsubscribe and close on cleanup
+
+Avoid re-creating SDK on every render.
+
+## Minimal hook pattern
+
+```tsx
+import { useEffect, useMemo, useState } from "react";
+import { createNodalMergeSdk } from "nodalmerge-sdk-js";
+
+export function useNodalMergeRoom(roomId: string) {
+  const [sdk, setSdk] = useState<any>(null);
+  const [connected, setConnected] = useState(false);
+
+  const config = useMemo(
+    () => ({
+      wsUrl: "ws://127.0.0.1:7878/ws/runtime",
+      roomId,
+      transport: { mode: "auto" },
+      reconnect: { enabled: true, initialDelayMs: 500, maxDelayMs: 8000 }
+    }),
+    [roomId]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    let cleanupRuntime: (() => void) | undefined;
+    let currentSdk: any;
+
+    (async () => {
+      currentSdk = await createNodalMergeSdk(config);
+      if (cancelled) {
+        return;
+      }
+
+      await currentSdk.room.connect();
+      if (cancelled) {
+        return;
+      }
+
+      cleanupRuntime = currentSdk.on("runtime-message", () => {
+        // wire diagnostics or state invalidation
+      });
+
+      setSdk(currentSdk);
+      setConnected(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      setConnected(false);
+      cleanupRuntime?.();
+      currentSdk?.room?.disconnect?.();
+    };
+  }, [config]);
+
+  return { sdk, connected };
+}
+```
+
+This pattern keeps connection lifecycle deterministic and avoids duplicate listeners.
+
+## React state update pattern
+
+Use SDK events to invalidate React state snapshots, then read current SDK values.
+
+Typical flow:
+
+1. Subscribe to runtime/change event
+2. Read required keys/projections
+3. Update React state atomically
+
+Avoid direct mutation assumptions across renders.
+
+## Optimistic UI in React
+
+Model optimistic actions with intent lanes and render pending state immediately.
+
+Then refine UI from canonical lane updates:
+
+- Intent write updates pending UI fast
+- Canonical updates confirm/override outcomes
+- Rejection events drive user-visible correction
+
+This keeps React UIs responsive without hiding authority outcomes.
+
+## Presence in React components
+
+Presence state should be component-friendly but ephemeral.
+
+Pattern:
+
+- Set local presence in focused/active components
+- Subscribe to peer presence snapshots
+- Clean up listeners and optionally clear presence on unmount
+
+Do not put durable domain facts in presence handlers.
+
+## Persistence and hydration
+
+For robust React experiences, enable local persistence and test refresh/reopen behavior.
+
+Checklist:
+
+- Hydration runs before critical UI depends on room state
+- Loading states account for initial hydration lag
+- Reconnect paths do not reset user-visible local edits unexpectedly
+
+## Error and rejection handling in UI
+
+In React, route SDK errors into explicit UI state:
+
+- Toast/banner for actionable user errors
+- Structured debug panel for developer/operator context
+- Retriable actions for transport/transient failures
+
+Avoid swallowing SDK errors inside effect callbacks.
+
+## Performance tips
+
+- Keep one SDK instance per active room, not per component
+- Use context/provider boundaries to share room instance
+- Batch React state updates from event streams where possible
+- Unsubscribe every listener in cleanup paths
+
+## Common mistakes
+
+- Creating SDK in render body
+- Registering listeners without cleanup
+- Coupling component render frequency to `sdk.sync.push()` calls
+- Mixing intent/canonical keys in one local selector
+- Ignoring reconnect transitions in UI state machine
+
+## Related pages
+
+- `sdk/overview`
+- `sdk/javascript`
+- `sdk/presence`
+- `sdk/undo-and-conflicts`

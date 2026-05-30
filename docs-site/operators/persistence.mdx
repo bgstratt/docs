@@ -1,0 +1,137 @@
+---
+title: Persistence
+description: Configure and operate NodalMerge persistence safely across in-memory, local durable, and composed backend deployments.
+---
+
+# Persistence
+
+NodalMerge persistence is split between node history and blob payloads.
+
+This allows you to combine different storage backends without changing sync correctness.
+
+## Persistence model
+
+At the server layer, persistence is composed from:
+
+- **Node persistence** for room DAG history
+- **Blob persistence** for content-addressed binary payloads
+
+Durability is treated as the combined property of both halves for operational decisions such as safe room eviction.
+
+## Built-in persistence modes
+
+### No persistence (default)
+
+Without `--store`, server uses in-memory persistence only.
+
+- Fast startup
+- No restart durability
+- Suitable for local dev and ephemeral demos only
+
+### Directory persistence (`--store`)
+
+With `--store <root>`, server enables durable local storage.
+
+Built-in on-disk layout includes:
+
+- `<root>/nodalmerge.db` for persisted nodes
+- `<root>/blobs/<sanitized_room>/<hash>` for blob files
+- `<root>/blob-tombstones/<sanitized_room>/<hash>` for GC tombstones
+- Topology sidecar stores under the same root (when enabled)
+
+## On-disk behavior details
+
+Directory persistence uses SQLite plus file blobs.
+
+Key durability behaviors:
+
+- Node writes use `INSERT OR IGNORE` semantics for idempotent replays
+- Batch node persist path reduces commit overhead for accepted packs
+- Blob writes use write-to-temp then rename pattern
+- Blob load verifies hash integrity and skips mismatched payloads
+
+Room IDs are sanitized for filesystem-safe blob/tombstone paths.
+
+## Hydration and runtime recovery
+
+When durable mode is active, room creation hydrates from persisted data:
+
+1. Load persisted nodes
+2. Apply to in-memory graph
+3. Load persisted blobs into memory blob store
+4. Resume runtime sync with hydrated state
+
+This allows restart recovery while preserving deterministic replay semantics.
+
+## Backend composition model
+
+Persistence surfaces are designed for composition:
+
+- Use one backend for nodes
+- Use another backend for blobs
+- Expose as one combined server persistence surface
+
+This is useful for patterns like:
+
+- SQL/document store for nodes
+- S3/R2/object storage for blobs
+
+The architecture keeps transport and merge semantics stable regardless of backend pairing.
+
+## Backup strategy
+
+For durable directory persistence, treat the entire store root as backup scope.
+
+At minimum, include:
+
+- SQLite node database
+- Blob object directories
+- Blob tombstone metadata
+- Topology sidecar stores (if used)
+
+Backup policy should align with your replay/audit requirements, not only “latest state” expectations.
+
+## Restore expectations
+
+After restore:
+
+- Rooms hydrate from restored persistence state
+- Missing/extra data may surface as deterministic replay differences
+- Blob integrity checks can reveal corrupted payload files
+
+Always run post-restore validation with known test rooms before serving production traffic.
+
+## Data lifecycle and GC interaction
+
+Blob persistence participates in GC lifecycle:
+
+- Live-set derived from room references
+- Two-phase tombstone -> delete behavior
+- Grace windows prevent premature deletion during state churn
+
+Do not treat GC as a storage-only concern; it is tightly coupled to room reachability semantics.
+
+## Operational checks
+
+For any durable deployment, verify regularly:
+
+- Persisted node count increases under write load
+- Blob files appear for expected hash references
+- Restart recovers known room state
+- Blob GC behavior matches configured interval/grace
+- Storage write latency metrics stay within SLO
+
+## Common pitfalls
+
+- Assuming `--store` is optional for production durability
+- Backing up only DB but not blobs (or vice versa)
+- Enabling room eviction on non-durable persistence
+- Treating object-store direct I/O as replacement for persistence correctness
+- Ignoring hash mismatch warnings during blob load
+
+## Related pages
+
+- `operators/server-setup`
+- `operators/gc-and-lifecycle`
+- `architecture/storage-and-blobs`
+- `operators/deployment-topologies`

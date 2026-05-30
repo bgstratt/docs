@@ -1,0 +1,155 @@
+---
+title: CRDT model
+description: Learn how NodalMerge resolves map, text, and list operations deterministically under concurrency.
+---
+
+# CRDT model
+
+NodalMerge convergence comes from deterministic conflict resolution over immutable operations.
+
+This page explains the three core data models and the ordering rules that make multi-writer state converge.
+
+## Design objective
+
+Given the same set of valid operations, every peer resolves the same final state.
+
+That guarantee is independent of:
+
+- Network delivery order
+- Offline vs online write timing
+- Which peer receives which update first
+
+## Operation families
+
+NodalMerge transactions carry operations in three families:
+
+- `MapOp` for key/value state
+- `TextOp` for collaborative text
+- `ListOp` for ordered item identity and position
+
+Each family has a different merge strategy because each models a different product problem.
+
+## Global ordering and tie-break rules
+
+Most conflict resolution in NodalMerge uses a deterministic comparator based on:
+
+- Lamport timestamp
+- Author public key (as deterministic tie-break)
+
+Practically, this means:
+
+- Higher Lamport wins when two operations conflict
+- If Lamport ties, author key order breaks the tie consistently
+
+This is what prevents “split brain” outcomes for concurrent writers.
+
+## Map model (LWW map)
+
+Map keys use last-write-wins (LWW) semantics.
+
+### Supported operations
+
+- `Set { key, value }`
+- `Delete { key }`
+- `SetBlob { key, blob_hash }`
+
+### Conflict resolution
+
+For a given key, NodalMerge keeps the winning operation under `(lamport, author)` ordering.
+
+Outcomes:
+
+- Concurrent `Set` on same key: one deterministic winner
+- `Set` vs `Delete`: deterministic winner
+- `SetBlob` behaves like `Set` for conflict purposes, but value is a blob hash reference
+
+### Use map when
+
+Use maps for object-shaped state where deterministic single-winner behavior is correct, such as:
+
+- User preferences
+- Session metadata
+- Canonical pointers and references
+
+Avoid maps for collaborative text and ordered collections; use text/list types instead.
+
+## Text model (RGA)
+
+Text uses an RGA-style CRDT with stable character identities and tombstones.
+
+### Supported operations
+
+- `Insert` and `InsertRange`
+- `Delete` and `DeleteRange`
+
+Runtime range operations are lowered into deterministic character-level behavior.
+
+### Identity and ordering
+
+Each inserted character gets a stable operation identity derived from transaction ordering metadata.
+
+When concurrent inserts target the same anchor:
+
+- Higher-priority character appears leftward
+- Priority is deterministic from operation identity
+
+### Deletion behavior
+
+Deletes are tombstones, not destructive erase from causal history.
+
+Implications:
+
+- Deleted characters stop appearing in visible text
+- Anchors remain stable for future inserts
+- Peers still converge under out-of-order delivery
+
+Use text for user-editable collaborative strings where insert/delete concurrency is expected.
+
+## List model (fractional-index list)
+
+Lists model ordered item identity with separate content storage.
+
+### Supported operations
+
+- `Insert { item_id, position }`
+- `Move { item_id, position }`
+- `Delete { item_id }`
+
+### Core behavior
+
+- Item identity is stable (`item_id`) and independent of position
+- Position is fractional-index based for efficient between-item inserts
+- `Insert` and `Move` resolve with LWW semantics for position winner
+- `Delete` is absorbing for that item identity
+
+Absorbing delete means once an item is deleted, later or concurrent moves for that same `item_id` do not resurrect it.
+
+### Why this model
+
+This avoids common “reorder as delete+insert” pitfalls and composes better with sidecar content updates.
+
+Use lists for ordered entities like tasks, cards, timeline entries, and playlist items.
+
+## Choosing the right model
+
+Pick the CRDT that matches user intent:
+
+- `Map` for winner-takes-key object state
+- `Text` for collaborative character streams
+- `List` for stable-item ordered collections
+
+If you force a shape into the wrong model, you get valid convergence with poor product semantics.
+
+## Practical modeling guidance
+
+- Keep canonical and speculative lanes in separate key spaces when both exist
+- Use map values for item content, list ops for item order/identity
+- Treat blob references as map values; keep binary payload lifecycle in blob storage flows
+- Avoid ad-hoc custom conflict logic in app code when CRDT model already defines deterministic behavior
+
+## Related pages
+
+- `architecture/mental-model`
+- `architecture/speculative-vs-authoritative`
+- `architecture/replay-and-branching`
+- `architecture/storage-and-blobs`

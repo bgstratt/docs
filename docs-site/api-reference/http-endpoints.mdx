@@ -1,0 +1,85 @@
+---
+title: "HTTP endpoints"
+description: "Current HTTP route reference for nodalmerge-server and related service surfaces."
+---
+
+# HTTP endpoints
+
+NodalMerge is WebSocket-first. The HTTP surface in `nodalmerge-server` is intentionally small today.
+
+## Public server routes (current)
+
+### `GET /ws/:room_id`
+
+Purpose:
+
+- WebSocket upgrade endpoint for room sessions
+
+Notes:
+
+- First inbound frame must be a valid `hello` payload
+- Room-level auth/token checks are applied during handshake if room is locked
+- All sync/control-plane behavior runs over this upgraded socket
+
+Endpoint contract snapshot:
+
+- **Method/path**: `GET /ws/:room_id`
+- **Auth**: handshake token/capability validation when room is locked
+- **Upgrade**: HTTP 101 on success, then WS protocol
+- **Primary docs**: `api-reference/websocket-commands`
+
+### `GET /metrics`
+
+Purpose:
+
+- Prometheus scrape endpoint for runtime metrics
+
+Availability:
+
+- Enabled when server starts with `--metrics-addr <ip:port>`
+- Exposed on the metrics listener address, path `/metrics`
+
+Endpoint contract snapshot:
+
+- **Method/path**: `GET /metrics`
+- **Auth**: deployment-controlled (typically protected at network/proxy layer)
+- **Response**: Prometheus text exposition
+- **Primary docs**: `operators/metrics-and-observability`
+
+## Endpoint coverage status
+
+Current runtime coverage is complete for server-exposed routes in `server/src/main.rs`:
+
+- `GET /ws/:room_id`
+- `GET /metrics` (when metrics listener is enabled)
+
+## Route philosophy
+
+Current product posture:
+
+- Runtime API surface is primarily WebSocket (`/ws/:room_id`)
+- HTTP is used for operational concerns (metrics) and possible future management APIs
+
+If you add new HTTP endpoints, classify each as:
+
+- public product contract
+- operator/internal contract
+
+## Planned additions (not guaranteed)
+
+- Health/readiness endpoint
+- Management endpoint layer for control-plane workflows
+- Archive import/export HTTP helpers for non-WS tooling
+
+## Verification checklist
+
+1. Confirm server log reports `ws://<addr>/ws/<room>`
+2. Verify successful WebSocket upgrade on `/ws/:room_id`
+3. If metrics enabled, verify scrape on `http://<metrics_addr>/metrics`
+4. Confirm route exposure and auth expectations behind proxy/TLS
+
+## Related pages
+
+- `api-reference/websocket-commands`
+- `protocol/websocket-messages`
+- `operators/server-setup`

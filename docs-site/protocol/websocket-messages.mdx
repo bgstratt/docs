@@ -1,0 +1,109 @@
+---
+title: WebSocket messages
+description: Reference the core WebSocket message types used for handshake, synchronization, blob transfer, and control-plane operations.
+---
+
+# WebSocket messages
+
+NodalMerge uses typed JSON envelopes over WebSocket.
+
+This page is a message catalog. For flow semantics, see:
+
+- `protocol/synchronization`
+- `protocol/blob-flow`
+
+## Envelope basics
+
+Each message includes a `type` discriminator and type-specific fields.
+
+At a high level:
+
+- Client sends intent/requests/updates
+- Server replies or broadcasts room events
+- Invalid payloads are rejected with explicit error behavior
+
+## Session and sync messages
+
+### Client → Server
+
+- `hello`: start session, provide identity/capabilities/subscription hints
+- `pack`: submit newly produced node history
+- `request`: ask for missing nodes by known-set difference
+- `mst-request`: request MST segments during refined reconciliation
+- `mst-done`: request final missing nodes after MST descent
+- `subscribe`: update subscription scope for relay filtering
+
+### Server → Client
+
+- `welcome`: handshake response with negotiated sync context
+- `pack`: relayed accepted node deltas
+- `subscribe-ack`: confirms runtime subscription update
+- `mst-response`: MST segment response for client descent
+- `peer-joined`: room membership event
+- `peer-left`: room membership event
+
+## Blob messages
+
+### Client → Server
+
+- `blob-upload`: upload blob bytes over WebSocket
+- `blob-request`: request blob payloads by hash
+- `request-upload`: ask for direct-upload URL (if negotiated)
+- `blob-uploaded`: report direct upload completion for verification
+
+### Server → Client
+
+- `blob-pack`: bytes-over-WebSocket blob response
+- `blob-available`: broadcast hint that blobs can be fetched
+- `blob-redirect`: direct-download URLs for requested hashes
+- `upload-granted`: direct-upload URL granted
+- `upload-denied`: direct-upload not available for this request
+- `upload-rejected`: direct-upload verification failed
+
+## Presence and collaboration signaling
+
+### Client → Server
+
+- `presence`: ephemeral presence payload update
+
+### Server → Client
+
+- `presence`: relayed peer presence state
+
+Presence is transport-ephemeral and not part of room DAG persistence.
+
+## Control-plane and admin surfaces
+
+Depending on policy/capabilities, sessions may use additional command messages for runtime governance and operator workflows.
+
+Examples include:
+
+- Room key and policy control commands
+- Server info and tick-control commands
+- Archive/query/projection/replay control commands
+
+These are capability-gated and may return typed rejection/error outcomes when unauthorized or invalid.
+
+## Error and close semantics
+
+Common failure surfaces:
+
+- Protocol format errors (`send_error` style responses)
+- Auth/token failures at handshake or mid-session
+- Rate limiting and backpressure disconnects
+- Upload verification failures on direct blob I/O
+
+Message consumers should treat explicit error/close outcomes as part of normal distributed behavior, not exceptional edge cases.
+
+## Message handling guidance
+
+- Route by `type` first, then validate fields
+- Treat unknown/unsupported types conservatively
+- Keep retry/idempotency logic at operation level, not socket-frame level
+- Separate sync-path handling from control-plane command handling
+
+## Related pages
+
+- `protocol/synchronization`
+- `protocol/blob-flow`
+- `architecture/sync-protocol`

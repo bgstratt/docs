@@ -1,0 +1,105 @@
+---
+title: "Upgrades and migrations"
+description: "Runbook for safe nodalmerge-server upgrades, protocol compatibility checks, and rollback planning."
+---
+
+# Upgrades and migrations
+
+Use this runbook to upgrade server/runtime versions without breaking room correctness or operator safety guarantees.
+
+## Upgrade goals
+
+- Preserve room history correctness
+- Maintain client compatibility during rollout
+- Avoid irreversible storage surprises
+- Keep rollback options explicit
+
+## Upgrade strategy by change type
+
+### Patch/minor runtime upgrades
+
+Use for low-risk changes with no known contract break:
+
+- Roll canary first
+- Validate handshake, sync, blob flow, and one control-plane command family
+- Expand rollout gradually while watching close/reject/error behavior
+
+### Capability-affecting upgrades
+
+Use when capabilities or protocol features change:
+
+- Validate negotiated capability behavior (`welcome.caps`)
+- Test mixed-client behavior (old/new SDK sessions)
+- Delay enabling new capability-dependent paths until baseline fleet updated
+
+### Storage-impacting upgrades
+
+Use when persistence format or archive/snapshot semantics are affected:
+
+- Take backup/export artifacts first
+- Validate replay/hash invariants before and after upgrade
+- Define rollback window before applying irreversible migrations
+
+## Preflight checklist
+
+1. Record current server version, SDK versions, and deployed config
+2. Snapshot active runtime flags and environment variable values
+3. Export backup artifacts (archives/snapshots as appropriate)
+4. Confirm compatibility expectations in `api-reference/compatibility-and-support`
+5. Identify commands/endpoints used by your clients and operator tooling
+6. Prepare canary environment with representative traffic profile
+
+## Rollout checklist
+
+1. Record current versions and config snapshot
+2. Upgrade one canary instance
+3. Validate:
+   - WebSocket handshake and sync (`hello` -> `welcome` -> `pack/request`)
+   - blob paths (`blob-upload` and/or direct I/O flow)
+   - one command per control-plane family used in production
+4. Run replay/hash validation on canary room data
+5. Expand rollout in bounded increments
+6. Monitor close codes, reject reason classes, latency, and error rate
+7. Promote rollout only after stable observation window
+
+## Rollback planning
+
+Define rollback before rollout:
+
+- Binary rollback path (previous image/package)
+- Config rollback path (flags/env)
+- Data rollback constraints (what can and cannot be reversed)
+- Trigger thresholds for rollback (error/reject spikes, convergence failures, blob failures)
+
+If rollback is needed:
+
+1. Stop rollout immediately
+2. Revert runtime binary and config
+3. Verify reconnect and convergence behavior
+4. Re-run replay/hash checks on impacted rooms
+5. Document incident and update future preflight gates
+
+## Post-upgrade verification
+
+- Confirm expected route surfaces (`/ws/:room_id`, `/metrics`)
+- Validate command contract behavior for critical workflows
+- Verify no sustained spike in:
+  - `error` envelope rates
+  - control-plane rejections
+  - close codes (`4001`, `4002`, `4008`, `1011`)
+- Verify persistence and GC lifecycle behavior remains healthy
+
+## Common upgrade pitfalls
+
+- Upgrading server without testing capability negotiation with existing clients
+- Enabling new command flows before issuing correctly scoped tokens
+- Treating storage-impacting changes as binary-only rollouts
+- Skipping replay/hash validation after migration steps
+- Rolling back binaries without checking persistence compatibility assumptions
+
+## Related pages
+
+- `api-reference/compatibility-and-support`
+- `api-reference/websocket-commands`
+- `operators/replay-cli`
+- `operators/persistence`

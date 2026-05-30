@@ -1,0 +1,148 @@
+---
+title: Sync protocol architecture
+description: Understand how NodalMerge peers discover missing history and converge efficiently over negotiated sync paths.
+---
+
+# Sync protocol architecture
+
+NodalMerge synchronizes by exchanging **missing history**, not mutable snapshots.
+
+The protocol is designed to keep deterministic convergence while reducing catch-up cost as room history grows.
+
+## Core principle
+
+Peers ask: “what history am I missing?” rather than “what is the latest state?”
+
+This keeps sync aligned with replay semantics and avoids introducing snapshot-specific conflict behavior.
+
+## Session lifecycle
+
+A typical session has three phases:
+
+1. Handshake and capability negotiation
+2. Catch-up transfer for missing history
+3. Steady-state delta broadcast
+
+Each phase can choose different strategies based on negotiated features and observed divergence.
+
+## Handshake model
+
+Client begins with a `hello` envelope that includes identity, room context, and sync hints.
+
+Server responds with `welcome` and enough metadata for the client to complete reconciliation.
+
+Handshake responsibilities include:
+
+- Authenticating or rejecting the session when room policy requires it
+- Negotiating sync capabilities
+- Exchanging frontier/diff hints
+- Establishing peer visibility context for live collaboration
+
+## Capability negotiation
+
+Sync strategy is feature-negotiated per connection.
+
+This allows mixed client versions to interoperate by selecting the best mutually supported path.
+
+Examples of negotiated behavior:
+
+- IBF-assisted diff vs legacy diff fallback
+- MST-assisted refinement for hard divergence cases
+- Direct blob I/O redirects vs bytes-over-WebSocket fallback
+
+## Reconciliation strategies
+
+NodalMerge can combine multiple techniques depending on divergence shape.
+
+### Frontier and known-set baseline
+
+The baseline flow compares local and remote known history identifiers to identify gaps.
+
+### IBF-assisted diff
+
+When supported, IBF-based set reconciliation can cheaply estimate symmetric differences without shipping full id sets.
+
+### MST-assisted refinement
+
+When IBF is insufficient or divergence is deeper, MST-guided requests refine missing segments iteratively.
+
+### Catch-up pack
+
+Once missing segments are known, nodes are sent as packed history batches for import and replay.
+
+## Steady-state sync
+
+After catch-up, peers mostly exchange incremental packs of newly accepted nodes.
+
+This keeps bandwidth proportional to new work rather than total graph size.
+
+In normal operation:
+
+- Local accepted changes are packed and broadcast
+- Receiving peers import and dedupe by node identity
+- Convergence remains deterministic under reordering/retries
+
+## Subscription-aware relay
+
+Peers can scope what they receive using path-pattern subscriptions.
+
+Architecturally, this is a **visibility/bandwidth tool**, not an authority tool:
+
+- It narrows relayed materialization
+- It does not replace policy/capability validation for write authority
+
+This distinction avoids conflating transport filtering with security semantics.
+
+## Blob side channel
+
+Blob bytes are synchronized separately from node history.
+
+Typical flow:
+
+- Node history references blob hashes
+- Missing blob payloads are requested on demand
+- Backends may redirect to direct blob URLs when supported
+- Fallback remains bytes-over-WebSocket for compatibility
+
+Keeping blobs out of core history packs reduces hot-path sync overhead for structured state.
+
+## Reliability and recovery
+
+Sync is designed for lossy, intermittent networks.
+
+Key recovery behavior:
+
+- Reconnect performs a fresh handshake and diff
+- Duplicate deliveries are safe via identity-based dedupe
+- Mid-session auth/token expiry can trigger controlled reconnect paths
+- Backpressure and rate limits fail sessions explicitly instead of silent divergence
+
+## Failure semantics
+
+Healthy protocol behavior favors explicit deterministic outcomes:
+
+- Invalid payloads are rejected
+- Unsupported or unauthorized control operations are denied with typed reasons
+- Lagging or overloaded sessions are closed to force clean resync
+
+This keeps system behavior auditable and predictable under stress.
+
+## Why this architecture scales
+
+The protocol scales because it avoids “full state every time” semantics.
+
+Instead, it combines:
+
+- Feature negotiation
+- Missing-history diff strategies
+- Incremental broadcast
+- Separate blob transport lifecycle
+
+The result is a sync stack that supports both small-room collaboration and larger long-lived room histories without changing CRDT correctness.
+
+## Related pages
+
+- `protocol/websocket-messages`
+- `protocol/synchronization`
+- `protocol/blob-flow`
+- `architecture/storage-and-blobs`

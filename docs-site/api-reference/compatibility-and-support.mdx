@@ -1,0 +1,96 @@
+---
+title: "Compatibility and support"
+description: "Compatibility contract and support policy baseline for server, SDK, protocol, and operational upgrades."
+---
+
+# Compatibility and support
+
+This page defines the minimum compatibility and support posture to use for production planning.
+
+## Scope and assumptions
+
+This baseline assumes:
+
+- single actively supported server release line plus controlled rollout windows
+- capability-negotiated protocol behavior for mixed client populations
+- explicit validation required for storage-impacting changes
+
+Treat this as a living contract. Update it when runtime surfaces or policies change.
+
+## Compatibility dimensions
+
+### Server to SDK compatibility
+
+- Keep SDKs aligned to current server release line whenever possible
+- For rolling upgrades, support at least one prior SDK generation during transition
+- New command families should be additive and capability-gated before requiring them
+
+### Protocol capability compatibility
+
+- Capabilities are negotiated at handshake (`welcome.caps`)
+- Clients must tolerate missing optional capabilities
+- Servers must reject unauthorized/unsupported control-plane commands deterministically
+
+### Command contract compatibility
+
+- Existing command envelope shapes are treated as compatibility surface
+- Breaking shape changes require release-note callout and migration guidance
+- Additive fields should be backward-compatible where practical
+
+### Persistence and storage compatibility
+
+- Storage-impacting changes require preflight backup/export and replay/hash validation
+- Downgrade safety is not assumed unless explicitly documented per release
+- Snapshot/archive workflows must be validated during canary upgrades
+
+### Archive portability compatibility
+
+- Archive request/response contracts are part of compatibility surface
+- Validate import/export across target versions before production cutover
+- Treat archive reason-class changes as externally visible behavior changes
+
+## Support policy baseline
+
+### Supported lines
+
+- Current release line: full support
+- Previous line: transition support during active upgrade window (time-boxed by release policy)
+
+### Security and reliability fixes
+
+- Critical security/reliability fixes should be backported to active transition line when feasible
+- Non-critical fixes may ship forward-only
+
+### Deprecation policy
+
+- Deprecate with warning period before removal
+- Provide migration path and timeline
+- Keep capability-gated fallback behavior during deprecation window where possible
+
+### Breaking changes
+
+- Announce in release notes with explicit operator impact
+- Include affected commands/endpoints and expected client behavior changes
+- Provide upgrade sequencing guidance (server first/client first/mixed safe window)
+
+## Operator checklist for compatibility safety
+
+1. Verify target server version and SDK set in inventory
+2. Confirm required command families are available and tested on target
+3. Validate capability negotiation behavior with mixed clients
+4. Run replay/hash invariants before and after canary
+5. Validate archive import/export workflows if used
+6. Define rollback constraints before rollout
+
+## What this page does not guarantee
+
+- Perpetual backward compatibility for every experimental surface
+- Automatic downgrade safety for storage-impacting changes
+- Cross-major compatibility without explicit migration guidance
+
+## Related pages
+
+- `operators/upgrades-and-migrations`
+- `api-reference/websocket-commands`
+- `api-reference/command-library`
+- `operators/server-setup`

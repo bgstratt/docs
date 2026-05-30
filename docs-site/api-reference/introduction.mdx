@@ -1,0 +1,57 @@
+---
+title: "API and command reference"
+description: "Reference index for NodalMerge HTTP endpoints, WebSocket command contracts, and runtime command inventory."
+---
+
+# API and command reference
+
+NodalMerge has two main runtime surfaces:
+
+- HTTP endpoints for service-level concerns (health, metrics, admin-style workflows)
+- WebSocket messages and command-style operations for room sync and control-plane workflows
+
+This section now provides a contract-grade baseline for current runtime surfaces.
+
+## Start here
+
+<Columns cols={2}>
+  <Card title="HTTP endpoints" icon="globe" href="/api-reference/http-endpoints">
+    Current server routes and endpoint contract snapshots.
+  </Card>
+  <Card
+    title="WebSocket commands"
+    icon="network-wired"
+    href="/api-reference/websocket-commands"
+  >
+    Full WebSocket command schemas, capability gates, and rejection taxonomy.
+  </Card>
+  <Card title="Command library" icon="terminal" href="/api-reference/command-library">
+    CLI and runtime command inventory, including all routed WS commands.
+  </Card>
+  <Card
+    title="Compatibility and support"
+    icon="table"
+    href="/api-reference/compatibility-and-support"
+  >
+    Compatibility posture and upgrade-support baseline for production planning.
+  </Card>
+</Columns>
+
+## Why this section exists
+
+Much of NodalMerge behavior is negotiated and capability-gated over WebSocket rather than modeled as classic REST CRUD endpoints.
+
+That means your reference set should include both:
+
+- endpoint-level docs (HTTP)
+- message-level docs (WebSocket)
+
+## Source-of-truth inputs to use while fleshing out
+
+- `nodalmerge/docs/operations-inventory.md`
+- `nodalmerge/server/src/main.rs` route and CLI definitions
+- `nodalmerge/server/src/ws_handler.rs` dispatch command handling
+
+## Status
+
+This section is now suitable as the primary operator/developer command reference for current runtime behavior.

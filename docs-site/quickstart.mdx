@@ -1,0 +1,145 @@
+---
+title: Quickstart
+description: Run a local NodalMerge server, connect a client, and ship your first collaborative room.
+---
+
+# Quickstart
+
+This guide walks you through a full local setup with the `nodalmerge-server` binary and the JavaScript SDK.
+
+## 1. What you're building
+
+NodalMerge is a local-first, replicated state engine built around:
+
+- Deterministic CRDT state resolution
+- DAG-based transaction history
+- Speculative vs authoritative execution paths
+- Room-based sync topology
+
+With this model, your app can:
+
+- Accept writes while offline
+- Merge concurrent edits deterministically
+- Converge to the same state across peers
+
+## 2. Core concepts (minimal)
+
+### Document
+A document is a logical container of replicated state.
+
+### Room
+A room is a sync boundary. All replication happens within a room.
+
+### Transaction
+A transaction contains operations (text, map, list, etc.) and is the atomic unit of replication.
+
+### Sync
+Peers exchange transactions. The engine resolves state deterministically.
+
+## 3. Start a local server
+
+From the `nodalmerge` repo root:
+
+```powershell
+cargo run -p nodalmerge-server -- --store ./data --metrics-addr 127.0.0.1:9090
+```
+
+The server listens on `ws://127.0.0.1:7878/ws/<room>`.
+
+Optional checks:
+
+- Visit `http://127.0.0.1:9090/metrics` for Prometheus metrics
+- Confirm the server logs a startup message for the WebSocket endpoint
+
+## 4. Connect a client
+
+Install the SDK in your app:
+
+```bash
+npm install nodalmerge-sdk-js
+```
+
+Create and connect a room:
+
+```ts
+import { createNodalMergeSdk } from "nodalmerge-sdk-js";
+
+const sdk = await createNodalMergeSdk({
+  wsUrl: "ws://127.0.0.1:7878/ws/runtime",
+  roomId: "demo-room",
+  transport: { mode: "auto" }
+});
+
+await sdk.room.connect();
+```
+
+## 5. Write replicated data
+
+### Map example
+
+```ts
+sdk.sync.set("profile/name", "Alice");
+sdk.sync.set("profile/role", "engineer");
+sdk.sync.push();
+```
+
+### Read example
+
+```ts
+const name = sdk.sync.get("profile/name");
+console.log(name);
+```
+
+### Text example
+
+```ts
+sdk.sync.insertTextAt("notes/welcome", 0, "Hello");
+sdk.sync.insertTextAt("notes/welcome", 5, " world");
+sdk.sync.push();
+```
+
+## 6. Add live presence
+
+```ts
+sdk.presence.set({
+  name: "Alice",
+  cursor: { x: 120, y: 220 }
+}, { ttlMs: 5_000 });
+
+const stop = sdk.on("runtime-message", (msg) => {
+  console.log("runtime message", msg.type);
+});
+```
+
+## 7. Handle offline and reconnect
+
+The SDK supports reconnect and optional local persistence.
+
+- Keep `reconnect.enabled` on for production clients
+- Use `offline.persistenceKey` or IndexedDB persistence when you need durable local-first behavior
+- Call `sdk.sync.push()` after local changes to flush outbound ops
+
+## 8. Speculative vs authoritative flows
+
+In many products, you split writes into two lanes:
+
+- **Speculative lane** for immediate UI response
+- **Authoritative lane** for validated canonical state
+
+Use path conventions like:
+
+- `intent/**` for optimistic client intent
+- `world/**` for canonical state accepted by policy
+
+## 9. Next steps
+
+After this quickstart:
+
+- Read `architecture/mental-model` and `architecture/crdt-model`
+- Read `protocol/synchronization` and `protocol/blob-flow`
+- Implement from `sdk/javascript` or `sdk/react`
+- Configure production baseline from `operators/server-setup` and `operators/persistence`
+- Lock down auth posture in `operators/security-and-auth`
+- Add incident checks from `operators/troubleshooting`
+- Review command contracts in `api-reference/websocket-commands`
+- Review performance expectations in `benchmarks/performance-overview`

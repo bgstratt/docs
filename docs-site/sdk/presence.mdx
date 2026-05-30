@@ -1,0 +1,121 @@
+---
+title: Presence
+description: Use NodalMerge presence APIs for ephemeral collaboration signals like cursors and typing state without polluting durable room history.
+---
+
+# Presence
+
+Presence is NodalMerge’s ephemeral awareness channel.
+
+Use it for live collaboration context (who is here, where their cursor is, what they are doing now), not durable business data.
+
+## What presence is for
+
+Good presence payloads:
+
+- Cursor or caret location
+- Active selection/viewport
+- Typing indicator
+- Temporary user status
+
+Presence is intentionally not replayed as room history.
+
+## What presence is not for
+
+Do **not** use presence for:
+
+- Durable domain records
+- Audit-critical actions
+- Canonical product truth
+
+If state must survive reconnect/replay, write it via map/text/list APIs instead.
+
+## Basic usage
+
+```ts
+doc.presence.set({ name: "alice", cursor: { x: 120, y: 220 } });
+```
+
+Subsequent `set(...)` calls merge into your local presence state and rebroadcast.
+
+## Presence subscriptions
+
+```ts
+doc.presence.onJoin(({ pubkey, state }) => {
+  addPeer(pubkey, state);
+});
+
+doc.presence.onUpdate(({ pubkey, state }) => {
+  updatePeer(pubkey, state);
+});
+
+doc.presence.onLeave(({ pubkey, reason }) => {
+  removePeer(pubkey, reason);
+});
+```
+
+Current remote view:
+
+```ts
+const peers = doc.presence.others();
+```
+
+## Lifecycle behavior
+
+Presence has heartbeat and staleness semantics:
+
+- Heartbeats refresh peer liveness
+- Silent peers age out as stale
+- Disconnect clears ephemeral participation view
+
+This is expected behavior, not an error path.
+
+## Tuning knobs
+
+SDK options allow heartbeat/stale timing configuration:
+
+- `presenceHeartbeatMs`
+- `presenceStaleMs`
+
+Use defaults first. Tune only after observing real network/user behavior.
+
+## Clear and leave semantics
+
+Presence can be explicitly cleared to stop broadcasting local ephemeral state.
+
+Consumers should handle leave reasons and avoid assuming all leaves are hard disconnects.
+
+## React/UI patterns
+
+Recommended UI pattern:
+
+1. Keep durable model in room state
+2. Layer presence view over durable state in rendering
+3. Degrade gracefully when presence events lag or drop
+
+This avoids coupling core UX correctness to ephemeral transport timing.
+
+## Privacy and data minimization
+
+Presence payloads should be minimal and non-sensitive.
+
+Avoid sending:
+
+- Secrets/tokens
+- High-volume raw telemetry
+- Sensitive personal data
+
+Treat presence as broad room-visible collaboration metadata.
+
+## Common mistakes
+
+- Persisting business logic state in presence
+- Ignoring presence cleanup/unsubscribe in component lifecycle
+- Overloading presence with large payloads
+- Assuming presence guarantees delivery/history
+
+## Related pages
+
+- `sdk/javascript`
+- `sdk/react`
+- `sdk/subscriptions`

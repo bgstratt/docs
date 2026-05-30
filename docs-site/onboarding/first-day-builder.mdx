@@ -1,0 +1,81 @@
+---
+title: "First day builder path"
+description: "A practical day-one path for builders going from local setup to a working collaborative prototype with runtime evidence."
+icon: "hammer"
+---
+
+## Goal
+
+Ship a small collaborative prototype and validate its runtime behavior in one day.
+
+## Step 1: Align on model and contracts
+
+Read:
+
+- `quickstart`
+- `architecture/mental-model`
+- `sdk/javascript`
+
+Outcome:
+
+- You can describe your target room boundaries and write/read paths.
+
+## Step 2: Run host + app surfaces
+
+Use `developer-experience/apps` to start host and app surfaces.
+
+Outcome:
+
+- All surfaces run against a shared room id.
+
+## Step 3: Implement first product behavior in demos
+
+Use baseline patterns from:
+
+- `apps/demos/infinite-room-workspace`
+- `apps/demos/collab-maps`
+
+Focus on:
+
+- one shared state write path
+- one collaboration signal/presence path
+- one failure-state message in UI
+
+Outcome:
+
+- You have one deterministic interaction path that converges across two peers.
+
+## Step 4: Validate runtime evidence
+
+Use:
+
+- `apps/playground/protocol-inspector`
+- `apps/playground/replay-lab`
+
+Capture:
+
+- filtered protocol trace snippet
+- replay snapshot before/after interaction
+
+Outcome:
+
+- You can prove behavior with trace + replay evidence, not just screenshots.
+
+## Step 5: Harden minimum operator posture
+
+Review:
+
+- `operators/server-setup`
+- `operators/security-and-auth`
+- `operators/troubleshooting`
+
+Outcome:
+
+- You can explain minimum deployment and incident posture for your prototype.
+
+## Exit checklist
+
+- Shared behavior converges in two windows.
+- Failure states are surfaced in UI.
+- Protocol/replay evidence captured for one user workflow.
+- App links and runbook notes are documented for teammates.

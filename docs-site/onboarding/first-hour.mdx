@@ -1,0 +1,90 @@
+---
+title: "First hour path"
+description: "Guided onboarding path from quickstart to interactive demos and protocol/replay inspection."
+icon: "map"
+---
+
+## What this path gives you
+
+In one focused session, you will:
+
+1. Start a local NodalMerge host.
+2. Run demo and playground apps from this repo.
+3. Validate shared state and collaboration behavior.
+4. Inspect runtime protocol traffic and replay snapshots.
+
+Use this path if you are new to NodalMerge and want confidence quickly.
+
+## Prerequisites
+
+- Local `nodalmerge` artifacts prepared for package-mode host and sdk workflows.
+- Host can run on `http://127.0.0.1:5074`.
+- You can run `npm run dev:apps` from this repository root.
+
+## Step 1: Run quickstart baseline
+
+Complete `quickstart` first to align core model and room-level sync expectations.
+
+Success check:
+
+- You can explain room, transaction, sync, and speculative vs authoritative behavior.
+
+## Step 2: Start host and app surfaces
+
+Follow `developer-experience/apps`:
+
+1. Start demo host.
+2. Start all app surfaces.
+3. Open `infinite-room-workspace`, `collab-maps`, `replay-lab`, and `protocol-inspector`.
+
+Success check:
+
+- All app UIs load and can target the same room id.
+
+## Step 3: Validate collaboration flows
+
+### Infinite room workspace
+
+- Use `npm sdk + wasm` mode.
+- Apply shared document action.
+- Publish presence and send peer signal from a second browser window.
+
+### Collab maps
+
+- Add shared pins from one window.
+- Confirm pins appear in second window.
+
+Success check:
+
+- You can observe convergent shared state changes across windows.
+
+## Step 4: Inspect runtime protocol and replay
+
+### Protocol inspector
+
+- Apply presets (`Presence`, `Peer lifecycle`, `Welcome/session`, `Replay/query`).
+- Select messages and inspect raw payloads.
+- Export a trace snippet.
+
+### Replay lab
+
+- Capture snapshots at multiple interaction points.
+- Use range controls to inspect event windows.
+
+Success check:
+
+- You can map observed runtime events back to app actions.
+
+## Step 5: Connect observations to docs
+
+Use these docs while reviewing your captured behavior:
+
+- `protocol/websocket-messages`
+- `api-reference/websocket-commands`
+- `sdk/javascript`
+- `operators/troubleshooting`
+
+## Next onboarding paths
+
+- `onboarding/operator-baseline`
+- `tutorials/trace-a-room-session`

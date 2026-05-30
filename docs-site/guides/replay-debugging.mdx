@@ -1,0 +1,104 @@
+---
+title: Replay debugging
+description: Debug divergence and unexpected outcomes by replaying deterministic history and comparing canonical hashes.
+---
+
+# Replay debugging
+
+Replay debugging is the fastest way to answer “what actually happened” in NodalMerge systems.
+
+Because state is derived from history deterministically, you can reproduce and inspect outcomes from node artifacts instead of guessing from UI behavior.
+
+## When to use replay debugging
+
+Use replay debugging for:
+
+- Divergent client outcomes
+- Suspected policy timeline mismatches
+- Post-incident validation of canonical state
+- Migration/cutover verification
+
+If the issue can be explained by deterministic replay evidence, fix confidence increases dramatically.
+
+## Core workflow
+
+1. Capture relevant node pack artifact(s)
+2. Replay with expected context (policy timeline if needed)
+3. Compare canonical hash and resolved state
+4. Isolate mismatch source (data, policy, transport, or app assumptions)
+
+## Replay command
+
+```bash
+nodalmerge-server replay ./pack.b64
+```
+
+With policy timeline:
+
+```bash
+nodalmerge-server replay ./pack.b64 --policy-timeline ./timeline.json
+```
+
+Or inline JSON:
+
+```bash
+nodalmerge-server replay ./pack.b64 --policy-timeline-json '[{"effective_lamport":0,"policy":{"rules":[],"default":"AllowAll"}}]'
+```
+
+## How to interpret results
+
+Replay output gives:
+
+- Resolved key/value state
+- Canonical hash
+
+Interpretation pattern:
+
+- Hash matches expected baseline -> likely transport/UI or interpretation issue
+- Hash mismatch with same expected inputs -> data/policy artifact mismatch
+- Replay failure (missing parent/signature/etc.) -> artifact integrity or capture completeness issue
+
+## Debug checklist
+
+When replay and runtime disagree:
+
+1. Confirm artifact completeness (not partial pack)
+2. Confirm policy timeline context matches runtime window
+3. Confirm compared environments use equivalent inputs
+4. Confirm app’s “canonical” view isn’t actually speculative lane output
+
+Most false alarms come from context mismatch, not replay engine nondeterminism.
+
+## Common root causes
+
+- Incomplete pack capture (missing parent history)
+- Wrong policy timeline used for replay
+- Comparing different checkpoint windows
+- UI assuming latest-server snapshot instead of deterministic replay-derived truth
+
+## Practical evidence bundle
+
+For serious incidents, retain:
+
+- Source pack artifact
+- Replay command and policy arguments used
+- Output canonical hash
+- Relevant runtime logs and metric windows
+
+This bundle makes postmortems and regression checks repeatable.
+
+## Automation suggestions
+
+Automate replay checks in:
+
+- High-risk migrations
+- Promotion workflows in room-family topologies
+- Restore/disaster-recovery drills
+
+Treat replay checks as part of release confidence, not just incident response.
+
+## Related pages
+
+- `architecture/replay-and-branching`
+- `operators/replay-cli`
+- `guides/offline-first-patterns`

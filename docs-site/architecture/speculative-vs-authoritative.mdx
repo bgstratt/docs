@@ -1,0 +1,137 @@
+---
+title: Speculative vs authoritative
+description: Design local-first flows that stay responsive while converging on validated canonical state.
+---
+
+# Speculative vs authoritative execution
+
+NodalMerge supports a two-lane execution model:
+
+- **Speculative lane** for immediate local UX
+- **Authoritative lane** for validated canonical outcomes
+
+This lets you keep a fast local-first experience without giving up deterministic policy-controlled state.
+
+## Why this split exists
+
+Real products need both:
+
+- Immediate feedback for user actions
+- Trusted canonical state for business and policy guarantees
+
+If you collapse both concerns into one lane, you usually trade away either UX responsiveness or authority guarantees.
+
+## Speculative lane
+
+The speculative lane is the client's best local projection.
+
+Characteristics:
+
+- Local writes apply immediately
+- Works while offline or intermittently connected
+- Optimized for latency and interaction quality
+- Can be revised later when canonical state arrives
+
+In core semantics, speculative reads include local unconfirmed writes plus remote writes already received.
+
+## Authoritative lane
+
+The authoritative lane defines accepted canonical state.
+
+Typical responsibilities:
+
+- Policy and capability enforcement
+- Command validation and rejection signaling
+- Deterministic replay-based verification
+- Governance controls over protected namespaces
+
+In cooperative deployments, canonical can effectively track accepted remote writes without heavy policy. In stricter deployments, authority explicitly gates what becomes canonical.
+
+## Practical namespace pattern
+
+A common pattern is separating intent and canonical state by path:
+
+- `intent/**` for optimistic client intent
+- `world/**` for authoritative resolved outcomes
+
+This keeps product behavior explicit and avoids mixing temporary intent with durable truth.
+
+```ts
+const intent = doc.map("intent/player");
+const world = doc.map("world/player");
+
+// Immediate local write for responsive UX.
+intent.set("move", { dx: 1, dy: 0, nonce: crypto.randomUUID() });
+
+// Canonical state stream.
+world.onChange(() => {
+  renderPlayer(world.get("position"));
+});
+```
+
+## Refinement loop
+
+A robust flow usually looks like:
+
+1. User action writes speculative intent
+2. UI renders immediately from speculative lane
+3. Authoritative system accepts or rejects
+4. Canonical updates arrive and UI reconciles
+
+If rejected, surface a user-visible reason and adjust UI state rather than silently snapping.
+
+## Conflict and snap-back behavior
+
+When speculative and authoritative outcomes differ, canonical winners override speculative assumptions.
+
+Your app should treat this as expected system behavior, not an exceptional failure.
+
+Design for:
+
+- Small, reversible optimistic states
+- Clear pending/confirmed/rejected UI states
+- Typed rejection handling paths where available
+
+## Failure modes to plan for
+
+### Delayed authority
+
+Canonical updates arrive later than user expectation.
+
+Mitigate with pending indicators and idempotent intent writes.
+
+### Rejected intent
+
+Authority denies requested action.
+
+Mitigate with explicit rejection UX and safe fallback state.
+
+### Disconnect/reconnect churn
+
+Speculative state may diverge temporarily while offline.
+
+Mitigate with deterministic reconciliation and durable local persistence for smooth recovery.
+
+## When to avoid a split
+
+You may not need separate speculative and authoritative lanes if:
+
+- Domain is low risk and fully cooperative
+- There is no policy-sensitive mutation path
+- Simplicity is more valuable than explicit lane semantics
+
+Even then, keep namespace design forward-compatible so you can introduce authority later without breaking state modeling.
+
+## Implementation guidance
+
+- Model optimistic actions as explicit intent records, not hidden client-only assumptions
+- Keep canonical projections easy to subscribe to and render
+- Prefer deterministic merge semantics over ad-hoc client conflict patches
+- Audit protected paths and capability scopes early
+
+## Related pages
+
+- `architecture/overview`
+- `architecture/authority-and-topology`
+- `architecture/replay-and-branching`
+- `protocol/synchronization`

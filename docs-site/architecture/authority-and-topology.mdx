@@ -1,0 +1,143 @@
+---
+title: Authority and topology
+description: Understand how room-level authority and multi-room topology work together for deterministic governance.
+---
+
+# Authority and topology
+
+NodalMerge keeps deterministic replication and room governance as separate concerns.
+
+- The CRDT engine guarantees room-local convergence.
+- Authority and topology decide who can change what, and how multiple rooms relate.
+
+This boundary is important for scaling from single-room collaboration to manager/worker systems without embedding product workflow rules into core merge logic.
+
+## Design boundary
+
+### Engine responsibilities
+
+Within a room, the engine focuses on:
+
+- Deterministic DAG append and replay
+- CRDT conflict resolution
+- Canonical hash stability
+- Local speculative behavior and convergence
+
+### Governance responsibilities
+
+Hosted/runtime governance handles:
+
+- Authority roles and capability scopes
+- Parent/child room topology
+- Promotion of child outputs into parent rooms
+- Lineage metadata and audit surfaces
+
+In short: room-local correctness is engine-owned; room-family workflow is governance-owned.
+
+## Authority model
+
+Authority in NodalMerge is room-scoped, then composed across room families.
+
+Typical role framing:
+
+- **Server authority** validates policy/capability and accepts canonical updates
+- **Owner authority** controls room-family policy and control-plane operations
+- **Worker authority** writes only within assigned room/path scopes
+
+This keeps trust explicit and prevents accidental broad write powers in multi-actor deployments.
+
+## Room topology roles
+
+A practical topology usually includes:
+
+- **Mainline room** for canonical system/product truth
+- **Child work rooms** for bounded task or worker streams
+- **Shared context rooms** for read-mostly coordination data
+
+Each room still converges independently. Topology governs relationship and promotion between rooms.
+
+## Two topology modes
+
+### Reference-only topology
+
+Parent tracks child relationships and summaries, but does not deterministically merge child history into parent state.
+
+Use when:
+
+- Parent needs indexing/discovery awareness
+- Child outputs are treated as external facts
+- Operational simplicity is the priority
+
+### Promotion-based topology
+
+Child outputs are proposed, validated, and applied to parent canonical state through explicit governance flow.
+
+Use when:
+
+- Parent state must converge from child outputs deterministically
+- Audit and lineage requirements are strict
+- Policy-bound acceptance/rejection is required
+
+## Lineage contract essentials
+
+For promotion-based room families, child rooms should be bound to explicit parent checkpoints rather than implicit “latest” assumptions.
+
+Common lineage metadata includes:
+
+- `parent_room_id`
+- `parent_checkpoint` (frontier/hash references)
+- `child_purpose`
+- `created_by`
+- `created_at_hlc`
+- `promotion_policy_id`
+
+This is what makes replay and audit explainable after retries, reconnects, and long-running worker pipelines.
+
+## Promotion flow (conceptual)
+
+A standard promotion lifecycle:
+
+1. Create child from explicit parent checkpoint
+2. Propose promotion with child provenance and checkpoint hash
+3. Validate against lineage and policy rules
+4. Apply to parent canonical state with audit artifact
+
+Deterministic rejection classes are part of the contract, not an afterthought.
+
+## Replay and audit implications
+
+In a well-formed topology:
+
+- Parent replay recovers accepted promotion outcomes deterministically
+- Child replay remains independently reconstructable
+- Deep audit can optionally dereference child artifacts for provenance
+
+This gives you production governance without sacrificing the core replay model.
+
+## Operational patterns
+
+A common rollout path:
+
+1. Start with reference-only topology for early adoption
+2. Move to promotion-based topology for deterministic aggregation
+3. Tighten governance with stricter promotion and control-plane capabilities
+
+Operationally, watch:
+
+- Promotion queue/backpressure behavior
+- Parent drift and stale-checkpoint rejects
+- Lineage cardinality and retention strategy
+
+## Choosing the right topology
+
+Choose reference-only when relationship visibility is enough.  
+Choose promotion-based when parent state correctness depends on child outcomes.
+
+If uncertain, start reference-only and keep lineage metadata complete so migration to promotion-based governance is straightforward.
+
+## Related pages
+
+- `architecture/speculative-vs-authoritative`
+- `architecture/replay-and-branching`
+- `operators/deployment-topologies`
+- `operators/replay-cli`

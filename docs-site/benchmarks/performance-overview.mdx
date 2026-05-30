@@ -1,0 +1,111 @@
+---
+title: Performance overview
+description: Understand NodalMerge benchmark goals, scenario design, and how to interpret performance results for release decisions.
+---
+
+# Performance overview
+
+This page gives you the benchmark framing needed to evaluate NodalMerge performance without overfitting to single-run numbers.
+
+Use it as the entry point before diving into attribution or operation-specific benchmark artifacts.
+
+## What benchmarks should answer
+
+NodalMerge benchmarking should answer:
+
+1. Is current behavior within acceptable performance budgets?
+2. Did a change cause meaningful regression?
+3. Which layer likely caused the change?
+4. Is the system still safe to promote under expected workload shape?
+
+If a benchmark result cannot answer one of these, refine the benchmark.
+
+## Benchmark dimensions that matter
+
+At minimum, benchmark matrices should vary:
+
+- Peer cardinality
+- Operation mix (map/list/blob)
+- Payload sizes
+- Auth/policy posture
+- Runtime host surface
+
+This avoids drawing global conclusions from a single easy scenario.
+
+## Scenario classes
+
+Maintain at least these scenario classes:
+
+- **Steady-state sync**: typical collaborative command mix
+- **Auth/policy-enabled**: capability and governance overhead posture
+- **Blob-sensitive**: payload-heavy behavior
+- **Replay/validation**: deterministic reconstruction cost
+- **Lifecycle-sensitive**: persistence/GC/topology side effects under load
+
+Each class highlights different bottlenecks.
+
+## Baseline vs candidate methodology
+
+For credible comparisons:
+
+1. Keep scenario matrix fixed.
+2. Run baseline and candidate in alternating sequence when possible.
+3. Capture environment metadata (hardware/runtime/OS).
+4. Compare per-dimension deltas, not only aggregate averages.
+
+Alternating runs reduce false positives from thermal/load drift.
+
+## Reading results safely
+
+When interpreting results:
+
+- Look at map/list/blob separately
+- Compare p95/p99 and not only mean
+- Validate stability across peer-count tiers
+- Cross-check with runtime attribution signals
+
+A “faster average” can still hide tail regressions that hurt user experience.
+
+## Suggested decision bands
+
+Use configurable decision bands for release gating:
+
+- **Green**: deltas within agreed operation-specific budgets
+- **Yellow**: investigate and justify before promotion
+- **Red**: block promotion pending fix or explicit risk acceptance
+
+Keep thresholds explicit per operation family and topology profile.
+
+## Benchmark artifact hygiene
+
+Treat benchmark outputs as release artifacts:
+
+- Timestamped result files
+- Baseline/candidate pair tracking
+- Scenario metadata embedded in results
+- Clear provenance of tooling/version
+
+This makes trend analysis and audit discussions straightforward.
+
+## Common benchmark anti-patterns
+
+- Comparing non-equivalent environments
+- Using one benchmark flavor to represent all workloads
+- Ignoring auth/policy-enabled scenarios
+- Ignoring blob-heavy cases
+- Treating microbench wins as guaranteed product-level wins
+
+## What to do after a regression
+
+1. Confirm reproducibility with rerun.
+2. Identify affected dimension (map/list/blob, peers, host, auth mode).
+3. Check runtime attribution to isolate likely layer.
+4. Decide: optimize, accept with rationale, or revert.
+
+Tie actions to explicit evidence instead of intuition.
+
+## Related pages
+
+- `benchmarks/runtime-attribution`
+- `operators/metrics-and-observability`
+- `operators/replay-cli`

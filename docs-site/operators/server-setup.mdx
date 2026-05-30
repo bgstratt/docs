@@ -1,0 +1,130 @@
+---
+title: Server setup
+description: Stand up a NodalMerge server for local development and production-like environments with durable storage and operational safety defaults.
+---
+
+# Server setup
+
+This guide shows how to run `nodalmerge-server`, choose durability/auth posture, and verify the instance is healthy before clients depend on it.
+
+## Before you start
+
+Make sure you can provide:
+
+- A reachable bind address/port for WebSocket traffic
+- A persistence path (for durable environments)
+- Basic observability endpoint strategy (metrics/logs)
+- Authentication/token strategy for locked rooms (if required)
+
+## Quick start (native)
+
+From the `nodalmerge` repo root:
+
+```bash
+cargo run -p nodalmerge-server -- --store ./data --metrics-addr 127.0.0.1:9090
+```
+
+Default listen endpoint is `ws://127.0.0.1:7878/ws/<room>` unless `AS_BIND_ADDR` is set.
+
+## Quick start (container)
+
+```bash
+docker build -t nodalmerge-server .
+docker run --rm -p 7878:7878 -v "$PWD/data:/data" -e RUST_LOG=info nodalmerge-server
+```
+
+Use persistent volume mounts for any environment where restart durability matters.
+
+## Durability choice
+
+### In-memory mode
+
+No `--store` flag means volatile in-memory operation.
+
+Use for:
+
+- Local dev
+- Short-lived demos
+- Ephemeral test runs
+
+Do not use in-memory mode for production persistence guarantees.
+
+### Durable mode
+
+Set `--store <path>` to enable persistent server storage.
+
+Durable mode enables:
+
+- Room/node/blob recovery across restarts
+- Safe idle-room eviction behavior
+- Blob GC on persisted blob data
+
+## Recommended startup flags
+
+Start with these explicit flags in non-trivial environments:
+
+- `--store <path>` for durability
+- `--metrics-addr <ip:port>` for Prometheus scraping
+- `--idle-timeout <seconds>` to reclaim inactive rooms safely
+- `--broadcast-capacity <N>` for room broadcast buffer sizing
+- `--peer-rate-nodes <N>` and `--peer-rate-bytes <MiB>` for ingress abuse protection
+- `--blob-gc-interval <seconds>` and `--blob-gc-grace <seconds>` for blob lifecycle automation
+
+Defaults are reasonable for bootstrap, but pinning values explicitly helps operations stay reproducible across environments.
+
+## Bind and network configuration
+
+Server bind address is controlled by `AS_BIND_ADDR`.
+
+Example:
+
+```bash
+AS_BIND_ADDR=0.0.0.0:7878 nodalmerge-server --store /data
+```
+
+For production, place TLS termination in front of the server so clients connect via `wss://`.
+
+## Auth posture options
+
+NodalMerge supports open and locked room patterns.
+
+- Open rooms: no room token required
+- Locked rooms: token/capability validation required at handshake
+
+For hosted auth integration, run a token-minting bridge service that issues room-capability tokens based on your identity provider.
+
+## Health and verification checklist
+
+After startup, verify:
+
+- Server logs show listening endpoint
+- WebSocket upgrade succeeds at `/ws/<room>`
+- Metrics endpoint responds when enabled (`/metrics`)
+- A test client can connect, sync, and exchange packs
+- Restart preserves expected state when `--store` is enabled
+
+## Common setup mistakes
+
+- Running production traffic without `--store`
+- Enabling lifecycle knobs in in-memory mode and expecting durability effects
+- Shipping without ingress rate limits
+- Treating direct blob I/O as required (it is an optimization path)
+- Skipping startup verification after changing bind/auth settings
+
+## Minimal production baseline
+
+Use this as a starting template:
+
+- Durable storage enabled (`--store`)
+- Metrics enabled and scraped
+- Rate limits set and monitored
+- Idle-room eviction enabled with conservative timeout
+- Blob GC enabled with non-zero grace
+- Locked-room/token strategy documented and tested
+
+## Related pages
+
+- `operators/persistence`
+- `operators/gc-and-lifecycle`
+- `operators/metrics-and-observability`
+- `operators/deployment-topologies`

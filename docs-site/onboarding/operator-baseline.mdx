@@ -1,0 +1,48 @@
+---
+title: "Operator baseline path"
+description: "Focused onboarding for operators running NodalMerge host and validating support posture."
+icon: "server"
+---
+
+## Goal
+
+Establish a practical operator baseline for local and pre-production environments.
+
+## Step 1: Host readiness checks
+
+Run host from `apps/hosts/nodalmerge-demo-host` and validate:
+
+- `/api/host/health`
+- `/api/host/providers`
+
+Review:
+
+- `operators/server-setup`
+- `operators/persistence`
+
+## Step 2: Security and compatibility posture
+
+Review and confirm baseline:
+
+- `operators/security-and-auth`
+- `operators/upgrades-and-migrations`
+- `api-reference/compatibility-and-support`
+
+## Step 3: Runtime incident drill
+
+Use `protocol-inspector` and `replay-lab` together:
+
+1. capture protocol trace snippet during a room session
+2. capture replay snapshots
+3. verify you can explain divergence symptoms with both tools
+
+Review:
+
+- `operators/troubleshooting`
+- `api-reference/websocket-commands`
+
+## Success criteria
+
+- You can bring up host and verify provider composition.
+- You can capture and interpret runtime evidence for triage.
+- You can execute upgrade/rollback preflight checklist with confidence.

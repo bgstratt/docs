@@ -1,0 +1,125 @@
+---
+title: Replay and branching
+description: Use deterministic replay and explicit branching semantics to audit, debug, and evolve room state safely.
+---
+
+# Replay and branching
+
+Replay is the trust anchor for NodalMerge correctness.
+
+Given the same valid room history, replay must produce the same resolved state and canonical hash on every peer and platform.
+
+Branching and forking build on that guarantee by creating explicit alternate timelines without mutating historical truth.
+
+## Replay fundamentals
+
+A replay run reconstructs room state from immutable history.
+
+At minimum, replay uses:
+
+- Room transaction nodes
+- Deterministic merge semantics
+- Optional policy timeline context
+
+Replay output is deterministic state plus a canonical fingerprint suitable for verification and audit workflows.
+
+## Determinism contract
+
+Replay determinism is not “best effort.” It is a hard architectural contract.
+
+That means replay does **not** depend on:
+
+- Wall-clock timing
+- Network delivery order
+- Runtime-specific side effects
+- Process-local randomness
+
+This contract is what makes canonical hashes and snapshot validation meaningful.
+
+## Why canonical hash matters
+
+Canonical hash provides a compact integrity signal for replayed state.
+
+Use cases include:
+
+- Verifying snapshot compatibility
+- Comparing replay outcomes across environments
+- Auditing whether parent/child promotion outcomes remain stable
+- Debugging divergence without manual state inspection
+
+## Replay with policy timelines
+
+In governance-heavy deployments, replay may evaluate history under a lamport-versioned policy timeline.
+
+This allows “policy at time of write” semantics while preserving determinism:
+
+- Nodes are validated against the policy effective at their lamport point
+- Timeline ordering is normalized
+- Resulting replay state remains deterministic for the same node/timeline inputs
+
+## Replay failure classes
+
+Replay should fail fast for invalid history surfaces, such as:
+
+- Missing parent dependencies
+- Invalid signatures or content-address violations
+- Policy-invalid operations under declared replay context
+
+Deterministic failure is as important as deterministic success for operational trust.
+
+## Branching model
+
+Branching creates a new timeline from an explicit historical cut.
+
+Typical cut references:
+
+- Specific node or hash checkpoint
+- Frontier-aligned room checkpoint
+- Policy-governed checkpoint artifact
+
+After branching, timelines diverge independently while sharing historical ancestry up to the cut.
+
+## Fork semantics
+
+A fork is an explicit new room identity with copied historical prefix.
+
+Forking does not rewrite the source room. It produces:
+
+- New room ID
+- Shared history prefix
+- Independent future writes and policy evolution
+
+This makes experimentation and controlled alternative outcomes possible without mutating canonical source lanes.
+
+## Parent-child replay in topology workflows
+
+For room-family governance, replay semantics stay modular:
+
+- Child replay remains independently reconstructable
+- Parent replay reconstructs accepted promotion outcomes deterministically
+- Parent replay should not require full child DAG loading for baseline verification
+
+Optional deep-audit flows may dereference child artifacts when full provenance is required.
+
+## Practical use cases
+
+Replay and branching are foundational for:
+
+- Incident forensics and deterministic bug reproduction
+- “What-if” simulation rooms from known checkpoints
+- Safe migration and policy cutover verification
+- Audit-friendly promotion pipelines in manager/worker systems
+
+## Design guidance
+
+- Treat replay artifacts as first-class operational assets
+- Keep checkpoint metadata explicit and immutable
+- Prefer explicit branch/fork events over implicit timeline rewrites
+- Validate canonical hashes at critical workflow boundaries
+
+## Related pages
+
+- `architecture/overview`
+- `architecture/authority-and-topology`
+- `architecture/speculative-vs-authoritative`
+- `operators/replay-cli`

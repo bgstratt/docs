@@ -1,0 +1,76 @@
+---
+title: "Incident debug sprint"
+description: "Run a focused debug drill using protocol traces, replay windows, and operator troubleshooting checkpoints."
+icon: "siren"
+---
+
+## Goal
+
+Practice a repeatable incident-debug workflow in under 45 minutes.
+
+## Scenario
+
+Assume a report: "Peers connected, but collaborative updates looked inconsistent for a short period."
+
+## Step 1: Reproduce quickly
+
+1. Start host and app surfaces from `developer-experience/apps`.
+2. Open two windows in the same room.
+3. Perform 2-3 shared actions (document update, presence update, map pin).
+
+Capture timestamps for each action.
+
+## Step 2: Capture protocol evidence
+
+In `protocol-inspector`:
+
+- apply `Peer lifecycle`, `Presence`, and `Replay/query` presets
+- export trace snippet for the reproduction window
+
+Record:
+
+- event ordering
+- unexpected missing/extra message types
+
+## Step 3: Capture replay evidence
+
+In `replay-lab`:
+
+1. capture pre-action snapshot
+2. capture post-action snapshot
+3. inspect with range start/size controls around suspected window
+
+Record:
+
+- event window differences
+- signals that indicate delayed or reordered behavior
+
+## Step 4: Run operator triage checklist
+
+Apply:
+
+- `operators/troubleshooting`
+- `operators/metrics-and-observability`
+- `operators/replay-cli`
+
+Check:
+
+- connection lifecycle anomalies
+- close codes/reasons
+- suspicious timing gaps in observed events
+
+## Step 5: Write your incident note
+
+Template:
+
+- **symptom**
+- **reproduction steps**
+- **protocol evidence** (trace snippet summary)
+- **replay evidence** (snapshot window summary)
+- **probable cause**
+- **next mitigation**
+
+## Success criteria
+
+- You can produce an evidence-backed root-cause hypothesis.
+- Another engineer can replay your debug flow without additional context.

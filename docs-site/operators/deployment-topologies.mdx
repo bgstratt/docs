@@ -1,0 +1,142 @@
+---
+title: Deployment topologies
+description: Choose the right NodalMerge deployment pattern for your team, from single-node bootstrap to manager/worker room-family operations.
+---
+
+# Deployment topologies
+
+NodalMerge supports multiple deployment shapes depending on scale, governance, and workflow complexity.
+
+This page helps you choose the right topology and evolve safely over time.
+
+## Topology design axes
+
+Pick topology based on:
+
+- **Authority model**: open/cooperative vs policy-governed
+- **Room model**: isolated rooms vs room families
+- **Durability needs**: ephemeral vs restart-safe
+- **Operational complexity tolerance**: minimal vs orchestrated pipelines
+
+## Topology 1: Single-node bootstrap
+
+One `nodalmerge-server` instance with local durable storage.
+
+Best for:
+
+- Early product development
+- Internal pilots
+- Low-traffic hosted environments
+
+Typical characteristics:
+
+- Simple operations and debugging
+- Fast local iteration
+- Minimal moving parts
+
+## Topology 2: Hosted app + token bridge
+
+NodalMerge server with external auth integration that mints room-scoped capability tokens.
+
+Best for:
+
+- Products with existing identity stack
+- Environments requiring room/path write controls
+- Teams needing short-lived token governance
+
+Typical characteristics:
+
+- Server remains sync authority
+- Auth provider remains identity authority
+- Capability scope controls client write surface
+
+## Topology 3: Room-family governance (manager/worker)
+
+Mainline and child work rooms with explicit lineage and promotion workflows.
+
+Best for:
+
+- Multi-agent/multi-worker orchestration
+- Workflows where child outcomes must be promoted deterministically
+- Auditable parent/child convergence requirements
+
+Typical characteristics:
+
+- Explicit parent checkpoint linkage for child rooms
+- Promotion propose/validate/apply lifecycle
+- Deterministic parent replay from accepted promotion artifacts
+
+## Reference-only vs promotion-based room families
+
+Room-family governance usually starts in one of two modes:
+
+### Reference-only
+
+Parent tracks child room metadata but does not deterministically merge child outcomes into parent canonical state.
+
+Use when parent needs awareness/indexing only.
+
+### Promotion-based
+
+Child outputs flow through explicit promotion validation and application into parent canonical state.
+
+Use when deterministic aggregation and governance controls are required.
+
+## Topology evolution path
+
+A practical progression:
+
+1. Single-node durable bootstrap
+2. Add external token/auth bridge
+3. Introduce room-family workflows where needed
+4. Tighten governance and promotion controls
+
+Do not start with maximum topology complexity unless your workflow truly requires it.
+
+## Deployment concerns by topology
+
+### Single-node bootstrap
+
+- Enable durable storage and backups
+- Keep metrics private and monitored
+- Validate restart hydration and replay checks
+
+### Auth-bridged deployments
+
+- Ensure token minting latency/reliability is operationally acceptable
+- Rotate signing/verifier material with runbooks
+- Monitor token-expiry disconnect behavior
+
+### Room-family deployments
+
+- Enforce lineage metadata completeness
+- Monitor promotion queue depth and rejection reasons
+- Validate parent replay determinism against accepted promotion history
+
+## Failure-domain thinking
+
+Regardless of topology, separate concerns:
+
+- Sync transport failures
+- Storage/persistence failures
+- Auth/token failures
+- Governance/promotion workflow failures
+
+This helps alerts map to clear operator actions.
+
+## Choosing your first production topology
+
+Most teams should start with:
+
+- Durable single-node deployment
+- External auth/token bridge if needed
+- Clear path to promotion-based room families later
+
+Only adopt manager/worker room families once you need deterministic parent-child workflow governance.
+
+## Related pages
+
+- `operators/server-setup`
+- `operators/persistence`
+- `operators/replay-cli`
+- `architecture/authority-and-topology`

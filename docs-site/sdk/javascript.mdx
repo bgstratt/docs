@@ -1,0 +1,168 @@
+---
+title: JavaScript SDK
+description: Build local-first collaborative applications with the NodalMerge JavaScript SDK, from room connection through sync, presence, and production hardening.
+---
+
+# JavaScript SDK
+
+The JavaScript SDK gives you a practical API for room connection, synchronized state updates, replay-aware reads, and collaboration signals.
+
+Use this page as your implementation baseline for browser or JS runtime clients.
+
+## Install
+
+```bash
+npm install nodalmerge-sdk-js
+```
+
+## Minimal setup
+
+```ts
+import { createNodalMergeSdk } from "nodalmerge-sdk-js";
+
+const sdk = await createNodalMergeSdk({
+  wsUrl: "ws://127.0.0.1:7878/ws/runtime",
+  roomId: "demo-room",
+  transport: { mode: "auto" },
+  reconnect: {
+    enabled: true,
+    initialDelayMs: 500,
+    maxDelayMs: 8000
+  }
+});
+
+await sdk.room.connect();
+```
+
+## Read and write state
+
+```ts
+sdk.sync.set("profile/name", "alice");
+sdk.sync.set("profile/role", "engineer");
+sdk.sync.push();
+
+const name = sdk.sync.get("profile/name");
+```
+
+Call `sdk.sync.push()` after local mutations to flush updates.
+
+## Text operations
+
+Use range-safe helpers for collaborative text edits:
+
+```ts
+sdk.sync.insertTextAt("doc/title", 0, "Hello");
+sdk.sync.insertTextAt("doc/title", 5, " world");
+sdk.sync.deleteTextAt("doc/title", 5, 1);
+sdk.sync.push();
+```
+
+Advanced anchor-based APIs are available when your UI/editor needs stable positional semantics under concurrent edits.
+
+## Presence and ephemeral collaboration
+
+Presence is for live ephemeral state, not durable business data:
+
+```ts
+sdk.presence.set({ cursor: { x: 120, y: 220 } }, { ttlMs: 5_000 });
+```
+
+Use presence for cursor/typing/view state. Persist durable facts via sync state instead.
+
+## Runtime events
+
+Subscribe to runtime messages for observability and integration hooks:
+
+```ts
+const stop = sdk.on("runtime-message", (msg) => {
+  console.log("runtime event", msg.type);
+});
+
+// later
+stop();
+```
+
+Use this stream for diagnostics and advanced UX instrumentation.
+
+## Offline and persistence
+
+SDK can queue and flush writes across reconnect boundaries.
+
+For peer-local durability, enable persistence explicitly:
+
+```ts
+const sdk = await createNodalMergeSdk({
+  wsUrl: "ws://127.0.0.1:7878/ws/runtime",
+  roomId: "demo-room",
+  persistence: {
+    enabled: true,
+    adapter: "indexeddb",
+    dbName: "nodalmerge-peer-local"
+  }
+});
+```
+
+Validate restart and reconnect behavior with realistic offline drills before shipping.
+
+## Intent vs canonical pattern
+
+Model local optimism and authoritative outcomes in separate namespaces:
+
+- `intent/**` for speculative writes
+- `world/**` for canonical accepted state
+
+This keeps your UI responsive while preserving deterministic refinement behavior.
+
+## Query and projection helpers
+
+Runtime query APIs support history and projection workflows:
+
+- Register query specs
+- Build projections at target checkpoints
+- Read paginated projection results
+- Invalidate or list projections
+
+Use these APIs when you need canonical-lane analytics/read models beyond direct key access.
+
+## Transport options
+
+`transport.mode` commonly uses:
+
+- `"auto"`: allow negotiated transport enhancements when available
+- `"ws-only"`: force WebSocket-only behavior
+
+Start with `auto`, switch to `ws-only` only when environment constraints require strict transport control.
+
+## Error and rejection handling
+
+Treat rejection/error signals as first-class UX and ops inputs:
+
+- Surface user-meaningful failure states
+- Log structured rejection context
+- Avoid silent rollback paths
+
+In policy-governed systems, rejection handling is part of normal operation.
+
+## Production checklist
+
+- Durable server storage enabled
+- Reconnect policy configured and tested
+- Local persistence strategy validated
+- Intent/canonical namespaces separated
+- Presence restricted to ephemeral signals
+- Runtime event/rejection telemetry wired
+
+## Common mistakes
+
+- Forgetting `sdk.sync.push()` after local writes
+- Using presence for durable domain state
+- Mixing optimistic and canonical writes in one keyspace
+- Assuming online-only behavior during QA
+- Ignoring rejection pathways until late integration
+
+## Related pages
+
+- `sdk/overview`
+- `sdk/react`
+- `sdk/presence`
+- `sdk/subscriptions`

@@ -1,0 +1,130 @@
+---
+title: Blob flow
+description: Understand how NodalMerge moves blob payloads separately from node history, including direct upload/download paths.
+---
+
+# Blob flow
+
+NodalMerge treats blobs as content-addressed payloads synchronized alongside, but separate from, node history.
+
+Node operations reference blob hashes. Blob bytes are transferred through dedicated blob messages or direct object-storage URLs when negotiated.
+
+## Why blob flow is separate
+
+Large binary payloads behave differently from CRDT node history:
+
+- Much larger payload sizes
+- Different retry and lifecycle behavior
+- Different storage backend needs
+
+Keeping blob transfer separate prevents large payloads from bloating normal history sync paths.
+
+## Core blob messages
+
+Typical blob-related wire messages include:
+
+- `blob-upload` (client uploads bytes over WebSocket)
+- `blob-request` (client asks for specific blob hashes)
+- `blob-pack` (server replies with requested blob bytes)
+- `blob-available` (broadcast hint that blobs are now retrievable)
+
+When direct blob I/O is enabled, additional messages are used:
+
+- `request-upload` (ask server for upload URL)
+- `upload-granted` / `upload-denied`
+- `blob-uploaded` (client confirms direct upload completion)
+- `blob-redirect` (server returns direct download URLs)
+- `upload-rejected` (verification failure on direct upload path)
+
+## Baseline flow (WebSocket bytes path)
+
+### Upload path
+
+1. Client sends `blob-upload` with `{ hash, data_b64 }` entries
+2. Server verifies content hash matches payload
+3. Server persists accepted blobs and stores them in room blob store
+4. Server broadcasts `blob-available`
+
+Only hash-valid blobs are accepted.
+
+### Download path
+
+1. Client sends `blob-request` for hash list
+2. Server looks up available blobs in room store
+3. Server replies with `blob-pack`
+4. Client resolves pending blob fetches from returned entries
+
+Responses can include unavailable requests so client can close pending bookkeeping deterministically.
+
+## Direct blob I/O flow (negotiated)
+
+Direct blob I/O offloads payload transfer to backing object storage while keeping protocol control in NodalMerge.
+
+### Direct upload
+
+1. Client sends `request-upload` with target hash and size
+2. Server may return presigned upload URL (`upload-granted`)
+3. Client uploads bytes directly to object storage
+4. Client sends `blob-uploaded`
+5. Server verifies upload (`verify_uploaded`) and then broadcasts `blob-available`
+
+If URL grant/verification fails, protocol falls back to WebSocket upload path.
+
+### Direct download
+
+1. Client sends `blob-request`
+2. Server resolves download URLs where available
+3. Server replies with `blob-redirect` for redirect-capable hashes
+4. Remaining hashes fall through to `blob-pack` bytes-over-WebSocket
+
+This mixed response model keeps compatibility while optimizing large payloads.
+
+## Integrity model
+
+Blob integrity is content-hash based:
+
+- Upload acceptance requires hash match
+- Direct-upload completion may require backend verification
+- Blob references in room state are hash pointers, not mutable file handles
+
+This keeps payload identity stable across transports and storage backends.
+
+## Availability signaling
+
+`blob-available` is a lightweight signal to peers that data may now be retrievable.
+
+It does not replace request/response fetch semantics. Peers still request missing blob payloads explicitly.
+
+## Storage coupling and lifecycle
+
+Blob protocol behavior is tied to persistence backend capabilities:
+
+- In-memory or local file-backed stores can serve bytes directly
+- Object-storage backends can expose direct URL flows
+- GC/lifecycle rules remain backend-governed but must respect reachability semantics
+
+Blob transport choices must not change replay correctness for node history.
+
+## Failure and fallback behavior
+
+Blob flow is designed to fail safely:
+
+- Bad hash payloads are rejected
+- Unsupported direct I/O capability falls back to WebSocket bytes path
+- Verification failures produce explicit rejection semantics
+- Missing blobs stay request-driven and retryable
+
+This keeps media/file handling robust under mixed versions and partial backend capability.
+
+## Implementation guidance
+
+- Always treat hash as source of truth for blob identity
+- Use direct I/O for large payload optimization, not correctness
+- Keep WebSocket path healthy as compatibility fallback
+- Monitor upload verification and missing-blob retry patterns in production
+
+## Related pages
+
+- `protocol/synchronization`
+- `architecture/storage-and-blobs`
+- `operators/gc-and-lifecycle`

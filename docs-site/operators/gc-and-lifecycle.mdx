@@ -1,0 +1,133 @@
+---
+title: GC and lifecycle
+description: Operate room lifecycle and blob garbage collection safely with durable storage guards and deterministic reachability semantics.
+---
+
+# GC and lifecycle
+
+NodalMerge lifecycle controls are designed to reclaim resources without compromising replay correctness.
+
+This page covers:
+
+- Idle-room eviction
+- Blob garbage collection
+- Safety gates and rollout guidance
+
+## Lifecycle controls at a glance
+
+Key server lifecycle features:
+
+- **Idle-room eviction** via `--idle-timeout`
+- **Blob GC sweeps** via `--blob-gc-interval` and `--blob-gc-grace`
+- **Snapshot sweeper** lifecycle control via snapshot interval settings
+
+These features are intentionally durability-aware to avoid data-loss behavior in volatile mode.
+
+## Durability gate (critical)
+
+Idle eviction and blob GC are safe only when persistence is durable.
+
+In in-memory mode:
+
+- Idle eviction is disabled to prevent room-history loss
+- Blob GC is disabled because there is no on-disk blob state to reclaim safely
+
+Always enable `--store` before relying on automated lifecycle jobs.
+
+## Idle-room eviction
+
+Idle-room eviction removes rooms with zero connected peers after timeout.
+
+### Configuration
+
+- `--idle-timeout <seconds>`
+- Default is `300`
+- `0` disables idle eviction
+
+### Safety behavior
+
+A room is evicted only when:
+
+- Room has no connected peers
+- Idle duration exceeds timeout
+- Room is not actively referenced by other runtime handles
+
+Eviction stops runtime tick activity for that room. In durable mode, next access re-hydrates room state from persistence.
+
+### Operational use
+
+Use idle eviction to cap memory growth in workloads with many short-lived rooms.
+
+Start conservative and tighten after observing real room reconnect patterns.
+
+## Blob GC
+
+Blob GC reclaims unreferenced persisted blob payloads.
+
+### Configuration
+
+- `--blob-gc-interval <seconds>` (default `0`, disabled)
+- `--blob-gc-grace <seconds>` (default `86400`, 24h)
+
+### Reachability model
+
+Blob liveness should be derived from authoritative reachability semantics, not active peer/session state.
+
+In current room-local behavior, live blob sets are computed from blob-reference operations so catch-up peers can still retrieve required payloads.
+
+### Two-phase deletion model
+
+Blob GC follows a tombstone/grace model:
+
+1. Unreferenced blob gets tombstoned
+2. Blob is deleted only after grace has elapsed
+3. Re-referenced blobs clear tombstones and remain live
+
+`grace = 0` effectively collapses this into immediate delete, useful for tests but risky for production.
+
+## Lifecycle rollout guidance
+
+Recommended rollout sequence:
+
+1. Enable durable persistence (`--store`)
+2. Enable metrics and logging visibility
+3. Turn on idle eviction with conservative timeout
+4. Enable blob GC with long grace (24h+)
+5. Shorten intervals/grace only after stable verification
+
+## Monitoring signals
+
+Track these signals during rollout:
+
+- Eviction activity (`rooms_total`, eviction counters/logs)
+- Blob reclaim counters and rates
+- GC error counters or warnings
+- Reconnect/catch-up behavior after evictions
+- Missing-blob fetch anomalies after GC passes
+
+Unexpected spikes in rejected/missing blob behavior often indicate reachability model mismatch or overly aggressive lifecycle settings.
+
+## Verification checklist
+
+After enabling lifecycle jobs, verify:
+
+- Idle rooms are evicted only after timeout and no active peers
+- Reopened evicted rooms rehydrate correctly
+- Blob GC deletes only after grace
+- Re-referenced blobs survive subsequent sweeps
+- No replay/catch-up regressions in test rooms
+
+## Common mistakes
+
+- Enabling lifecycle jobs without durable persistence
+- Using very short grace windows in production
+- Treating GC as purely storage concern instead of reachability concern
+- Ignoring warning logs during initial rollout
+- Coupling liveness decisions to session presence
+
+## Related pages
+
+- `operators/server-setup`
+- `operators/persistence`
+- `operators/metrics-and-observability`
+- `architecture/storage-and-blobs`

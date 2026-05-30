@@ -1,0 +1,141 @@
+---
+title: SDK overview
+description: Choose the right NodalMerge SDK surface, connect to rooms, and adopt local-first patterns that converge under authority controls.
+---
+
+# SDK overview
+
+NodalMerge provides JavaScript-first SDK surfaces for building local-first collaborative applications on top of deterministic room history.
+
+This page helps you choose an SDK surface and adopt a safe baseline integration pattern.
+
+## SDK surfaces
+
+NodalMerge currently exposes two practical JavaScript entry styles:
+
+- **Document-style API** (`createDoc`) for map/text/list-centric collaboration
+- **Runtime-oriented SDK** (`createNodalMergeSdk`) for room/sync/replay/offline/topology control
+
+Both sit on top of the same core convergence model and wire protocol.
+
+## Which surface should you use?
+
+Use document-style API when:
+
+- You want ergonomic map/text/list primitives
+- You are building app-level collaborative UX quickly
+- You prefer high-level handles and event hooks
+
+Use runtime-oriented SDK when:
+
+- You need explicit control over sync/replay/query/projection flows
+- You are building host/runtime integrations
+- You want direct access to room, transport, and topology sub-APIs
+
+You can start with the higher-level surface and move deeper only where needed.
+
+## Core integration flow
+
+Most apps follow this sequence:
+
+1. Initialize SDK with room and transport options
+2. Connect room/session
+3. Apply local writes
+4. Push/flush updates
+5. Subscribe to change/runtime events
+6. Reconcile speculative intent with canonical outcomes
+
+This sequence supports both local-first UX and policy-governed canonical correctness.
+
+## Data-model alignment
+
+Use SDK data primitives according to merge semantics:
+
+- Map for key/value winner semantics
+- Text for collaborative text editing
+- List for ordered item identity workflows
+- Blob references for large binary payloads
+
+Choosing the right primitive is more important than convenience wrappers.
+
+## Local-first and canonical refinement
+
+SDK integrations should explicitly separate:
+
+- Fast speculative user intent
+- Authoritative canonical outcomes
+
+A common namespace pattern:
+
+- `intent/**` for optimistic writes
+- `world/**` for canonical accepted state
+
+This prevents mixing transient intent with durable truth.
+
+## Connection, transport, and reconnect
+
+The SDK handles transport lifecycle concerns including:
+
+- WebSocket session management
+- Reconnect/backoff behavior
+- Optional mesh/direct transport enhancements where available
+
+Build UI states that tolerate reconnect and eventual refinement rather than assuming continuous connectivity.
+
+## Presence and ephemeral state
+
+Presence APIs are for real-time ephemeral collaboration state:
+
+- Cursor positions
+- Live participant context
+- Typing/attention hints
+
+Do not model durable business state in presence channels.
+
+## Persistence strategy
+
+For production local-first behavior, define and test persistence ownership explicitly:
+
+- What state is cached locally
+- When it is flushed
+- How hydration runs on app start
+
+Validate reconnect and hydration behavior with real offline/restart drills, not only unit tests.
+
+## Rejections, conflicts, and guardrails
+
+SDK surfaces expose rejection/conflict signals that should feed user-visible and operator-visible handling.
+
+Recommended baseline:
+
+- Handle typed rejection classes where available
+- Record recent rejection/conflict context for diagnostics
+- Avoid silent rollback behavior in UX
+
+## Recommended adoption path
+
+Start with:
+
+1. Single room end-to-end connect/write/read flow
+2. Deterministic primitive modeling (map/text/list)
+3. Reconnect and offline persistence validation
+4. Intent vs canonical refinement flow
+5. Capability-scoped auth integration (if needed)
+
+Then layer advanced query/projection/topology behavior.
+
+## Common mistakes
+
+- Treating SDK transport success as canonical-state success
+- Storing durable domain data in ephemeral presence channels
+- Skipping local persistence drills until late
+- Mixing intent and canonical writes in the same namespace
+- Choosing map/list/text primitives based on convenience instead of merge semantics
+
+## Related pages
+
+- `sdk/javascript`
+- `sdk/react`
+- `sdk/presence`
+- `sdk/undo-and-conflicts`
+- `sdk/subscriptions`

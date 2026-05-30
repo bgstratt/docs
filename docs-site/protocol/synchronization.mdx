@@ -1,0 +1,152 @@
+---
+title: Synchronization protocol
+description: Learn how peers handshake, compute history differences, and converge through catch-up plus steady-state delta sync.
+---
+
+# Synchronization protocol
+
+NodalMerge synchronization exchanges missing room history and converges by deterministic replay.
+
+This page focuses on synchronization flow. For message catalog details, see `protocol/websocket-messages`.
+
+## Sync goals
+
+The synchronization protocol is designed to:
+
+- Converge peers with deterministic outcomes
+- Minimize payload size for long-lived rooms
+- Support reconnect and out-of-order delivery
+- Degrade gracefully across mixed client capability sets
+
+## Session phases
+
+A typical session runs through:
+
+1. Handshake
+2. Difference computation
+3. Catch-up transfer
+4. Steady-state incremental replication
+
+These phases are explicit so recovery can restart cleanly after disconnects.
+
+## 1) Handshake
+
+Client starts with `hello`. Server validates session constraints and returns `welcome`.
+
+Handshake responsibilities include:
+
+- Peer identity extraction
+- Optional room token validation when room is locked
+- Subscription scope initialization
+- Capability negotiation
+- Initial sync hints (frontier / diff metadata)
+
+Handshake timeout or malformed payload ends session early to keep failure deterministic.
+
+## 2) Difference computation
+
+After `hello`, server computes what each side is missing.
+
+Conceptually:
+
+- `only_in_client` tells server what client must upload
+- `only_in_server` tells server what it should send to client
+
+Diff strategy can use:
+
+- Baseline known/frontier comparison
+- IBF-assisted symmetric diff when negotiated
+- MST-assisted refinement for deeper divergence
+
+The protocol chooses the best available path based on negotiated capabilities and provided handshake fields.
+
+## 3) Catch-up transfer
+
+Server sends `welcome` first, then optional catch-up pack if needed.
+
+Catch-up contains encoded missing nodes so client can import and replay to current server view.
+
+Important behavior:
+
+- Catch-up can be filtered by subscription scope
+- Empty filtered catch-up is a valid outcome
+- Catch-up may be skipped when there is no missing server history
+
+## 4) Steady-state replication
+
+After catch-up, protocol shifts to incremental replication.
+
+### Client push
+
+Client sends `pack` with newly produced nodes.
+
+Server:
+
+- Decodes and validates pack
+- Applies accepted nodes
+- Broadcasts accepted nodes to room peers
+
+Only accepted nodes are relayed, which keeps downstream state aligned with authoritative import behavior.
+
+### Server/peer push
+
+Peers receive relayed `pack` messages representing accepted room history deltas.
+
+Clients import, dedupe, and replay deterministically.
+
+## On-demand pull paths
+
+When needed, clients can request specific missing segments:
+
+- `request` for missing nodes from known set
+- `mst-request` and `mst-done` for MST-guided sync completion
+
+These mechanisms support convergence when peers are far apart or rejoining after longer disconnection windows.
+
+## Subscription updates
+
+Client can change sync scope at runtime via `subscribe`.
+
+Server acknowledges and applies updated filtering for relayed packs.
+
+Scope filtering is a transport/materialization control, not a write-authority control.
+
+## Reconnect behavior
+
+Reconnect is expected and normal.
+
+On reconnect, client repeats handshake and diff process:
+
+- Re-establish session and negotiated capabilities
+- Recompute missing history
+- Apply catch-up and resume steady-state deltas
+
+Protocol correctness does not depend on uninterrupted connection state.
+
+## Backpressure and safety controls
+
+Synchronization includes explicit protection against unhealthy sessions.
+
+Typical controls include:
+
+- Per-peer ingress rate limits
+- Lagging subscriber handling with controlled disconnect
+- Explicit close/retry paths instead of silent divergence
+
+These behaviors prioritize deterministic recovery over hidden partial-state drift.
+
+## Failure semantics
+
+Protocol failures should be explicit and classifiable:
+
+- Invalid payload format -> reject/close
+- Unauthorized/expired auth context -> reject/close
+- Rate-limit or overload conditions -> controlled disconnect and resync path
+
+This keeps operational debugging and client retry policy predictable.
+
+## Related pages
+
+- `protocol/websocket-messages`
+- `protocol/blob-flow`
+- `architecture/sync-protocol`

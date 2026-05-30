@@ -1,0 +1,157 @@
+---
+title: Metrics and observability
+description: Configure Prometheus metrics and structured logging for NodalMerge, then use them for capacity planning and incident triage.
+---
+
+# Metrics and observability
+
+NodalMerge exposes operational metrics and structured logs designed for production triage.
+
+This page focuses on:
+
+- Enabling metrics safely
+- Understanding key metric families
+- Building a practical triage workflow
+
+## Enable metrics endpoint
+
+Metrics are exposed from a dedicated admin listener:
+
+```bash
+nodalmerge-server --metrics-addr 127.0.0.1:9090
+```
+
+Scrape endpoint:
+
+- `http://127.0.0.1:9090/metrics`
+
+Keep metrics on a private/admin interface. Do not expose it on the public WebSocket surface.
+
+## Logging baseline
+
+Server logging uses `RUST_LOG`/`EnvFilter`.
+
+Typical baseline:
+
+- `info` for normal operation
+- targeted `debug`/`trace` for incident investigation
+
+Example:
+
+```bash
+RUST_LOG=info,nodalmerge_server=info,nodalmerge_core=info nodalmerge-server --store ./data
+```
+
+Increase verbosity temporarily for troubleshooting rather than running high-verbosity continuously.
+
+## Core metric families
+
+### Capacity and occupancy
+
+- `nodalmerge_rooms_total`
+- `nodalmerge_peers_total{room}`
+- `nodalmerge_room_bytes_resident`
+
+Use for room cardinality growth, memory planning, and hotspot identification.
+
+### Sync and ingest health
+
+- `nodalmerge_nodes_accepted_total{room}`
+- `nodalmerge_merge_batch_seconds`
+- `nodalmerge_filtered_nodes_total`
+- `nodalmerge_filtered_bytes_total`
+- `nodalmerge_filtered_pack_dropped_total`
+
+Use to monitor replication throughput and subscription-filter impact.
+
+### Persistence performance
+
+- `nodalmerge_persistence_write_seconds{kind=node|nodes_batch|blob}`
+
+Use to detect storage regressions and backend saturation.
+
+### Lifecycle and GC
+
+- `nodalmerge_eviction_total`
+- `nodalmerge_blob_gc_deleted_total{room}`
+- `nodalmerge_gc_runs_total`
+- `nodalmerge_gc_marked_total`
+- `nodalmerge_gc_error_total`
+
+Use to validate lifecycle behavior and catch GC drift/errors.
+
+### Safety and guardrail events
+
+- `nodalmerge_broadcast_lagged_total`
+- `nodalmerge_ws_send_timeout_total`
+- `nodalmerge_rate_limit_drops_total`
+- `nodalmerge_lamport_rejected_total{reason}`
+- `nodalmerge_token_expired_disconnects_total`
+
+These are high-signal counters for protocol pressure, abuse, and validity failures.
+
+### Topology/query operational metrics
+
+NodalMerge also emits metrics for topology promotion and query/projection pipelines (inflight, queue depth, queue wait, outcome totals).
+
+Track these if you run manager/worker or query-heavy workloads.
+
+## Recommended dashboard slices
+
+Start with four dashboards:
+
+1. **Traffic and occupancy**: rooms, peers, accepted nodes
+2. **Latency and persistence**: merge/persistence histograms
+3. **Lifecycle and GC**: eviction + GC run/error/delete trends
+4. **Guardrail events**: lagged peers, rate-limit drops, token-expiry disconnects, lamport rejects
+
+Use room label drill-down only when needed to avoid high-cardinality dashboard noise.
+
+## Alerting suggestions
+
+Good first alerts:
+
+- Sustained increase in `nodalmerge_merge_batch_seconds` p95/p99
+- Persistent growth in `nodalmerge_persistence_write_seconds` p95/p99
+- Non-trivial `nodalmerge_gc_error_total` increase
+- Sudden spikes in `nodalmerge_rate_limit_drops_total` or `nodalmerge_broadcast_lagged_total`
+- Unexpected rise in `nodalmerge_lamport_rejected_total`
+
+Alert on trends and sustained rates, not single-event spikes.
+
+## Incident triage workflow
+
+When sync health degrades:
+
+1. Check occupancy and throughput (`rooms_total`, `peers_total`, accepted nodes)
+2. Check merge and persistence latencies
+3. Check guardrail counters (lagged/rate-limit/timeout/reject)
+4. Correlate with logs for affected room/peer prefixes
+5. Validate whether lifecycle jobs (eviction/GC) coincided with onset
+
+This sequence helps separate client/network churn from storage pressure or protocol invalid-input events.
+
+## Cardinality and labeling hygiene
+
+Labels are intentionally bounded in core metrics.
+
+Operator guidance:
+
+- Avoid adding unbounded high-cardinality labels in custom instrumentation
+- Prefer peer prefixes or room-level aggregation over full identities
+- Build drill-down dashboards separately from overview dashboards
+
+## Common observability mistakes
+
+- Exposing metrics endpoint publicly
+- Running permanently at debug/trace verbosity
+- Alerting on raw counters without rate windows
+- Ignoring guardrail counters because they “self-heal”
+- Treating room-level outliers as global regressions without segmentation
+
+## Related pages
+
+- `operators/server-setup`
+- `operators/gc-and-lifecycle`
+- `operators/persistence`
+- `operators/deployment-topologies`

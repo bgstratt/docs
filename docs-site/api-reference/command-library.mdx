@@ -1,0 +1,154 @@
+---
+title: "Command library"
+description: "Reference starter for server CLI flags, replay commands, and control-plane command families."
+---
+
+# Command library
+
+This page centralizes command surfaces that operators and advanced integrators use most.
+
+It is seeded from `nodalmerge/docs/operations-inventory.md` and server runtime code.
+
+## Scope
+
+- Server startup and lifecycle CLI flags
+- Replay command usage
+- Runtime operation families worth documenting for operators and advanced integrators
+
+## Server CLI flags
+
+### `--store <path>`
+
+Enables durable SQLite + blob persistence rooted at `path`.
+
+### `--metrics-addr <ip:port>`
+
+Starts metrics listener with Prometheus endpoint at `/metrics`.
+
+### `--idle-timeout <seconds>`
+
+Idle-room eviction threshold. `0` disables eviction. Durable persistence is required for safe eviction.
+
+### `--broadcast-capacity <N>`
+
+Room broadcast channel capacity.
+
+### `--peer-rate-nodes <N>`
+
+Per-peer inbound node rate limit (nodes/second). `0` disables node limiter.
+
+### `--peer-rate-bytes <MiB>`
+
+Per-peer inbound decoded-pack byte rate limit (MiB/second). `0` disables byte limiter.
+
+### `--blob-gc-interval <seconds>`
+
+Blob garbage-collection sweep interval. `0` disables sweeper.
+
+### `--blob-gc-grace <seconds>`
+
+Grace period before blob deletion after dereference.
+
+### `--snapshot-interval <N>`
+
+Snapshot sweeper trigger interval by node count. `0` disables.
+
+### `--snapshot-max-chain <K>`
+
+Max incremental snapshot chain depth before full snapshot fallback.
+
+## Replay command
+
+### `nodalmerge-server replay <pack-file|->`
+
+Reads base64-encoded postcard pack input, replays, and prints resolved state plus canonical hash.
+
+Optional policy timeline inputs:
+
+- `--policy-timeline <json-file>`
+- `--policy-timeline-json '<json>'`
+
+Timeline flags are mutually exclusive.
+
+## WebSocket control-plane command families
+
+The following command families are invoked over WebSocket and are capability-gated:
+
+- archive: `archive.describe`, `archive.validate`, `archive.import`, `archive.export`
+- query/projection: `query.register`, `projection.build`, `projection.read`, `projection.invalidate`, `projection.list`
+- replay query: `replay.read-range`
+- topology: `topology.create-child`, `topology.describe-lineage`, `topology.list-children`, `topology.propose-promotion`, `topology.validate-promotion`, `topology.apply-promotion`
+- room/policy/tick admin: `set-room-key`, `set-policy`, `start-tick`, `stop-tick`, `compact-room`
+
+## Full runtime command inventory snapshot
+
+Client-routed WebSocket commands currently recognized:
+
+- `subscribe`
+- `pack`
+- `request`
+- `mst-request`
+- `mst-done`
+- `blob-upload`
+- `blob-request`
+- `request-upload`
+- `blob-uploaded`
+- `presence`
+- `set-room-key`
+- `set-policy`
+- `server-info`
+- `start-tick`
+- `stop-tick`
+- `compact-room`
+- `archive.describe`
+- `archive.validate`
+- `archive.import`
+- `archive.export`
+- `query.register`
+- `projection.build`
+- `projection.read`
+- `projection.invalidate`
+- `projection.list`
+- `replay.read-range`
+- `topology.create-child`
+- `topology.describe-lineage`
+- `topology.list-children`
+- `topology.propose-promotion`
+- `topology.validate-promotion`
+- `topology.apply-promotion`
+- `webrtc-offer`
+- `webrtc-answer`
+- `webrtc-ice`
+
+Operator-facing CLI/runtime commands currently documented:
+
+- `nodalmerge-server` startup with flags listed on this page
+- `nodalmerge-server replay <pack-file|->`
+- `--policy-timeline <json-file>`
+- `--policy-timeline-json '<json>'`
+
+For command payload schemas and success/reject envelopes, see `api-reference/websocket-commands`.
+
+## Planned expansion areas
+
+- Environment variable catalog (with defaults and precedence)
+- Capability and auth-related runtime toggles
+- Archive/query/topology operator workflows with example payloads
+- Deprecation and migration notes per command/flag
+
+## Command entry template
+
+For each command or flag, include:
+
+1. Status (`stable`, `experimental`, `deprecated`)
+2. Purpose
+3. Accepted values and defaults
+4. Side effects and safety notes
+5. Metrics/logs to observe
+6. Version-introduced and version-changed metadata
+
+## Related pages
+
+- `operators/server-setup`
+- `operators/replay-cli`
+- `api-reference/websocket-commands`

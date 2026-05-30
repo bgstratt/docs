@@ -1,0 +1,111 @@
+---
+title: Offline-first patterns
+description: Design NodalMerge clients that remain responsive offline and converge cleanly after reconnect.
+---
+
+# Offline-first patterns
+
+NodalMerge is built for local-first interaction, but good offline UX still depends on application design.
+
+This guide covers implementation patterns that prevent sync surprises.
+
+## Core principle
+
+Users should be able to keep working when transport is unavailable.
+
+That requires:
+
+- Local write acceptance
+- Durable local state caching
+- Predictable reconnect reconciliation
+- Clear UI communication of sync status
+
+## Pattern 1: explicit sync state machine
+
+Model client sync states explicitly:
+
+- `online`
+- `reconnecting`
+- `offline-local`
+- `resyncing`
+- `error-needs-action`
+
+Do not reduce sync state to a single boolean “connected.”
+
+## Pattern 2: optimistic write lane
+
+Apply local writes immediately and queue/push through SDK.
+
+Pair this with canonical refinement model:
+
+- Intent lane for optimistic actions
+- Canonical lane for accepted truth
+
+This keeps UI fast while preserving policy-governed correctness.
+
+## Pattern 3: persistence ownership
+
+Define what is cached and when:
+
+- Local graph/content cache
+- Outbound buffered operations
+- Blob byte cache behavior (if used)
+
+Run app-start hydration before relying on “fresh” server state for core UI rendering.
+
+## Pattern 4: reconnect-safe rendering
+
+After reconnect:
+
+1. Let handshake/diff complete
+2. Recompute derived UI projections
+3. Reconcile pending optimistic states
+
+Avoid assumptions that reconnect events imply fully synchronized canonical state instantly.
+
+## Pattern 5: conflict and rejection visibility
+
+Offline-heavy workflows increase chance of visible merge/rejection outcomes.
+
+Provide:
+
+- User-readable conflict/rejection indicators
+- Non-destructive retry/correct flows
+- Operator/debug context capture
+
+Silent correction creates trust issues in collaborative products.
+
+## Pattern 6: idempotent action design
+
+Model UI actions so retrying after reconnect is safe.
+
+Examples:
+
+- Include operation nonces/ids where app logic needs dedupe
+- Prefer state-setting actions over ambiguous toggle actions
+- Keep server-side side effects bounded and replay-aware
+
+## Testing matrix
+
+Before shipping, test:
+
+1. Start offline, perform edits, reconnect
+2. Long offline window with concurrent remote edits
+3. App reload during offline mode
+4. Blob references requested while offline
+5. Auth/token refresh during reconnect loop
+
+Automate these where possible; manual tests miss timing edge cases.
+
+## Common mistakes
+
+- Treating reconnect as instant full synchronization
+- Hiding offline mode from users
+- Failing to persist enough local state for meaningful offline continuation
+- Ignoring rejection/conflict UX in offline scenarios
+
+## Related pages
+
+- `sdk/javascript`
+- `architecture/speculative-vs-authoritative`
+- `guides/replay-debugging`

@@ -136,7 +136,9 @@
             "pages": [
               "onboarding/first-hour",
               "onboarding/first-day-builder",
-              "onboarding/operator-baseline"
+              "onboarding/operator-baseline",
+              "onboarding/frontend-app-team",
+              "onboarding/platform-operator-team"
             ]
           }
         ]

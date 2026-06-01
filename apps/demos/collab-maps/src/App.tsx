@@ -19,6 +19,7 @@ export default function App() {
   const [lastAction, setLastAction] = useState("No map action yet.");
   const [peerCount, setPeerCount] = useState(0);
   const [lastRuntimeMessage, setLastRuntimeMessage] = useState("none");
+  const [activeNotice, setActiveNotice] = useState("Connect to start shared map actions.");
 
   useEffect(() => {
     const unsubscribe = client.subscribe((next) => {
@@ -27,6 +28,7 @@ export default function App() {
     });
     void client.connect(config.defaultRoomId).then(() => {
       setPins(client.getPins());
+      setActiveNotice(`Connected to ${config.defaultRoomId}.`);
     });
     return () => {
       unsubscribe();
@@ -43,14 +45,17 @@ export default function App() {
           ? payload.peers.filter((entry): entry is string => typeof entry === "string")
           : [];
         setPeerCount(peers.length);
+        setActiveNotice(`Welcome received. ${peers.length} peer(s) currently online.`);
         return;
       }
       if (type === "peer-joined") {
         setPeerCount((previous) => previous + 1);
+        setActiveNotice("A peer joined the room.");
         return;
       }
       if (type === "peer-left") {
         setPeerCount((previous) => Math.max(0, previous - 1));
+        setActiveNotice("A peer left the room.");
       }
     });
     return () => {
@@ -60,6 +65,7 @@ export default function App() {
 
   const canConnect = useMemo(() => roomIdInput.trim().length > 0, [roomIdInput]);
   const canMapActions = diagnostics.connectionState === "open";
+  const canClearPins = canMapActions && pins.length > 0;
 
   function connectRoom() {
     const roomId = roomIdInput.trim();
@@ -70,6 +76,7 @@ export default function App() {
     void client.connect(roomId).then(() => {
       setPins(client.getPins());
       setLastAction(`Connected to ${roomId}.`);
+      setActiveNotice(`Connected to ${roomId}. Click board to add pins.`);
     });
   }
 
@@ -90,6 +97,7 @@ export default function App() {
     }
     setPins(client.getPins());
     setLastAction(`Added "${label}" at (${x}, ${y}).`);
+    setActiveNotice(`Pin "${label}" synced to room.`);
   }
 
   function clearPins() {
@@ -100,6 +108,7 @@ export default function App() {
     }
     setPins(client.getPins());
     setLastAction("Cleared all pins.");
+    setActiveNotice("All shared pins cleared.");
   }
 
   return (
@@ -142,7 +151,7 @@ export default function App() {
           placeholder="pin label"
           style={{ minWidth: 160, padding: 6 }}
         />
-        <button type="button" onClick={clearPins} disabled={!canMapActions}>
+        <button type="button" onClick={clearPins} disabled={!canClearPins}>
           Clear pins
         </button>
       </section>
@@ -166,6 +175,17 @@ export default function App() {
       <section style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
         <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, padding: 12 }}>
           <h2 style={{ marginTop: 0 }}>Shared pin board</h2>
+          <p
+            style={{
+              marginTop: 0,
+              padding: "8px 10px",
+              borderRadius: 6,
+              background: canMapActions ? "#ecfdf5" : "#fff7ed",
+              color: canMapActions ? "#065f46" : "#9a3412"
+            }}
+          >
+            <strong>Status:</strong> {activeNotice}
+          </p>
           <p style={{ marginTop: 0 }}>
             Click anywhere in the board to add a shared pin. Pin state is persisted in sdk sync key <code>maps/pins</code>.
           </p>
@@ -206,6 +226,9 @@ export default function App() {
             <p style={{ marginTop: 0, color: "#9a3412" }}>
               Map actions are disabled until sdk room connection is open.
             </p>
+          ) : null}
+          {canMapActions && pins.length === 0 ? (
+            <p style={{ marginTop: 0, color: "#334155" }}>No shared pins yet. Add the first one to confirm collaboration flow.</p>
           ) : null}
           <p style={{ marginBottom: 6 }}>
             <strong>Last action:</strong> {lastAction}

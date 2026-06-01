@@ -179,7 +179,7 @@ Decision rule per component:
 4. Execute Phase A baseline slice
 5. Execute Phase B demo ports in two focused slices
 
-## Current status snapshot (2026-05-29)
+## Current status snapshot (2026-05-30)
 
 ### Completed
 
@@ -201,6 +201,10 @@ Decision rule per component:
   - new `developer-experience/apps` page
   - `index` links to app surfaces
   - `docs.json` navigation tab for developer experience apps
+- Role-specific onboarding variants delivered:
+  - `onboarding/frontend-app-team`
+  - `onboarding/platform-operator-team`
+  - onboarding cross-links + navigation wiring
 
 ### In progress relative to phases
 
@@ -209,26 +213,29 @@ Decision rule per component:
   - `infinite-room-workspace` interactive path delivered
   - `collab-maps` flagship demo scaffold and first shared-pin interaction path delivered
   - remaining Phase B work is hardening/polish and feature depth
-- Phase C has started (replay inspector foundation exists), but protocol inspector and deeper replay tooling remain.
 - Phase C has active implementation:
   - `replay-lab` snapshot inspector delivered
   - `replay-lab` range/cursor controls delivered for snapshot event windows
   - `protocol-inspector` scaffold + filtered runtime stream viewer delivered
   - `protocol-inspector` command-family presets and trace snippet export delivered
-  - remaining Phase C work is deeper replay/protocol workflows and docs cross-link tightening
-- Phase D not started (tutorial and onboarding tracks still pending).
+  - docs cross-link tightening delivered
+  - replay-lab protocol-linked checkpoint semantics delivered (checkpoint classification + timeline jump)
+  - replay-lab protocol-trace import and correlation mapping delivered (protocol-inspector snippet -> replay timeline)
+  - replay/protocol heuristic pass delivered (confidence scoring + one-to-one mapping + unmatched diagnostics)
+  - remaining Phase C work is deeper replay/protocol workflows beyond current heuristics
 - Phase D has started:
   - first onboarding paths delivered (`first-hour`, `operator-baseline`)
   - additional onboarding path delivered (`first-day-builder`)
   - tutorials delivered (`trace-a-room-session`, `incident-debug-sprint`)
-  - remaining Phase D work is additional tracks, role-based paths, and deeper checkpointing
+  - role-specific onboarding delivered (`frontend-app-team`, `platform-operator-team`)
+  - remaining Phase D work is additional tracks and deeper checkpointing
 
 ### Immediate next slices
 
-1. Expand infinite workspace from single shared-doc action into multi-user interaction set:
-   - presence indicator
-   - simple peer-targeted signal action
-2. Expand protocol inspector with command-family presets and exportable trace snippets.
-3. Deepen replay-lab with range cursor controls and protocol-linked checkpoint semantics.
-4. Add role-specific onboarding variants (frontend app team, platform/operator team).
-5. Execute deferred docs relocation slice (`docs-site/`) once app/docs links stabilize.
+1. Add one more guided tutorial/onboarding checkpoint track beyond current set.
+2. Keep plan/status snapshots in sync as each slice lands.
+3. Next major concept slice (queued): branch-style replay UX in `infinite-room-workspace`:
+   - create alternate branch rooms from selected replay checkpoints
+   - scrub mainline and branch timelines side-by-side
+   - visualize branch divergence and merge-back path semantics
+   - implementation spec: `plans/branch-replay-v1-execution-spec.md`

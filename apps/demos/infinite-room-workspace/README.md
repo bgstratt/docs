@@ -50,13 +50,14 @@ This installs:
 - `nodalmerge-bridge-*.tgz`
 - `nodalmerge-sdk-js-*.tgz`
 
-After install, choose **runtime mode = `npm sdk + wasm`** in the app UI.
+After install, runtime mode defaults to **`npm sdk + wasm`** in the app UI.
 
 ## Current implementation notes
 
 - Runtime adapter supports two modes:
   - direct websocket baseline
   - npm SDK/WASM package mode (`nodalmerge-sdk-js`)
+- SDK uses the configured transport mode (`VITE_TRANSPORT_MODE`), so `auto` enables RTC preference with websocket fallback.
 - Diagnostics panel is the contract anchor for future slices.
 - Workspace panel is a placeholder for the first interaction port.
 

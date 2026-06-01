@@ -1,24 +1,14 @@
+using NodalMerge.DotNetHost;
 using NodalMerge.Host.Abstractions.Providers;
 using NodalMerge.Host.Composition;
 
-var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddNodalMergeHostProviders(builder.Configuration);
-builder.Services.AddSingleton<RuntimeRoomService>();
-var app = builder.Build();
-app.UseWebSockets();
-
-app.MapGet("/", () => Results.Ok(new
-{
-  service = "nodalmerge-demo-host",
-  status = "ready",
-  timestampUtc = DateTimeOffset.UtcNow
-}));
+var app = HostApplication.Build(args);
 
 app.MapGet("/api/host/health", () => Results.Ok(new
 {
   service = "nodalmerge-demo-host",
   status = "ok",
-  packageMode = true,
+  runtimePath = "NodalMerge.DotNetHost",
   timestampUtc = DateTimeOffset.UtcNow
 }));
 
@@ -40,9 +30,6 @@ app.MapGet("/api/host/providers", (
     tokenAuth = tokenAuth.GetType().Name
   }
 }));
-
-app.Map("/ws/runtime", (HttpContext context, RuntimeRoomService runtime) => runtime.HandleWebSocketAsync(context));
-app.Map("/ws/{roomId}", (HttpContext context, RuntimeRoomService runtime) => runtime.HandleWebSocketAsync(context));
 
 app.Run("http://127.0.0.1:5074");
 

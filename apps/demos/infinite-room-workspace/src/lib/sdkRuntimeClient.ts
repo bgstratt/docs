@@ -5,6 +5,11 @@ import bridgeWasmUrl from "nodalmerge-bridge/nodalmerge_bridge_bg.wasm?url";
 type Listener = (next: RuntimeDiagnostics) => void;
 type RuntimeMessageListener = (payload: Record<string, unknown>) => void;
 
+export type SharedWriteResult = {
+  applied: boolean;
+  pushed: boolean;
+};
+
 type NodalMergeSdkLike = {
   room: {
     connect: () => Promise<void>;
@@ -13,13 +18,25 @@ type NodalMergeSdkLike = {
   sync?: {
     set?: (key: string, value: string) => void;
     get?: (key: string) => string | null;
-    push?: () => void;
+    getCanonical?: (key: string) => string | null;
+    del?: (key: string) => void;
+    push?: () => boolean;
+    pull?: () => void;
+  };
+  replay?: {
+    state?: () => Record<string, unknown>;
+  };
+  offline?: {
+    outboxDepth?: () => number;
   };
   presence?: {
     set?: (data: unknown) => void;
   };
   signaling?: {
     relay?: (type: string, to: string, payload?: Record<string, unknown>) => void;
+  };
+  topology?: {
+    snapshot?: () => { pubkey?: string };
   };
   on?: (eventName: string, handler: (payload: unknown) => void) => () => void;
 };
@@ -51,6 +68,9 @@ export class SdkRuntimeClient {
   private listeners = new Set<Listener>();
   private runtimeMessageListeners = new Set<RuntimeMessageListener>();
   private activeRoomId: string | null = null;
+  private localPubkey: string | null = null;
+  private initialConnectPending = false;
+  private unsubscribeRuntimeStreams: Array<() => void> = [];
 
   constructor(private readonly config: RuntimeConfig) {
     this.fallbackClient = new RuntimeClient(config, { pubkeyPrefix: "workspace-sdk-fallback", maxEvents: 40 });
@@ -76,31 +96,139 @@ export class SdkRuntimeClient {
     };
   }
 
-  setSharedValue(key: string, value: string): boolean {
+  setSharedValue(key: string, value: string): SharedWriteResult {
+    return this.setSharedValues([{ key, value }]);
+  }
+
+  setSharedValues(entries: Array<{ key: string; value: string }>): SharedWriteResult {
     const sync = this.sdk?.sync;
     if (!sync?.set) {
       this.push("warn", "sdk sync.set unavailable; ensure runtime mode is npm sdk + wasm");
-      return false;
+      return { applied: false, pushed: false };
+    }
+    if (entries.length === 0) {
+      return { applied: true, pushed: true };
     }
 
-    sync.set(key, value);
-    if (sync.push) {
-      sync.push();
+    try {
+      for (const entry of entries) {
+        sync.set(entry.key, entry.value);
+      }
+      let pushed = true;
+      if (sync.push) {
+        pushed = sync.push() === true;
+      }
+      const outboxDepth = this.sdk?.offline?.outboxDepth?.() ?? null;
+      const outboxSuffix = outboxDepth === null ? "" : ` (outbox=${outboxDepth})`;
+      const keys = entries.map((entry) => entry.key).join(", ");
+      if (!pushed) {
+        this.diagnostics = {
+          ...this.diagnostics,
+          lastError: "sync push produced no outbound pack; local state updated but server sync may lag",
+          recentEvents: nextEvents(
+            this.diagnostics.recentEvents,
+            "warn",
+            `sync push no-op after set ${keys}${outboxSuffix}`
+          )
+        };
+        this.emit();
+        return { applied: true, pushed: false };
+      }
+      this.diagnostics = {
+        ...this.diagnostics,
+        lastError: null,
+        recentEvents: nextEvents(this.diagnostics.recentEvents, "sdk", `set ${keys}${outboxSuffix}`)
+      };
+      this.emit();
+      return { applied: true, pushed: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "sdk sync write failed";
+      const keys = entries.map((entry) => entry.key).join(", ");
+      this.diagnostics = {
+        ...this.diagnostics,
+        lastError: message,
+        recentEvents: nextEvents(this.diagnostics.recentEvents, "error", `sync write failed for ${keys}: ${message}`)
+      };
+      this.emit();
+      return { applied: false, pushed: false };
     }
-    this.push("sdk", `set ${key}`);
-    return true;
   }
 
-  getSharedValue(key: string): string | null {
+  getSharedValue(key: string, options?: { canonical?: boolean }): string | null {
     const sync = this.sdk?.sync;
     if (!sync?.get) {
       return null;
     }
 
     try {
+      if (options?.canonical && sync.getCanonical) {
+        const canonical = sync.getCanonical(key);
+        if (canonical !== null) {
+          return canonical;
+        }
+      }
       return sync.get(key);
     } catch {
       return null;
+    }
+  }
+
+  listSharedKeysByPrefix(prefix: string): string[] {
+    const replay = this.sdk?.replay?.state?.() as Record<string, unknown> | undefined;
+    if (!replay) {
+      return [];
+    }
+    return Object.keys(replay).filter((key) => key.startsWith(prefix));
+  }
+
+  getAllSharedKeys(): string[] {
+    const replay = this.sdk?.replay?.state?.() as Record<string, unknown> | undefined;
+    if (!replay) {
+      return [];
+    }
+    return Object.keys(replay);
+  }
+
+  deleteSharedValue(key: string): SharedWriteResult {
+    const sync = this.sdk?.sync;
+    if (!sync?.del) {
+      this.push("warn", "sdk sync.del unavailable; ensure runtime mode is npm sdk + wasm");
+      return { applied: false, pushed: false };
+    }
+    try {
+      sync.del(key);
+      let pushed = true;
+      if (sync.push) {
+        pushed = sync.push() === true;
+      }
+      this.diagnostics = {
+        ...this.diagnostics,
+        lastError: pushed ? null : "sync delete push produced no outbound pack",
+        recentEvents: nextEvents(this.diagnostics.recentEvents, "sdk", `del ${key}`)
+      };
+      this.emit();
+      return { applied: true, pushed };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "sdk sync delete failed";
+      this.diagnostics = {
+        ...this.diagnostics,
+        lastError: message,
+        recentEvents: nextEvents(this.diagnostics.recentEvents, "error", `sync delete failed for ${key}: ${message}`)
+      };
+      this.emit();
+      return { applied: false, pushed: false };
+    }
+  }
+
+  getLocalPubkey(): string | null {
+    return this.localPubkey;
+  }
+
+  requestSyncPull(): void {
+    try {
+      this.sdk?.sync?.pull?.();
+    } catch {
+      // best effort
     }
   }
 
@@ -129,6 +257,7 @@ export class SdkRuntimeClient {
   }
 
   async connect(roomId: string): Promise<void> {
+    await this.disconnectAsync(true);
     this.activeRoomId = roomId;
     const createSdk = await maybeLoadSdkFactory();
     if (!createSdk) {
@@ -162,15 +291,117 @@ export class SdkRuntimeClient {
       this.emit();
 
       if (typeof sdk.on === "function") {
-        sdk.on("runtime-message", (payload) => {
-          if (payload && typeof payload === "object") {
-            this.emitRuntimeMessage(payload as Record<string, unknown>);
+        const register = (eventName: string, options?: { skipDiagnostics?: boolean }) => {
+          try {
+            const unsubscribe = sdk.on?.(eventName, (payload) => {
+              const normalized = normalizeRuntimePayload(eventName, payload);
+              if (normalized) {
+                this.emitRuntimeMessage(normalized);
+              }
+              if (!options?.skipDiagnostics) {
+                this.push(eventName, JSON.stringify(payload).slice(0, 220));
+              }
+            });
+            if (typeof unsubscribe === "function") {
+              this.unsubscribeRuntimeStreams.push(unsubscribe);
+            }
+          } catch {
+            // Not all bridge builds support all event names.
           }
-          this.push("runtime-message", JSON.stringify(payload).slice(0, 220));
-        });
+        };
+        register("runtime-message", { skipDiagnostics: true });
+        register("presence", { skipDiagnostics: true });
+        register("presence-updated", { skipDiagnostics: true });
+        try {
+          const unsubscribeReconnect = sdk.on?.("reconnect", (payload) => {
+            this.push("reconnect", JSON.stringify(payload).slice(0, 220));
+          });
+          if (typeof unsubscribeReconnect === "function") {
+            this.unsubscribeRuntimeStreams.push(unsubscribeReconnect);
+          }
+        } catch {
+          // best effort
+        }
+        try {
+          const unsubscribeDisconnected = sdk.on?.("disconnected", () => {
+            this.diagnostics = {
+              ...this.diagnostics,
+              connectionState: "connecting",
+              recentEvents: nextEvents(
+                this.diagnostics.recentEvents,
+                "state",
+                "runtime websocket disconnected; sdk reconnect pending"
+              )
+            };
+            this.emit();
+          });
+          if (typeof unsubscribeDisconnected === "function") {
+            this.unsubscribeRuntimeStreams.push(unsubscribeDisconnected);
+          }
+        } catch {
+          // best effort
+        }
+        try {
+          const unsubscribeConnected = sdk.on?.("connected", () => {
+            this.localPubkey = sdk.topology?.snapshot?.().pubkey ?? this.localPubkey;
+            this.diagnostics = {
+              ...this.diagnostics,
+              connectionState: "open",
+              lastError: null,
+              recentEvents: nextEvents(this.diagnostics.recentEvents, "sdk", "runtime websocket connected")
+            };
+            this.emit();
+            if (!this.initialConnectPending) {
+              this.emitRuntimeMessage({ type: "runtime-reconnected" });
+            }
+          });
+          if (typeof unsubscribeConnected === "function") {
+            this.unsubscribeRuntimeStreams.push(unsubscribeConnected);
+          }
+        } catch {
+          // best effort
+        }
+        try {
+          const unsubscribeError = sdk.on?.("error", (payload) => {
+            const message =
+              payload instanceof Error ? payload.message : typeof payload === "string" ? payload : "sdk runtime error";
+            this.diagnostics = {
+              ...this.diagnostics,
+              connectionState: "error",
+              lastError: message,
+              recentEvents: nextEvents(this.diagnostics.recentEvents, "error", message)
+            };
+            this.emit();
+          });
+          if (typeof unsubscribeError === "function") {
+            this.unsubscribeRuntimeStreams.push(unsubscribeError);
+          }
+        } catch {
+          // best effort
+        }
+        try {
+          const unsubscribeMessage = sdk.on?.("message", (payload) => {
+            if (!payload || typeof payload !== "object") {
+              return;
+            }
+            const msg = payload as { type?: unknown; from?: unknown };
+            if (msg.type === "pack" || msg.type === "blob-pack") {
+              const fromPeer = typeof msg.from === "string" ? msg.from : null;
+              this.emitRuntimeMessage({ type: "pack-applied", from: fromPeer });
+            }
+          });
+          if (typeof unsubscribeMessage === "function") {
+            this.unsubscribeRuntimeStreams.push(unsubscribeMessage);
+          }
+        } catch {
+          // best effort
+        }
       }
 
+      this.initialConnectPending = true;
       await sdk.room.connect();
+      this.initialConnectPending = false;
+      this.localPubkey = sdk.topology?.snapshot?.().pubkey ?? null;
       this.diagnostics = {
         ...this.diagnostics,
         connectionState: "open",
@@ -179,6 +410,7 @@ export class SdkRuntimeClient {
       };
       this.emit();
     } catch (error) {
+      this.initialConnectPending = false;
       this.diagnostics = {
         ...this.diagnostics,
         connectionState: "error",
@@ -190,10 +422,21 @@ export class SdkRuntimeClient {
   }
 
   disconnect(): void {
-    void this.disconnectAsync();
+    void this.disconnectAsync(false);
   }
 
-  private async disconnectAsync(): Promise<void> {
+  private async disconnectAsync(silent: boolean): Promise<void> {
+    if (this.unsubscribeRuntimeStreams.length > 0) {
+      for (const unsubscribe of this.unsubscribeRuntimeStreams) {
+        try {
+          unsubscribe();
+        } catch {
+          // best effort
+        }
+      }
+      this.unsubscribeRuntimeStreams = [];
+    }
+
     if (this.sdk) {
       try {
         await this.sdk.room.disconnect();
@@ -204,6 +447,11 @@ export class SdkRuntimeClient {
     }
 
     this.fallbackClient.disconnect();
+    this.activeRoomId = null;
+    this.localPubkey = null;
+    if (silent) {
+      return;
+    }
     this.diagnostics = {
       ...this.diagnostics,
       connectionState: "closed",
@@ -231,5 +479,19 @@ export class SdkRuntimeClient {
       listener(payload);
     }
   }
+}
+
+function normalizeRuntimePayload(eventName: string, payload: unknown): Record<string, unknown> | null {
+  if (payload && typeof payload === "object") {
+    const asRecord = payload as Record<string, unknown>;
+    if (typeof asRecord.type === "string") {
+      return asRecord;
+    }
+    return { type: eventName, data: asRecord };
+  }
+  if (typeof payload === "string" || typeof payload === "number" || typeof payload === "boolean") {
+    return { type: eventName, data: payload };
+  }
+  return { type: eventName };
 }
 

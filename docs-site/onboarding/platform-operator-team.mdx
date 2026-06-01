@@ -1,0 +1,78 @@
+---
+title: "Platform operator team path"
+description: "Role-specific onboarding for platform and operator teams running NodalMerge hosts and enforcing operational posture."
+icon: "shield-check"
+---
+
+## Goal
+
+Run NodalMerge with repeatable host operations, compatibility confidence, and incident response readiness.
+
+## Step 1: Host and persistence baseline
+
+Read and execute:
+
+- [operators/server-setup](/operators/server-setup)
+- [operators/persistence](/operators/persistence)
+- [developer-experience/apps](/developer-experience/apps)
+
+Validate:
+
+- host health endpoint responds
+- provider inventory endpoint responds
+- restart preserves expected room state in durable mode
+
+## Step 2: Security and capability posture
+
+Read:
+
+- [operators/security-and-auth](/operators/security-and-auth)
+- [api-reference/websocket-commands](/api-reference/websocket-commands)
+
+Validate:
+
+- locked-room token flow works
+- unauthorized control-plane commands are denied deterministically
+- rate-limit guardrails are configured and observable
+
+## Step 3: Upgrade and compatibility drills
+
+Read:
+
+- [operators/upgrades-and-migrations](/operators/upgrades-and-migrations)
+- [api-reference/compatibility-and-support](/api-reference/compatibility-and-support)
+- [operators/replay-cli](/operators/replay-cli)
+
+Validate:
+
+- canary upgrade checklist can be executed
+- replay/hash comparison workflow is documented for rollback gates
+
+## Step 4: Observability and incident workflow
+
+Read:
+
+- [operators/metrics-and-observability](/operators/metrics-and-observability)
+- [operators/troubleshooting](/operators/troubleshooting)
+- [tutorials/incident-debug-sprint](/tutorials/incident-debug-sprint)
+
+Validate:
+
+- metrics scraping and key counters are visible
+- close-code and rejection triage flow is known by on-call
+- one incident simulation completed with evidence bundle
+
+## Step 5: Platform readiness checklist
+
+- Durable storage and lifecycle settings are explicit
+- Auth and capability scopes are least-privilege by default
+- Upgrade/rollback runbook is rehearsed
+- Replay and protocol evidence capture is standardized
+- Alerts exist for guardrail and saturation signals
+
+## Related pages
+
+- [onboarding/operator-baseline](/onboarding/operator-baseline)
+- [operators/deployment-topologies](/operators/deployment-topologies)
+- [api-reference/command-library](/api-reference/command-library)
+- [protocol/synchronization](/protocol/synchronization)

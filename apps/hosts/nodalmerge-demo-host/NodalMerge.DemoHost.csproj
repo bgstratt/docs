@@ -7,9 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NodalMerge.Host.Abstractions" Version="$(NodalMergePackageVersion)" />
-    <PackageReference Include="NodalMerge.Host.Composition" Version="$(NodalMergePackageVersion)" />
-    <PackageReference Include="NodalMerge.DotNetHost.Native.win-x64" Version="$(NodalMergePackageVersion)" />
-    <PackageReference Include="NodalMerge.DotNetHost.Native.linux-x64" Version="$(NodalMergePackageVersion)" />
+    <ProjectReference Include="..\..\..\..\nodalmerge\nodalmerge-host\src\NodalMerge.DotNetHost\NodalMerge.DotNetHost.csproj" />
   </ItemGroup>
 </Project>

@@ -1,20 +1,174 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { loadRuntimeConfig } from "../../../../shared/runtime/config";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
 import { RuntimeClient } from "../../../../shared/runtime/runtimeClient";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
-import { SdkRuntimeClient } from "./lib/sdkRuntimeClient";
+import { SdkRuntimeClient, type SharedWriteResult } from "./lib/sdkRuntimeClient";
+import {
+  ALL_REPLAY_OP_KEY_PREFIX,
+  buildAppendReplayOpWriteEntries,
+  getReplayOpKeyPrefix,
+  getReplayOpRecordKey,
+  LEGACY_REPLAY_OPS_KEY,
+  readAllReplayOpsFromShared,
+  readReplayOpsFromShared
+} from "./lib/workspaceReplayStorage";
+import {
+  buildAddNodeWriteEntries,
+  buildSeedBranchNodesWriteEntries,
+  buildClearNodesWriteEntries,
+  buildMoveNodeWriteEntries,
+  getLegacyWorkspaceKeysToRetire,
+  getNodeMemberKey,
+  getNodeMemberKeyPrefix,
+  getNodeRecordKey,
+  parseNodeRecord,
+  nodeIdsFromReplayOps,
+  readWorkspaceNodesFromReplayOpIds,
+  readWorkspaceNodesFromShared
+} from "./lib/workspaceNodeStorage";
+import { createInitialReplayState, replayReducer } from "./lib/branchReplay";
+import { computeBranchOffsets, computeMaxBranchColumn } from "./lib/replayLayout";
+import { decideWriteRouting } from "./lib/writeRouting";
+import {
+  WORKSPACE_BRANCHES_KEY,
+  buildForkReplayOp,
+  getWorkspaceBaselineKey,
+  getWorkspaceLiveKey,
+  isForkBranchPayload,
+  replayBaselineForBranch,
+  snapshotBaselineKeysForBranch,
+  snapshotLiveKeysForBranch
+} from "./lib/workspaceBaselines";
 
 const config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
 const wsClient = new RuntimeClient(config, { pubkeyPrefix: "workspace", maxEvents: 40 });
 const sdkClient = new SdkRuntimeClient(config);
 type RuntimeBackend = "ws" | "sdk";
+const WORKSPACE_WIDTH = 860;
+const WORKSPACE_HEIGHT = 360;
+
+type WorkspaceNode = {
+  id: string;
+  x: number;
+  y: number;
+  label: string;
+  updatedAtIso: string;
+};
+
+type WorkspaceEdge = {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  updatedAtIso: string;
+};
+
+type WorkspaceAsset = {
+  id: string;
+  x: number;
+  y: number;
+  name: string;
+  updatedAtIso: string;
+};
+
+type WorkspaceAnnotation = {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  updatedAtIso: string;
+};
+
+type WorkspaceTool = "select" | "annotate";
+
+type DragPresence = {
+  nodeId: string;
+  x: number;
+  y: number;
+  branchId: string;
+  mode: "live" | "playback";
+  atIso: string;
+};
+
+type RemoteReplayCursor = {
+  branchId: string;
+  nodeIndex: number;
+  replayNodeId: string | null;
+  mode: "live" | "playback";
+  name: string;
+  atIso: string;
+};
+
+type PersistenceEvent = {
+  atIso: string;
+  key: string;
+  action: string;
+  detail: string;
+};
+
+type WorkspaceSnapshot = {
+  doc: string;
+  nodes: WorkspaceNode[];
+  edges: WorkspaceEdge[];
+  assets: WorkspaceAsset[];
+  annotations: WorkspaceAnnotation[];
+};
+
+type SharedReplayOp = {
+  id: string;
+  branchId: string;
+  opSummary: string;
+  payload: Record<string, unknown>;
+  payloadRef: string;
+  atIso: string;
+};
+
+type SharedBranchRecord = {
+  branchId: string;
+  roomId: string;
+  label: string;
+  basedOnBranchId: string | null;
+  basedOnNodeId: string | null;
+  createdAtIso: string;
+};
+
+type WorkspaceDataKind = "doc" | "nodes" | "edges" | "assets" | "annotations";
+type WriteBranchResolution = {
+  branchId: string;
+  seededSnapshot: WorkspaceSnapshot | null;
+};
+
+const BRANCH_WRITE_PROTECT_MS = 8000;
+
+function emptyWorkspaceSnapshot(): WorkspaceSnapshot {
+  return { doc: "", nodes: [], edges: [], assets: [], annotations: [] };
+}
+
+function cloneWorkspaceSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
+  return {
+    doc: snapshot.doc,
+    nodes: snapshot.nodes.map((entry) => ({ ...entry })),
+    edges: snapshot.edges.map((entry) => ({ ...entry })),
+    assets: snapshot.assets.map((entry) => ({ ...entry })),
+    annotations: snapshot.annotations.map((entry) => ({ ...entry }))
+  };
+}
+
+function hasWorkspaceSnapshotContent(snapshot: WorkspaceSnapshot): boolean {
+  return (
+    snapshot.doc.trim().length > 0 ||
+    snapshot.nodes.length > 0 ||
+    snapshot.edges.length > 0 ||
+    snapshot.assets.length > 0 ||
+    snapshot.annotations.length > 0
+  );
+}
 
 export default function App() {
-  const [backend, setBackend] = useState<RuntimeBackend>("ws");
+  const [backend, setBackend] = useState<RuntimeBackend>("sdk");
   const [roomIdInput, setRoomIdInput] = useState(config.defaultRoomId);
   const [activeRoomId, setActiveRoomId] = useState<string>(config.defaultRoomId);
-  const [diagnostics, setDiagnostics] = useState<RuntimeDiagnostics>(wsClient.getDiagnostics());
+  const [diagnostics, setDiagnostics] = useState<RuntimeDiagnostics>(sdkClient.getDiagnostics());
   const [draftText, setDraftText] = useState("Hello from infinite workspace");
   const [appliedText, setAppliedText] = useState<string>("");
   const [lastAction, setLastAction] = useState<string>("No shared document action yet.");
@@ -23,15 +177,162 @@ export default function App() {
   const [signalPayload, setSignalPayload] = useState('{"intent":"ping"}');
   const [onlinePeers, setOnlinePeers] = useState<string[]>([]);
   const [presenceByPeer, setPresenceByPeer] = useState<Record<string, string>>({});
+  const [remoteDragByPeer, setRemoteDragByPeer] = useState<Record<string, DragPresence>>({});
+  const [remoteReplayCursorByPeer, setRemoteReplayCursorByPeer] = useState<Record<string, RemoteReplayCursor>>({});
   const [lastSignalStatus, setLastSignalStatus] = useState("No peer signal sent yet.");
   const [incomingSignals, setIncomingSignals] = useState<string[]>([]);
+  const [activeNotice, setActiveNotice] = useState<string>("Connect with npm sdk + wasm to enable collaboration actions.");
+  const [persistenceFeed, setPersistenceFeed] = useState<PersistenceEvent[]>([]);
+  const [workspaceNodes, setWorkspaceNodes] = useState<WorkspaceNode[]>([]);
+  const [workspaceEdges, setWorkspaceEdges] = useState<WorkspaceEdge[]>([]);
+  const [workspaceAssets, setWorkspaceAssets] = useState<WorkspaceAsset[]>([]);
+  const [workspaceAnnotations, setWorkspaceAnnotations] = useState<WorkspaceAnnotation[]>([]);
+  const [branchBaselineById, setBranchBaselineById] = useState<Record<string, WorkspaceSnapshot>>({
+    main: emptyWorkspaceSnapshot()
+  });
+  const branchBaselineByIdRef = useRef(branchBaselineById);
+  const frozenBaselineBranchIdsRef = useRef(new Set<string>());
+  const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");
+  const [annotationDraft, setAnnotationDraft] = useState("Decision note");
+  const [assetDraftName, setAssetDraftName] = useState("diagram.png");
+  const [mergeSourceBranchId, setMergeSourceBranchId] = useState("main");
+  const [mergeSourceNodeId, setMergeSourceNodeId] = useState<string>("");
+  const [replayState, dispatchReplay] = useReducer(
+    replayReducer,
+    createInitialReplayState(config.defaultRoomId, "main", "main")
+  );
+  const [isReplayPlaying, setIsReplayPlaying] = useState(false);
+  const workspaceSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const workspaceNodesRef = useRef<WorkspaceNode[]>([]);
+  const workspaceEdgesRef = useRef<WorkspaceEdge[]>([]);
+  const workspaceAssetsRef = useRef<WorkspaceAsset[]>([]);
+  const workspaceAnnotationsRef = useRef<WorkspaceAnnotation[]>([]);
+  const appliedTextRef = useRef<string>("");
+  const draggingNodeRef = useRef<{ nodeId: string } | null>(null);
+  const edgeSourceNodeIdRef = useRef<string | null>(null);
+  const dragPresenceLastSentRef = useRef(0);
+  const branchCounterRef = useRef(1);
+  const suppressWorkspaceRefreshUntilRef = useRef(0);
+  const suppressLiveWorkspaceLoadUntilRef = useRef(0);
+  const legacyRetireRoomRef = useRef<string | null>(null);
+  const forceWorkspaceClearRef = useRef(false);
+  const localWriteProtectUntilByKeyRef = useRef<Record<string, number>>({});
+  const isDraggingRef = useRef(false);
+  const remoteDragByPeerRef = useRef<Record<string, DragPresence>>({});
+  const activeBranchIdRef = useRef("main");
+  const replayModeRef = useRef<"live" | "playback">(replayState.cursor.mode);
+  const replayBranchesRef = useRef(replayState.branches);
+  const replayBranchNodeIdsRef = useRef(replayState.branchNodeIds);
+  const replayCursorRef = useRef(replayState.cursor);
+  const lastPublishedReplayCursorRef = useRef<string | null>(null);
+  const replayCursorPresenceLastSentRef = useRef(0);
+  const replayCursorPublishTimerRef = useRef<number | null>(null);
+  const sharedReplayOpsRef = useRef<SharedReplayOp[]>([]);
+  const sharedBranchesRef = useRef<SharedBranchRecord[]>([]);
+  const appliedSharedReplayOpIdsRef = useRef<Set<string>>(new Set());
+  const lastSharedRawByKeyRef = useRef<Record<string, string | null>>({
+    "workspace/doc/main": null,
+    "workspace/nodes/main": null,
+    "workspace/edges/main": null,
+    "workspace/assets/main": null,
+    "workspace/annotations/main": null,
+    "workspace/replay-ops": null,
+    [WORKSPACE_BRANCHES_KEY]: null
+  });
+
+  useEffect(() => {
+    branchBaselineByIdRef.current = branchBaselineById;
+  }, [branchBaselineById]);
+
+  useEffect(() => {
+    remoteDragByPeerRef.current = remoteDragByPeer;
+  }, [remoteDragByPeer]);
+
+  function resetWorkspaceForRoomChange(): void {
+    forceWorkspaceClearRef.current = true;
+    legacyRetireRoomRef.current = null;
+    setWorkspaceNodes([]);
+    setWorkspaceEdges([]);
+    setWorkspaceAssets([]);
+    setWorkspaceAnnotations([]);
+    setAppliedText("");
+    setDraftText("");
+    setRemoteDragByPeer({});
+    setRemoteReplayCursorByPeer({});
+    setPresenceByPeer({});
+    workspaceNodesRef.current = [];
+    workspaceEdgesRef.current = [];
+    workspaceAssetsRef.current = [];
+    workspaceAnnotationsRef.current = [];
+    appliedTextRef.current = "";
+    lastSharedRawByKeyRef.current = {
+      "workspace/doc/main": null,
+      "workspace/nodes/main": null,
+      "workspace/edges/main": null,
+      "workspace/assets/main": null,
+      "workspace/annotations/main": null,
+      "workspace/replay-ops": null,
+      [WORKSPACE_BRANCHES_KEY]: null,
+      [ALL_REPLAY_OP_KEY_PREFIX]: null
+    };
+    localWriteProtectUntilByKeyRef.current = {};
+    suppressWorkspaceRefreshUntilRef.current = 0;
+    suppressLiveWorkspaceLoadUntilRef.current = 0;
+    lastPublishedReplayCursorRef.current = null;
+    replayCursorPresenceLastSentRef.current = 0;
+    if (replayCursorPublishTimerRef.current !== null) {
+      window.clearTimeout(replayCursorPublishTimerRef.current);
+      replayCursorPublishTimerRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    workspaceNodesRef.current = workspaceNodes;
+  }, [workspaceNodes]);
+
+  useEffect(() => {
+    workspaceEdgesRef.current = workspaceEdges;
+  }, [workspaceEdges]);
+
+  useEffect(() => {
+    workspaceAssetsRef.current = workspaceAssets;
+  }, [workspaceAssets]);
+
+  useEffect(() => {
+    workspaceAnnotationsRef.current = workspaceAnnotations;
+  }, [workspaceAnnotations]);
+
+  useEffect(() => {
+    appliedTextRef.current = appliedText;
+  }, [appliedText]);
+
+  useEffect(() => {
+    activeBranchIdRef.current = replayState.activeBranchId;
+    replayModeRef.current = replayState.cursor.mode;
+    replayBranchesRef.current = replayState.branches;
+    replayBranchNodeIdsRef.current = replayState.branchNodeIds;
+    replayCursorRef.current = replayState.cursor;
+  }, [replayState.activeBranchId, replayState.cursor.mode, replayState.branches, replayState.branchNodeIds, replayState.cursor]);
 
   useEffect(() => {
     const activeClient = backend === "sdk" ? sdkClient : wsClient;
     const inactiveClient = backend === "sdk" ? wsClient : sdkClient;
     const unsubscribe = activeClient.subscribe(setDiagnostics);
     inactiveClient.disconnect();
+    resetWorkspaceForRoomChange();
     activeClient.connect(activeRoomId);
+    setActiveNotice(`Connecting to ${activeRoomId} via ${backend === "sdk" ? "npm sdk + wasm" : "direct websocket"}...`);
+    dispatchReplay({ type: "reset", roomId: activeRoomId, branchId: "main", branchLabel: "main" });
+    activeBranchIdRef.current = "main";
+    frozenBaselineBranchIdsRef.current = new Set<string>();
+    sharedReplayOpsRef.current = [];
+    sharedBranchesRef.current = [];
+    appliedSharedReplayOpIdsRef.current = new Set<string>();
+    lastSharedRawByKeyRef.current["workspace/replay-ops"] = null;
+    lastSharedRawByKeyRef.current[WORKSPACE_BRANCHES_KEY] = null;
+    setBranchBaselineById({
+      main: { doc: "", nodes: [], edges: [], assets: [], annotations: [] }
+    });
 
     return () => {
       unsubscribe();
@@ -55,6 +356,8 @@ export default function App() {
         if (peers.length > 0 && !peerTarget) {
           setPeerTarget(peers[0]);
         }
+        setActiveNotice(`Connected to ${activeRoomId}. Welcome received with ${peers.length} peer(s).`);
+        refreshSharedWorkspace();
         return;
       }
 
@@ -68,6 +371,7 @@ export default function App() {
           setPeerTarget(peerId);
         }
         setLastSignalStatus(`Peer ${peerId} joined.`);
+        setActiveNotice(`Peer ${peerId} joined ${activeRoomId}.`);
         return;
       }
 
@@ -82,13 +386,34 @@ export default function App() {
           delete next[peerId];
           return next;
         });
+        setRemoteReplayCursorByPeer((previous) => {
+          if (!(peerId in previous)) {
+            return previous;
+          }
+          const next = { ...previous };
+          delete next[peerId];
+          return next;
+        });
         setLastSignalStatus(`Peer ${peerId} left.`);
+        setActiveNotice(`Peer ${peerId} left ${activeRoomId}.`);
         return;
       }
 
       if (type === "presence") {
-        const peerId = typeof payload.peerId === "string" ? payload.peerId : null;
-        const data = payload.data;
+        const peerId =
+          typeof payload.peerId === "string"
+            ? payload.peerId
+            : typeof payload.fromPeer === "string"
+              ? payload.fromPeer
+              : typeof payload.from === "string"
+                ? payload.from
+                : null;
+        const data =
+          payload.data && typeof payload.data === "object"
+            ? payload.data
+            : payload.payload && typeof payload.payload === "object"
+              ? payload.payload
+              : payload;
         const name =
           data && typeof data === "object" && "name" in data && typeof (data as { name?: unknown }).name === "string"
             ? ((data as { name: string }).name ?? "")
@@ -97,6 +422,134 @@ export default function App() {
           return;
         }
         setPresenceByPeer((previous) => ({ ...previous, [peerId]: name }));
+        applyRemoteReplayCursorFromPresence(peerId, data, name);
+        const drag =
+          data && typeof data === "object" && "drag" in data && typeof (data as { drag?: unknown }).drag === "object"
+            ? ((data as { drag: unknown }).drag as {
+                active?: unknown;
+                nodeId?: unknown;
+                x?: unknown;
+                y?: unknown;
+                branchId?: unknown;
+                mode?: unknown;
+                atIso?: unknown;
+              })
+            : null;
+        const resolvedDragMode = drag?.mode === "playback" ? "playback" : "live";
+        const resolvedDragBranchId =
+          typeof drag?.branchId === "string" && drag.branchId.length > 0 ? drag.branchId : activeBranchIdRef.current;
+        const sameLiveContext =
+          drag &&
+          resolvedDragMode === "live" &&
+          replayModeRef.current === "live" &&
+          resolvedDragBranchId === activeBranchIdRef.current;
+        if (
+          sameLiveContext &&
+          drag.active === true &&
+          typeof drag.nodeId === "string" &&
+          typeof drag.x === "number" &&
+          typeof drag.y === "number"
+        ) {
+          const dragPresence: DragPresence = {
+            nodeId: drag.nodeId,
+            x: drag.x,
+            y: drag.y,
+            branchId: resolvedDragBranchId,
+            mode: resolvedDragMode,
+            atIso: typeof drag.atIso === "string" ? drag.atIso : new Date().toISOString()
+          };
+          setRemoteDragByPeer((previous) => ({
+            ...previous,
+            [peerId]: dragPresence
+          }));
+        } else {
+          setRemoteDragByPeer((previous) => {
+            if (!(peerId in previous)) {
+              return previous;
+            }
+            const next = { ...previous };
+            delete next[peerId];
+            return next;
+          });
+          scheduleRemoteDragEndRefresh(peerId);
+        }
+        setActiveNotice(`Presence updated from ${peerId}.`);
+        return;
+      }
+      if (type === "presence-update" || type === "presence-updated") {
+        const peerId =
+          typeof payload.peerId === "string"
+            ? payload.peerId
+            : typeof payload.fromPeer === "string"
+              ? payload.fromPeer
+              : typeof payload.from === "string"
+                ? payload.from
+                : null;
+        const data =
+          payload.data && typeof payload.data === "object"
+            ? payload.data
+            : payload.payload && typeof payload.payload === "object"
+              ? payload.payload
+              : payload;
+        if (!peerId || !data || typeof data !== "object") {
+          return;
+        }
+        const name = "name" in data && typeof (data as { name?: unknown }).name === "string" ? (data as { name: string }).name : "";
+        if (name) {
+          setPresenceByPeer((previous) => ({ ...previous, [peerId]: name }));
+        }
+        applyRemoteReplayCursorFromPresence(peerId, data, name || peerId.slice(0, 8));
+        const dragData =
+          "drag" in data && typeof (data as { drag?: unknown }).drag === "object" ? (data as { drag: unknown }).drag : null;
+        if (!dragData || typeof dragData !== "object") {
+          return;
+        }
+        const drag = dragData as {
+          active?: unknown;
+          nodeId?: unknown;
+          x?: unknown;
+          y?: unknown;
+          branchId?: unknown;
+          mode?: unknown;
+          atIso?: unknown;
+        };
+        const resolvedDragMode = drag.mode === "playback" ? "playback" : "live";
+        const resolvedDragBranchId =
+          typeof drag.branchId === "string" && drag.branchId.length > 0 ? drag.branchId : activeBranchIdRef.current;
+        const sameLiveContext =
+          resolvedDragMode === "live" &&
+          replayModeRef.current === "live" &&
+          resolvedDragBranchId === activeBranchIdRef.current;
+        if (
+          sameLiveContext &&
+          drag.active === true &&
+          typeof drag.nodeId === "string" &&
+          typeof drag.x === "number" &&
+          typeof drag.y === "number"
+        ) {
+          const dragPresence: DragPresence = {
+            nodeId: drag.nodeId,
+            x: drag.x,
+            y: drag.y,
+            branchId: resolvedDragBranchId,
+            mode: resolvedDragMode,
+            atIso: typeof drag.atIso === "string" ? drag.atIso : new Date().toISOString()
+          };
+          setRemoteDragByPeer((previous) => ({
+            ...previous,
+            [peerId]: dragPresence
+          }));
+        } else {
+          setRemoteDragByPeer((previous) => {
+            if (!(peerId in previous)) {
+              return previous;
+            }
+            const next = { ...previous };
+            delete next[peerId];
+            return next;
+          });
+          scheduleRemoteDragEndRefresh(peerId);
+        }
         return;
       }
 
@@ -105,6 +558,30 @@ export default function App() {
         const at = new Date().toLocaleTimeString();
         setIncomingSignals((previous) => [`${at} from ${from}`, ...previous].slice(0, 8));
         setLastSignalStatus(`Received workspace.signal from ${from}.`);
+        setActiveNotice(`Incoming peer signal from ${from}.`);
+      }
+
+      if (type === "pack-applied") {
+        const fromPeer = typeof payload.from === "string" ? payload.from : null;
+        const isServerPack = fromPeer === "server";
+        const isRemotePeerPack = Boolean(fromPeer) && !isServerPack && !isLocalPeer(fromPeer);
+        if (!isRemotePeerPack && !isServerPack) {
+          return;
+        }
+        refreshSharedWorkspace({ force: true, isRemotePack: true });
+        return;
+      }
+      if (type === "runtime-reconnected") {
+        refreshSharedWorkspace({ force: true });
+        setActiveNotice(`Reconnected to ${activeRoomId}.`);
+        return;
+      }
+      if (type === "peer-joined" || type === "peer-left") {
+        refreshSharedWorkspace({ force: true });
+        return;
+      }
+      if (type === "commit" || type === "delta" || type === "shared-value-updated") {
+        refreshSharedWorkspace({ force: true });
       }
     });
 
@@ -112,13 +589,1590 @@ export default function App() {
       unsubscribeRuntime();
       setOnlinePeers([]);
       setPresenceByPeer({});
+      setRemoteDragByPeer({});
       setIncomingSignals([]);
     };
-  }, [backend, peerTarget]);
+  }, [backend, peerTarget, activeRoomId, replayState.activeBranchId, replayState.cursor.mode]);
+
+  useEffect(() => {
+    if (diagnostics.connectionState === "error") {
+      setActiveNotice(`Connection error: ${diagnostics.lastError ?? "unknown runtime error"}`);
+      return;
+    }
+    if (diagnostics.connectionState === "closed") {
+      setActiveNotice("Disconnected. Reconnect to continue collaboration.");
+      return;
+    }
+    if (diagnostics.connectionState === "connecting") {
+      setActiveNotice(`Connecting to ${activeRoomId}... (sdk will auto-reconnect if the host drops)`);
+    }
+  }, [diagnostics.connectionState, diagnostics.lastError, activeRoomId]);
+
+  useEffect(() => {
+    if (backend === "sdk" && diagnostics.connectionState === "open") {
+      window.setTimeout(() => {
+        retireLegacyWorkspaceKeys(activeBranchIdRef.current || "main");
+      }, 500);
+      refreshSharedWorkspace();
+    }
+  }, [backend, diagnostics.connectionState, activeRoomId]);
 
   const canConnect = useMemo(() => roomIdInput.trim().length > 0, [roomIdInput]);
   const isSdkConnected = backend === "sdk" && diagnostics.connectionState === "open";
   const canUseSdkActions = isSdkConnected;
+  const replayNodeIds = replayState.branchNodeIds[replayState.cursor.branchId] ?? [];
+  const replayNodeCount = replayNodeIds.length;
+  const currentReplayNode =
+    replayState.cursor.nodeId && replayState.nodesById[replayState.cursor.nodeId]
+      ? replayState.nodesById[replayState.cursor.nodeId]
+      : null;
+  const replayCanStep = replayNodeCount > 0;
+  const isCursorAtHead = replayNodeCount > 0 && replayState.cursor.nodeIndex >= replayNodeCount - 1;
+  const availableBranchIds = Object.keys(replayState.branches);
+  const mergeSourceBranchNodeIds = replayState.branchNodeIds[mergeSourceBranchId] ?? [];
+  const sourceBranchInfo = replayState.branches[mergeSourceBranchId];
+  const activeBranchInfo = replayState.branches[replayState.activeBranchId];
+  const remoteDragByNodeId = useMemo(() => {
+    const next: Record<string, { x: number; y: number; peerId: string; atIso: string }> = {};
+    for (const [peerId, drag] of Object.entries(remoteDragByPeer)) {
+      const existing = next[drag.nodeId];
+      if (!existing || drag.atIso.localeCompare(existing.atIso) >= 0) {
+        next[drag.nodeId] = {
+          x: drag.x,
+          y: drag.y,
+          peerId,
+          atIso: drag.atIso
+        };
+      }
+    }
+    return next;
+  }, [remoteDragByPeer]);
+  const canvasReplayBadge = useMemo(() => {
+    const cursorNode = replayState.cursor.nodeId ? replayState.nodesById[replayState.cursor.nodeId] : null;
+    const modeLabel = replayState.cursor.mode === "live" ? "live" : "playback";
+    const cursorLabel = cursorNode ? `${replayState.cursor.nodeIndex}:${cursorNode.nodeId}` : `${replayState.cursor.nodeIndex}:(none)`;
+    return `branch ${replayState.activeBranchId} | ${modeLabel} | cursor ${cursorLabel}`;
+  }, [replayState.activeBranchId, replayState.cursor.mode, replayState.cursor.nodeIndex, replayState.cursor.nodeId, replayState.nodesById]);
+  const sortedBranchIds = useMemo(() => {
+    return [...availableBranchIds].sort((leftId, rightId) => {
+      const left = replayState.branches[leftId];
+      const right = replayState.branches[rightId];
+      if (left?.isMain && !right?.isMain) {
+        return -1;
+      }
+      if (!left?.isMain && right?.isMain) {
+        return 1;
+      }
+      return leftId.localeCompare(rightId);
+    });
+  }, [availableBranchIds, replayState.branches]);
+  const branchOffsetById = useMemo(() => {
+    return computeBranchOffsets(sortedBranchIds, replayState.branches, replayState.branchNodeIds);
+  }, [sortedBranchIds, replayState.branches, replayState.branchNodeIds]);
+  const maxBranchColumn = useMemo(() => {
+    return computeMaxBranchColumn(sortedBranchIds, branchOffsetById, replayState.branchNodeIds);
+  }, [sortedBranchIds, branchOffsetById, replayState.branchNodeIds]);
+  const laneLayout = useMemo(() => {
+    const slotWidth = 64;
+    const laneHeight = 54;
+    const leftGutter = 190;
+    const topGutter = 16;
+    const laneY: Record<string, number> = {};
+    const nodeXByBranch: Record<string, Record<string, number>> = {};
+    sortedBranchIds.forEach((branchId, laneIndex) => {
+      laneY[branchId] = topGutter + laneIndex * laneHeight + 18;
+      const nodes = replayState.branchNodeIds[branchId] ?? [];
+      const offset = branchOffsetById[branchId] ?? 0;
+      nodeXByBranch[branchId] = {};
+      nodes.forEach((nodeId, nodeIndex) => {
+        const globalColumn = offset + nodeIndex;
+        nodeXByBranch[branchId][nodeId] = leftGutter + globalColumn * slotWidth + slotWidth / 2;
+      });
+    });
+    return {
+      slotWidth,
+      laneHeight,
+      leftGutter,
+      topGutter,
+      width: Math.max(leftGutter + (maxBranchColumn + 1) * slotWidth + 40, leftGutter + 220),
+      height: topGutter + sortedBranchIds.length * laneHeight + 10,
+      laneY,
+      nodeXByBranch
+    };
+  }, [sortedBranchIds, replayState.branchNodeIds, branchOffsetById, maxBranchColumn]);
+  const mergeConnectors = useMemo(() => {
+    return replayState.merges
+      .map((merge) => {
+        const sourceY = laneLayout.laneY[merge.sourceBranchId];
+        const targetY = laneLayout.laneY[merge.targetBranchId];
+        const sourceX = laneLayout.nodeXByBranch[merge.sourceBranchId]?.[merge.sourceNodeId];
+        const targetX = laneLayout.nodeXByBranch[merge.targetBranchId]?.[merge.targetNextHeadNodeId];
+        if (typeof sourceX !== "number" || typeof sourceY !== "number" || typeof targetX !== "number" || typeof targetY !== "number") {
+          return null;
+        }
+        const midX = sourceX + (targetX - sourceX) * 0.5;
+        return {
+          id: merge.mergeNodeId,
+          path: `M ${sourceX} ${sourceY} C ${midX} ${sourceY}, ${midX} ${targetY}, ${targetX} ${targetY}`,
+          sourceX,
+          sourceY,
+          targetX,
+          targetY
+        };
+      })
+      .filter((entry): entry is { id: string; path: string; sourceX: number; sourceY: number; targetX: number; targetY: number } => Boolean(entry));
+  }, [replayState.merges, laneLayout]);
+  const mergeEligibilityMessage = useMemo(() => {
+    if (!mergeSourceNodeId) {
+      return "Select a source branch node to prepare a merge.";
+    }
+    if (!sourceBranchInfo || !activeBranchInfo) {
+      return "Merge unavailable: missing branch metadata.";
+    }
+    if (mergeSourceBranchId === replayState.activeBranchId) {
+      return "Merging within the same branch creates synthetic combine nodes; use with care.";
+    }
+    return `Merge ${mergeSourceBranchId}:${mergeSourceNodeId} into ${replayState.activeBranchId} head ${activeBranchInfo.headNodeId ?? "n/a"}.`;
+  }, [mergeSourceNodeId, sourceBranchInfo, activeBranchInfo, mergeSourceBranchId, replayState.activeBranchId]);
+
+  function parseWorkspaceNodes(raw: string | null): WorkspaceNode[] {
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed
+        .filter(
+          (entry): entry is WorkspaceNode =>
+            Boolean(entry) &&
+            typeof entry === "object" &&
+            typeof (entry as WorkspaceNode).id === "string" &&
+            typeof (entry as WorkspaceNode).x === "number" &&
+            typeof (entry as WorkspaceNode).y === "number" &&
+            typeof (entry as WorkspaceNode).label === "string" &&
+            typeof (entry as WorkspaceNode).updatedAtIso === "string"
+        )
+        .map((entry) => ({
+          ...entry,
+          x: Math.max(16, Math.min(WORKSPACE_WIDTH - 120, entry.x)),
+          y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, entry.y))
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  function markLocalCanvasWrite(): void {
+    const until = Date.now() + 3000;
+    suppressWorkspaceRefreshUntilRef.current = until;
+    suppressLiveWorkspaceLoadUntilRef.current = until;
+  }
+
+  function sharedWriteApplied(result: SharedWriteResult): boolean {
+    return result.applied;
+  }
+
+  function pushSyncWarningIfNeeded(result: SharedWriteResult, actionLabel: string): void {
+    if (result.applied && !result.pushed) {
+      setActiveNotice(`${actionLabel} updated locally; server pack was skipped — check diagnostics or reconnect.`);
+    }
+  }
+
+  function pushPersistenceEvent(key: string, action: string, detail: string) {
+    const item: PersistenceEvent = {
+      atIso: new Date().toISOString(),
+      key,
+      action,
+      detail
+    };
+    setPersistenceFeed((previous) => [item, ...previous].slice(0, 18));
+  }
+
+  function createWorkspaceSnapshot(): WorkspaceSnapshot {
+    return {
+      doc: appliedTextRef.current,
+      nodes: workspaceNodesRef.current.map((entry) => ({ ...entry })),
+      edges: workspaceEdgesRef.current.map((entry) => ({ ...entry })),
+      assets: workspaceAssetsRef.current.map((entry) => ({ ...entry })),
+      annotations: workspaceAnnotationsRef.current.map((entry) => ({ ...entry }))
+    };
+  }
+
+  function parseSharedReplayOps(raw: string | null): SharedReplayOp[] {
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed
+        .filter(
+          (entry): entry is SharedReplayOp =>
+            Boolean(entry) &&
+            typeof entry === "object" &&
+            typeof (entry as SharedReplayOp).id === "string" &&
+            typeof (entry as SharedReplayOp).branchId === "string" &&
+            typeof (entry as SharedReplayOp).opSummary === "string" &&
+            typeof (entry as SharedReplayOp).payloadRef === "string" &&
+            typeof (entry as SharedReplayOp).atIso === "string" &&
+            typeof (entry as SharedReplayOp).payload === "object" &&
+            Boolean((entry as SharedReplayOp).payload)
+        )
+        .sort((left, right) => left.atIso.localeCompare(right.atIso));
+    } catch {
+      return [];
+    }
+  }
+
+  function parseSharedBranches(raw: string | null): SharedBranchRecord[] {
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed
+        .filter(
+          (entry): entry is SharedBranchRecord =>
+            Boolean(entry) &&
+            typeof entry === "object" &&
+            typeof (entry as SharedBranchRecord).branchId === "string" &&
+            typeof (entry as SharedBranchRecord).roomId === "string" &&
+            typeof (entry as SharedBranchRecord).label === "string" &&
+            typeof (entry as SharedBranchRecord).createdAtIso === "string"
+        )
+        .sort((left, right) => left.createdAtIso.localeCompare(right.createdAtIso));
+    } catch {
+      return [];
+    }
+  }
+
+  function syncBranchesFromSharedRecords(records: SharedBranchRecord[]) {
+    const baselineSeed: Record<string, WorkspaceSnapshot> = {};
+    for (const record of records) {
+      dispatchReplay({
+        type: "register-branch",
+        branchId: record.branchId,
+        roomId: record.roomId,
+        label: record.label,
+        basedOnBranchId: record.basedOnBranchId,
+        basedOnNodeId: record.basedOnNodeId
+      });
+      if (record.branchId === "main") {
+        continue;
+      }
+      if (frozenBaselineBranchIdsRef.current.has(record.branchId)) {
+        continue;
+      }
+      if (hasWorkspaceSnapshotContent(branchBaselineByIdRef.current[record.branchId] ?? emptyWorkspaceSnapshot())) {
+        continue;
+      }
+      const hydrated = readWorkspaceBaselineForBranch(record.branchId);
+      if (!hasWorkspaceSnapshotContent(hydrated)) {
+        continue;
+      }
+      baselineSeed[record.branchId] = hydrated;
+      frozenBaselineBranchIdsRef.current.add(record.branchId);
+    }
+    if (Object.keys(baselineSeed).length > 0) {
+      setBranchBaselineById((previous) => ({
+        ...previous,
+        ...baselineSeed
+      }));
+    }
+  }
+
+  function getWorkspaceSharedKey(branchId: string, kind: WorkspaceDataKind): string {
+    return getWorkspaceLiveKey(branchId, kind);
+  }
+
+  function readSharedBaselineValue(
+    branchId: string,
+    kind: WorkspaceDataKind,
+    options?: { preferCanonical?: boolean }
+  ): string | null {
+    return sdkClient.getSharedValue(getWorkspaceBaselineKey(branchId, kind), { canonical: options?.preferCanonical });
+  }
+
+  function getLegacyWorkspaceSharedKey(kind: WorkspaceDataKind): string | null {
+    if (kind === "doc") {
+      return "workspace/doc/main";
+    }
+    return `workspace/${kind}`;
+  }
+
+  function readSharedWorkspaceValue(
+    branchId: string,
+    kind: WorkspaceDataKind,
+    options?: { preferCanonical?: boolean }
+  ): string | null {
+    const readKey = (key: string) => sdkClient.getSharedValue(key, { canonical: options?.preferCanonical });
+    const primary = readKey(getWorkspaceSharedKey(branchId, kind));
+    if (primary !== null) {
+      return primary;
+    }
+    if (branchId !== "main") {
+      return null;
+    }
+    const legacyKey = getLegacyWorkspaceSharedKey(kind);
+    return legacyKey ? readKey(legacyKey) : null;
+  }
+
+  function isLocalPeer(peerId: string | null): boolean {
+    if (!peerId) {
+      return false;
+    }
+    const localPubkey = sdkClient.getLocalPubkey();
+    return Boolean(localPubkey && peerId === localPubkey);
+  }
+
+  function applyRemoteReplayCursorFromPresence(peerId: string, data: unknown, peerName: string): void {
+    if (isLocalPeer(peerId) || !data || typeof data !== "object") {
+      return;
+    }
+    const replayCursor =
+      "replayCursor" in data && typeof (data as { replayCursor?: unknown }).replayCursor === "object"
+        ? (data as { replayCursor: unknown }).replayCursor
+        : null;
+    if (!replayCursor || typeof replayCursor !== "object") {
+      return;
+    }
+    const cursor = replayCursor as {
+      branchId?: unknown;
+      nodeIndex?: unknown;
+      replayNodeId?: unknown;
+      mode?: unknown;
+      atIso?: unknown;
+    };
+    if (typeof cursor.branchId !== "string" || cursor.branchId.length === 0) {
+      return;
+    }
+    if (typeof cursor.nodeIndex !== "number" || !Number.isFinite(cursor.nodeIndex)) {
+      return;
+    }
+    const branchId = cursor.branchId;
+    const nodeIndex = Math.max(0, Math.floor(cursor.nodeIndex));
+    const replayNodeId =
+      typeof cursor.replayNodeId === "string" && cursor.replayNodeId.length > 0 ? cursor.replayNodeId : null;
+    setRemoteReplayCursorByPeer((previous) => ({
+      ...previous,
+      [peerId]: {
+        branchId,
+        nodeIndex,
+        replayNodeId,
+        mode: cursor.mode === "playback" ? "playback" : "live",
+        name: peerName,
+        atIso: typeof cursor.atIso === "string" ? cursor.atIso : new Date().toISOString()
+      }
+    }));
+  }
+
+  function buildPresencePayload(options?: {
+    drag?: Record<string, unknown> | null;
+    includeReplayCursor?: boolean;
+  }): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      name: presenceName.trim() || "operator",
+      room: activeRoomId,
+      updatedAtIso: new Date().toISOString()
+    };
+    if (options?.includeReplayCursor) {
+      const cursor = replayCursorRef.current;
+      const branchNodeIds = replayBranchNodeIdsRef.current[cursor.branchId] ?? [];
+      const cursorNodeIndex = Math.min(Math.max(0, cursor.nodeIndex), Math.max(0, branchNodeIds.length - 1));
+      payload.replayCursor = {
+        branchId: cursor.branchId,
+        nodeIndex: cursorNodeIndex,
+        replayNodeId: cursor.nodeId,
+        mode: cursor.mode,
+        atIso: new Date().toISOString()
+      };
+    }
+    if (options?.drag) {
+      payload.drag = options.drag;
+    }
+    return payload;
+  }
+
+  function replayCursorPresenceFingerprint(): string {
+    const cursor = replayCursorRef.current;
+    const branchNodeIds = replayBranchNodeIdsRef.current[cursor.branchId] ?? [];
+    const cursorNodeIndex = Math.min(Math.max(0, cursor.nodeIndex), Math.max(0, branchNodeIds.length - 1));
+    return `${cursor.branchId}:${cursorNodeIndex}:${cursor.mode}:${cursor.nodeId ?? ""}`;
+  }
+
+  function publishReplayCursorPresence(options?: { force?: boolean }): void {
+    if (!canUseSdkActions) {
+      return;
+    }
+    const fingerprint = replayCursorPresenceFingerprint();
+    if (!options?.force && fingerprint === lastPublishedReplayCursorRef.current) {
+      return;
+    }
+    lastPublishedReplayCursorRef.current = fingerprint;
+    replayCursorPresenceLastSentRef.current = Date.now();
+    sdkClient.setPresence(buildPresencePayload({ includeReplayCursor: true }));
+  }
+
+  function scheduleReplayCursorPresencePublish(options?: { force?: boolean }): void {
+    if (!canUseSdkActions) {
+      return;
+    }
+    if (options?.force) {
+      if (replayCursorPublishTimerRef.current !== null) {
+        window.clearTimeout(replayCursorPublishTimerRef.current);
+        replayCursorPublishTimerRef.current = null;
+      }
+      publishReplayCursorPresence({ force: true });
+      return;
+    }
+    if (replayCursorPublishTimerRef.current !== null) {
+      window.clearTimeout(replayCursorPublishTimerRef.current);
+    }
+    replayCursorPublishTimerRef.current = window.setTimeout(() => {
+      replayCursorPublishTimerRef.current = null;
+      publishReplayCursorPresence();
+    }, 450);
+  }
+
+  function laneXForRemoteReplayCursor(remoteCursor: RemoteReplayCursor): number | undefined {
+    const branchId = remoteCursor.branchId;
+    const branchNodeIds = replayState.branchNodeIds[branchId] ?? [];
+    const candidates: string[] = [];
+    if (remoteCursor.replayNodeId) {
+      candidates.push(remoteCursor.replayNodeId);
+    }
+    const byIndex = branchNodeIds[remoteCursor.nodeIndex];
+    if (byIndex) {
+      candidates.push(byIndex);
+    }
+    for (const nodeId of candidates) {
+      const x = laneLayout.nodeXByBranch[branchId]?.[nodeId];
+      if (typeof x === "number") {
+        return x;
+      }
+    }
+    return undefined;
+  }
+
+  function shouldApplySharedKeyWrite(
+    key: string,
+    incomingRaw: string | null,
+    options?: { isRemotePack?: boolean }
+  ): boolean {
+    if (incomingRaw === null) {
+      return false;
+    }
+    if (isDraggingRef.current) {
+      return false;
+    }
+    const expected = lastSharedRawByKeyRef.current[key] ?? null;
+    const protectUntil = localWriteProtectUntilByKeyRef.current[key] ?? 0;
+    if (Date.now() < protectUntil && expected !== null && incomingRaw !== expected) {
+      return options?.isRemotePack === true;
+    }
+    return true;
+  }
+
+  function scheduleRemoteDragEndRefresh(peerId: string | null): void {
+    if (!peerId || isLocalPeer(peerId)) {
+      return;
+    }
+    if (!(peerId in remoteDragByPeerRef.current)) {
+      return;
+    }
+    queueMicrotask(() =>
+      refreshSharedWorkspace({ force: true, isRemotePack: true })
+    );
+  }
+
+  function readSharedKey(key: string, options?: { preferCanonical?: boolean }): string | null {
+    return sdkClient.getSharedValue(key, options?.preferCanonical ? { canonical: true } : undefined);
+  }
+
+  function listSharedKeys(prefix: string): string[] {
+    const direct = sdkClient.listSharedKeysByPrefix(prefix);
+    if (direct.length > 0) {
+      return direct;
+    }
+    return sdkClient.getAllSharedKeys().filter((key) => key.startsWith(prefix));
+  }
+
+  function readReplayOpsForBranch(branchId: string, options?: { preferCanonical?: boolean }): SharedReplayOp[] {
+    return readReplayOpsFromShared(branchId, (key) => readSharedKey(key, options), listSharedKeys);
+  }
+
+  function mergeWorkspaceNodesById(...lists: WorkspaceNode[][]): WorkspaceNode[] {
+    const byId = new Map<string, WorkspaceNode>();
+    for (const list of lists) {
+      for (const node of list) {
+        byId.set(node.id, node);
+      }
+    }
+    return Array.from(byId.values()).sort((left, right) => right.updatedAtIso.localeCompare(left.updatedAtIso));
+  }
+
+  function readBranchBaselineNodes(branchId: string): WorkspaceNode[] {
+    if (branchId === "main") {
+      return [];
+    }
+    const cached = branchBaselineByIdRef.current[branchId];
+    if (cached && cached.nodes.length > 0) {
+      return cached.nodes.map((entry) => ({ ...entry }));
+    }
+    return readWorkspaceBaselineForBranch(branchId).nodes;
+  }
+
+  function resolveNodeRecordForBranch(branchId: string, nodeId: string): WorkspaceNode | null {
+    const direct = parseNodeRecord(readSharedKey(getNodeRecordKey(branchId, nodeId)));
+    if (direct) {
+      return direct;
+    }
+    const fromBaseline = readBranchBaselineNodes(branchId).find((entry) => entry.id === nodeId);
+    if (fromBaseline) {
+      return fromBaseline;
+    }
+    const branch = replayBranchesRef.current[branchId];
+    const parentBranchId = branch?.basedOnBranchId;
+    if (parentBranchId) {
+      const fromParent = parseNodeRecord(readSharedKey(getNodeRecordKey(parentBranchId, nodeId)));
+      if (fromParent) {
+        return fromParent;
+      }
+      if (parentBranchId !== "main") {
+        const fromParentBaseline = readBranchBaselineNodes(parentBranchId).find((entry) => entry.id === nodeId);
+        if (fromParentBaseline) {
+          return fromParentBaseline;
+        }
+      }
+    }
+    return null;
+  }
+
+  function readWorkspaceNodesForBranch(branchId: string, options?: { preferCanonical?: boolean }): WorkspaceNode[] {
+    const readShared = (key: string) => readSharedKey(key, options);
+    const fromLive = readWorkspaceNodesFromShared(branchId, readShared, listSharedKeys);
+    let branchLiveNodes = fromLive;
+    if (branchLiveNodes.length === 0) {
+      const replayOps =
+        sharedReplayOpsRef.current.length > 0
+          ? sharedReplayOpsRef.current.filter((entry) => entry.branchId === branchId)
+          : readReplayOpsForBranch(branchId, options);
+      const replayIds = nodeIdsFromReplayOps(replayOps);
+      if (replayIds.length > 0) {
+        branchLiveNodes = readWorkspaceNodesFromReplayOpIds(branchId, replayIds, readShared);
+      }
+    }
+    if (branchId === "main") {
+      return branchLiveNodes;
+    }
+    return mergeWorkspaceNodesById(readBranchBaselineNodes(branchId), branchLiveNodes);
+  }
+
+  function retireLegacyWorkspaceKeys(branchId: string): void {
+    if (backend !== "sdk") {
+      return;
+    }
+    if (legacyRetireRoomRef.current === activeRoomId) {
+      return;
+    }
+    legacyRetireRoomRef.current = activeRoomId;
+    for (const key of getLegacyWorkspaceKeysToRetire(branchId)) {
+      if (readSharedKey(key) === null) {
+        continue;
+      }
+      sdkClient.deleteSharedValue(key);
+    }
+  }
+
+  function readWorkspaceBaselineForBranch(branchId: string): WorkspaceSnapshot {
+    const docRaw = readSharedBaselineValue(branchId, "doc");
+    const nodesRaw = readSharedBaselineValue(branchId, "nodes");
+    const edgesRaw = readSharedBaselineValue(branchId, "edges");
+    const assetsRaw = readSharedBaselineValue(branchId, "assets");
+    const annotationsRaw = readSharedBaselineValue(branchId, "annotations");
+    return {
+      doc: docRaw ?? "",
+      nodes: parseWorkspaceNodes(nodesRaw),
+      edges: parseWorkspaceEdges(edgesRaw),
+      assets: parseWorkspaceAssets(assetsRaw),
+      annotations: parseWorkspaceAnnotations(annotationsRaw)
+    };
+  }
+
+  function readWorkspaceSnapshotForBranch(branchId: string): WorkspaceSnapshot {
+    const docRaw = readSharedWorkspaceValue(branchId, "doc");
+    const edgesRaw = readSharedWorkspaceValue(branchId, "edges");
+    const assetsRaw = readSharedWorkspaceValue(branchId, "assets");
+    const annotationsRaw = readSharedWorkspaceValue(branchId, "annotations");
+    return {
+      doc: docRaw ?? "",
+      nodes: readWorkspaceNodesForBranch(branchId),
+      edges: parseWorkspaceEdges(edgesRaw),
+      assets: parseWorkspaceAssets(assetsRaw),
+      annotations: parseWorkspaceAnnotations(annotationsRaw)
+    };
+  }
+
+  function markSharedKeysWriteProtected(keys: string[], protectMs = BRANCH_WRITE_PROTECT_MS): void {
+    const until = Date.now() + protectMs;
+    for (const key of keys) {
+      localWriteProtectUntilByKeyRef.current[key] = until;
+    }
+  }
+
+  function applyLiveSnapshotWriteTracking(branchId: string, snapshot: WorkspaceSnapshot): void {
+    const entries = snapshotLiveKeysForBranch(branchId, snapshot);
+    for (const entry of entries) {
+      lastSharedRawByKeyRef.current[entry.key] = entry.value;
+    }
+    markSharedKeysWriteProtected(entries.map((entry) => entry.key));
+  }
+
+  function applyBaselineSnapshotWriteTracking(branchId: string, snapshot: WorkspaceSnapshot): void {
+    const entries = snapshotBaselineKeysForBranch(branchId, snapshot);
+    for (const entry of entries) {
+      lastSharedRawByKeyRef.current[entry.key] = entry.value;
+    }
+    markSharedKeysWriteProtected(entries.map((entry) => entry.key), BRANCH_WRITE_PROTECT_MS * 4);
+  }
+
+  function persistWorkspaceSnapshotForBranch(branchId: string, snapshot: WorkspaceSnapshot, reason: string): boolean {
+    if (backend !== "sdk") {
+      setLastAction("Workspace branch persistence requires runtime mode = npm sdk + wasm.");
+      return false;
+    }
+    const entries = snapshotLiveKeysForBranch(branchId, snapshot);
+    const writeResult = sdkClient.setSharedValues(entries);
+    if (!sharedWriteApplied(writeResult)) {
+      setLastAction(`Branch live snapshot persistence failed for ${branchId}.`);
+      return false;
+    }
+    markLocalCanvasWrite();
+    pushSyncWarningIfNeeded(writeResult, `Branch live snapshot for ${branchId}`);
+    applyLiveSnapshotWriteTracking(branchId, snapshot);
+    pushPersistenceEvent(`workspace/live/${branchId}`, "write", reason);
+    return true;
+  }
+
+  function persistBranchCreation(record: SharedBranchRecord, baseline: WorkspaceSnapshot, reason: string): boolean {
+    if (backend !== "sdk") {
+      setLastAction("Branch persistence requires runtime mode = npm sdk + wasm.");
+      return false;
+    }
+    const existing = parseSharedBranches(sdkClient.getSharedValue(WORKSPACE_BRANCHES_KEY));
+    const has = existing.some((entry) => entry.branchId === record.branchId);
+    const nextBranches = has
+      ? existing
+      : [...existing, record].sort((left, right) => left.createdAtIso.localeCompare(right.createdAtIso));
+    const branchesRaw = JSON.stringify(nextBranches);
+    const existingOps = readReplayOpsForBranch(record.branchId);
+    const forkOp = buildForkReplayOp(record);
+    const hasForkOp = existingOps.some((entry) => entry.id === forkOp.id);
+    const nextOps = hasForkOp
+      ? existingOps
+      : [...existingOps, forkOp].sort((left, right) => left.atIso.localeCompare(right.atIso));
+    const forkReplayEntries = hasForkOp ? [] : buildAppendReplayOpWriteEntries(record.branchId, forkOp);
+    const branchId = record.branchId;
+    const seededNodes = baseline.nodes.map((entry) => ({ ...entry }));
+    const entries = [
+      { key: WORKSPACE_BRANCHES_KEY, value: branchesRaw },
+      ...snapshotBaselineKeysForBranch(branchId, baseline),
+      { key: getWorkspaceSharedKey(branchId, "doc"), value: baseline.doc },
+      { key: getWorkspaceSharedKey(branchId, "edges"), value: JSON.stringify(baseline.edges) },
+      { key: getWorkspaceSharedKey(branchId, "assets"), value: JSON.stringify(baseline.assets) },
+      {
+        key: getWorkspaceSharedKey(branchId, "annotations"),
+        value: JSON.stringify(baseline.annotations)
+      },
+      ...buildSeedBranchNodesWriteEntries(branchId, seededNodes),
+      ...forkReplayEntries
+    ];
+    const writeResult = sdkClient.setSharedValues(entries);
+    if (!sharedWriteApplied(writeResult)) {
+      setLastAction(`Branch persistence failed for ${record.branchId}.`);
+      return false;
+    }
+    markLocalCanvasWrite();
+    pushSyncWarningIfNeeded(writeResult, `Branch ${record.branchId}`);
+    lastSharedRawByKeyRef.current[WORKSPACE_BRANCHES_KEY] = branchesRaw;
+    if (!hasForkOp) {
+      trackReplayOpWriteProtection(record.branchId, forkOp);
+    }
+    localWriteProtectUntilByKeyRef.current[WORKSPACE_BRANCHES_KEY] = Date.now() + BRANCH_WRITE_PROTECT_MS;
+    applyBaselineSnapshotWriteTracking(record.branchId, baseline);
+    applyLiveSnapshotWriteTracking(record.branchId, baseline);
+    sharedBranchesRef.current = nextBranches;
+    sharedReplayOpsRef.current = nextOps;
+    frozenBaselineBranchIdsRef.current.add(record.branchId);
+    setBranchBaselineById((previous) => ({
+      ...previous,
+      [record.branchId]: cloneWorkspaceSnapshot(baseline)
+    }));
+    syncReplayFromSharedOps(nextOps);
+    syncLocalReplayFingerprint();
+    pushPersistenceEvent(WORKSPACE_BRANCHES_KEY, "write", reason);
+    pushPersistenceEvent(`workspace/baseline/${record.branchId}`, "write", reason);
+    pushPersistenceEvent(`workspace/live/${record.branchId}`, "write", reason);
+    return true;
+  }
+
+  function hydrateBranchBaselinesFromStorage(branchIds: string[]) {
+    if (backend !== "sdk") {
+      return;
+    }
+    const uniqueBranchIds = Array.from(new Set(branchIds.filter((entry) => typeof entry === "string" && entry.length > 0)));
+    if (uniqueBranchIds.length === 0) {
+      return;
+    }
+    setBranchBaselineById((previous) => {
+      let changed = false;
+      const next = { ...previous };
+      for (const branchId of uniqueBranchIds) {
+        if (branchId === "main") {
+          continue;
+        }
+        if (frozenBaselineBranchIdsRef.current.has(branchId)) {
+          continue;
+        }
+        const current = previous[branchId] ?? emptyWorkspaceSnapshot();
+        if (hasWorkspaceSnapshotContent(current)) {
+          continue;
+        }
+        const hydrated = readWorkspaceBaselineForBranch(branchId);
+        if (!hasWorkspaceSnapshotContent(hydrated)) {
+          continue;
+        }
+        next[branchId] = cloneWorkspaceSnapshot(hydrated);
+        frozenBaselineBranchIdsRef.current.add(branchId);
+        changed = true;
+      }
+      return changed ? next : previous;
+    });
+  }
+
+  function applyForkBranchReplayOp(op: SharedReplayOp): void {
+    if (!isForkBranchPayload(op.payload)) {
+      return;
+    }
+    const record = op.payload.branch;
+    dispatchReplay({
+      type: "register-branch",
+      branchId: record.branchId,
+      roomId: record.roomId,
+      label: record.label,
+      basedOnBranchId: record.basedOnBranchId,
+      basedOnNodeId: record.basedOnNodeId
+    });
+    if (record.branchId === "main") {
+      return;
+    }
+    const baseline = readWorkspaceBaselineForBranch(record.branchId);
+    if (!hasWorkspaceSnapshotContent(baseline)) {
+      return;
+    }
+    frozenBaselineBranchIdsRef.current.add(record.branchId);
+    setBranchBaselineById((previous) => ({
+      ...previous,
+      [record.branchId]: cloneWorkspaceSnapshot(baseline)
+    }));
+  }
+
+  function syncReplayFromSharedOps(sharedOps: SharedReplayOp[]) {
+    const sortedOps = [...sharedOps].sort((left, right) => left.atIso.localeCompare(right.atIso));
+    for (const op of sortedOps) {
+      if (appliedSharedReplayOpIdsRef.current.has(op.id)) {
+        continue;
+      }
+      if (isForkBranchPayload(op.payload)) {
+        applyForkBranchReplayOp(op);
+        appliedSharedReplayOpIdsRef.current.add(op.id);
+        continue;
+      }
+      dispatchReplay({
+        type: "append-branch-node",
+        branchId: op.branchId,
+        roomId: replayBranchesRef.current[op.branchId]?.roomId ?? activeRoomId,
+        opSummary: op.opSummary,
+        payloadJson: JSON.stringify(op.payload),
+        payloadRef: op.payloadRef,
+        replayOpId: op.id,
+        atIso: op.atIso
+      });
+      appliedSharedReplayOpIdsRef.current.add(op.id);
+    }
+  }
+
+  function applyWorkspaceSnapshot(snapshot: WorkspaceSnapshot, source: "runtime" | "replay") {
+    setAppliedText(snapshot.doc);
+    if (source === "runtime") {
+      setDraftText(snapshot.doc);
+    }
+    setWorkspaceNodes(snapshot.nodes.map((entry) => ({ ...entry })));
+    setWorkspaceEdges(snapshot.edges.map((entry) => ({ ...entry })));
+    setWorkspaceAssets(snapshot.assets.map((entry) => ({ ...entry })));
+    setWorkspaceAnnotations(snapshot.annotations.map((entry) => ({ ...entry })));
+  }
+
+  function loadLiveWorkspaceForBranch(branchId: string): void {
+    if (backend !== "sdk" || isDraggingRef.current) {
+      return;
+    }
+    if (Date.now() < suppressLiveWorkspaceLoadUntilRef.current) {
+      return;
+    }
+    const live = readWorkspaceSnapshotForBranch(branchId);
+    if (hasWorkspaceSnapshotContent(live)) {
+      const preserveLocalNodes =
+        !forceWorkspaceClearRef.current &&
+        live.nodes.length === 0 &&
+        workspaceNodesRef.current.length > 0;
+      const snapshot = preserveLocalNodes
+        ? { ...live, nodes: workspaceNodesRef.current.map((entry) => ({ ...entry })) }
+        : live;
+      applyWorkspaceSnapshot(snapshot, "runtime");
+      return;
+    }
+    const branchReplayIds = replayBranchNodeIdsRef.current[branchId] ?? [];
+    const headIndex = branchReplayIds.length === 0 ? -1 : branchReplayIds.length - 1;
+    const projected = projectReplayWorkspaceSnapshotFor(branchId, headIndex);
+    applyWorkspaceSnapshot(projected, "runtime");
+  }
+
+  function projectReplayWorkspaceSnapshotFor(branchId: string, nodeIndex: number): WorkspaceSnapshot {
+    const nodes = replayState.branchNodeIds[branchId] ?? [];
+    const baseline = replayBaselineForBranch(branchId, branchBaselineById) as WorkspaceSnapshot;
+    const projected: WorkspaceSnapshot = cloneWorkspaceSnapshot(baseline);
+    if (nodes.length === 0 || nodeIndex < 0) {
+      return projected;
+    }
+    const maxIndex = Math.min(nodeIndex, nodes.length - 1);
+    for (let index = 0; index <= maxIndex; index += 1) {
+      const nodeId = nodes[index];
+      const replayNode = replayState.nodesById[nodeId];
+      if (!replayNode) {
+        continue;
+      }
+      let payload: unknown;
+      try {
+        payload = JSON.parse(replayNode.payloadJson);
+      } catch {
+        continue;
+      }
+      if (!payload || typeof payload !== "object") {
+        continue;
+      }
+      const typed = payload as {
+        type?: unknown;
+        node?: unknown;
+        nodeId?: unknown;
+        asset?: unknown;
+        edge?: unknown;
+        annotation?: unknown;
+        move?: unknown;
+        text?: unknown;
+      };
+      if (typed.type === "workspace.add-node") {
+        let raw: WorkspaceNode | null = null;
+        if (typed.node && typeof typed.node === "object") {
+          raw = typed.node as WorkspaceNode;
+        } else if (typeof typed.nodeId === "string") {
+          raw = resolveNodeRecordForBranch(branchId, typed.nodeId);
+        }
+        if (
+          raw &&
+          typeof raw.id === "string" &&
+          typeof raw.label === "string" &&
+          typeof raw.x === "number" &&
+          typeof raw.y === "number" &&
+          typeof raw.updatedAtIso === "string"
+        ) {
+          const exists = projected.nodes.some((entry) => entry.id === raw.id);
+          if (!exists) {
+            projected.nodes.unshift({
+              ...raw,
+              x: Math.max(16, Math.min(WORKSPACE_WIDTH - 120, raw.x)),
+              y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, raw.y))
+            });
+          }
+        }
+      }
+      if (typed.type === "workspace.set-doc" && typeof typed.text === "string") {
+        projected.doc = typed.text;
+      }
+      if (typed.type === "workspace.add-asset" && typed.asset && typeof typed.asset === "object") {
+        const raw = typed.asset as WorkspaceAsset;
+        if (
+          typeof raw.id === "string" &&
+          typeof raw.name === "string" &&
+          typeof raw.x === "number" &&
+          typeof raw.y === "number" &&
+          typeof raw.updatedAtIso === "string"
+        ) {
+          const exists = projected.assets.some((entry) => entry.id === raw.id);
+          if (!exists) {
+            projected.assets.unshift({
+              ...raw,
+              x: Math.max(16, Math.min(WORKSPACE_WIDTH - 160, raw.x)),
+              y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 62, raw.y))
+            });
+          }
+        }
+      }
+      if (typed.type === "workspace.add-edge" && typed.edge && typeof typed.edge === "object") {
+        const edge = typed.edge as WorkspaceEdge;
+        if (
+          typeof edge.id === "string" &&
+          typeof edge.fromNodeId === "string" &&
+          typeof edge.toNodeId === "string" &&
+          typeof edge.updatedAtIso === "string"
+        ) {
+          const exists = projected.edges.some((entry) => entry.id === edge.id);
+          if (!exists) {
+            projected.edges.unshift({ ...edge });
+          }
+        }
+      }
+      if (typed.type === "workspace.move-node" && typed.move && typeof typed.move === "object") {
+        const move = typed.move as { nodeId?: unknown; x?: unknown; y?: unknown; updatedAtIso?: unknown };
+        if (typeof move.nodeId === "string" && typeof move.x === "number" && typeof move.y === "number") {
+          const nextX = move.x;
+          const nextY = move.y;
+          projected.nodes = projected.nodes.map((entry) =>
+            entry.id === move.nodeId
+              ? {
+                  ...entry,
+                  x: Math.max(16, Math.min(WORKSPACE_WIDTH - 120, nextX)),
+                  y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, nextY)),
+                  updatedAtIso: typeof move.updatedAtIso === "string" ? move.updatedAtIso : entry.updatedAtIso
+                }
+              : entry
+          );
+        }
+      }
+      if (typed.type === "workspace.add-annotation" && typed.annotation && typeof typed.annotation === "object") {
+        const note = typed.annotation as WorkspaceAnnotation;
+        if (
+          typeof note.id === "string" &&
+          typeof note.text === "string" &&
+          typeof note.x === "number" &&
+          typeof note.y === "number" &&
+          typeof note.updatedAtIso === "string"
+        ) {
+          const exists = projected.annotations.some((entry) => entry.id === note.id);
+          if (!exists) {
+            projected.annotations.unshift({
+              ...note,
+              x: Math.max(16, Math.min(WORKSPACE_WIDTH - 180, note.x)),
+              y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 90, note.y))
+            });
+          }
+        }
+      }
+      if (typed.type === "workspace.clear-assets") {
+        projected.assets = [];
+      }
+      if (typed.type === "workspace.clear-annotations") {
+        projected.annotations = [];
+      }
+      if (typed.type === "workspace.clear-edges") {
+        projected.edges = [];
+      }
+      if (typed.type === "workspace.clear-nodes") {
+        projected.nodes = [];
+        projected.edges = [];
+      }
+    }
+    return projected;
+  }
+
+  function projectReplayWorkspaceSnapshot(): WorkspaceSnapshot {
+    return projectReplayWorkspaceSnapshotFor(replayState.cursor.branchId, replayState.cursor.nodeIndex);
+  }
+
+  function parseWorkspaceEdges(raw: string | null): WorkspaceEdge[] {
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed.filter(
+        (entry): entry is WorkspaceEdge =>
+          Boolean(entry) &&
+          typeof entry === "object" &&
+          typeof (entry as WorkspaceEdge).id === "string" &&
+          typeof (entry as WorkspaceEdge).fromNodeId === "string" &&
+          typeof (entry as WorkspaceEdge).toNodeId === "string" &&
+          typeof (entry as WorkspaceEdge).updatedAtIso === "string"
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  function parseWorkspaceAssets(raw: string | null): WorkspaceAsset[] {
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed
+        .filter(
+          (entry): entry is WorkspaceAsset =>
+            Boolean(entry) &&
+            typeof entry === "object" &&
+            typeof (entry as WorkspaceAsset).id === "string" &&
+            typeof (entry as WorkspaceAsset).name === "string" &&
+            typeof (entry as WorkspaceAsset).x === "number" &&
+            typeof (entry as WorkspaceAsset).y === "number" &&
+            typeof (entry as WorkspaceAsset).updatedAtIso === "string"
+        )
+        .map((entry) => ({
+          ...entry,
+          x: Math.max(16, Math.min(WORKSPACE_WIDTH - 160, entry.x)),
+          y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 80, entry.y))
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  function parseWorkspaceAnnotations(raw: string | null): WorkspaceAnnotation[] {
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed
+        .filter(
+          (entry): entry is WorkspaceAnnotation =>
+            Boolean(entry) &&
+            typeof entry === "object" &&
+            typeof (entry as WorkspaceAnnotation).id === "string" &&
+            typeof (entry as WorkspaceAnnotation).text === "string" &&
+            typeof (entry as WorkspaceAnnotation).x === "number" &&
+            typeof (entry as WorkspaceAnnotation).y === "number" &&
+            typeof (entry as WorkspaceAnnotation).updatedAtIso === "string"
+        )
+        .map((entry) => ({
+          ...entry,
+          x: Math.max(16, Math.min(WORKSPACE_WIDTH - 180, entry.x)),
+          y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 90, entry.y))
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  function refreshSharedWorkspace(options?: {
+    force?: boolean;
+    preferCanonical?: boolean;
+    isRemotePack?: boolean;
+  }): void {
+    if (backend !== "sdk") {
+      return;
+    }
+    const force = options?.force ?? false;
+    const preferCanonical = options?.preferCanonical ?? false;
+    const isRemotePack = options?.isRemotePack ?? false;
+    if (isDraggingRef.current) {
+      return;
+    }
+    if (!isRemotePack && Date.now() < suppressWorkspaceRefreshUntilRef.current) {
+      return;
+    }
+    const shouldApplyWorkspaceView = replayModeRef.current === "live";
+    const branchId = activeBranchIdRef.current || replayState.activeBranchId;
+    const preferCanonicalMetadata = preferCanonical ? { canonical: true as const } : undefined;
+
+    const docKey = getWorkspaceSharedKey(branchId, "doc");
+    const nodesFingerprintKey = getNodeMemberKeyPrefix(branchId);
+    const edgesKey = getWorkspaceSharedKey(branchId, "edges");
+    const assetsKey = getWorkspaceSharedKey(branchId, "assets");
+    const annotationsKey = getWorkspaceSharedKey(branchId, "annotations");
+
+    const sharedText = readSharedWorkspaceValue(branchId, "doc");
+    const canApplyDoc = shouldApplySharedKeyWrite(docKey, sharedText, { isRemotePack });
+    if (canApplyDoc && sharedText !== (lastSharedRawByKeyRef.current[docKey] ?? null)) {
+      if ((lastSharedRawByKeyRef.current[docKey] ?? null) !== null) {
+        pushPersistenceEvent(docKey, "sync", "Remote shared text update pulled.");
+      }
+      lastSharedRawByKeyRef.current[docKey] = sharedText;
+    }
+    if (canApplyDoc && sharedText !== null && shouldApplyWorkspaceView) {
+      setAppliedText(sharedText);
+      setDraftText(sharedText);
+    }
+
+    const sharedNodes = readWorkspaceNodesForBranch(branchId);
+    const sharedNodesRaw = JSON.stringify(sharedNodes);
+    const canApplyNodes = shouldApplySharedKeyWrite(nodesFingerprintKey, sharedNodesRaw, { isRemotePack });
+    if (canApplyNodes && sharedNodesRaw !== (lastSharedRawByKeyRef.current[nodesFingerprintKey] ?? null)) {
+      if ((lastSharedRawByKeyRef.current[nodesFingerprintKey] ?? null) !== null) {
+        pushPersistenceEvent(nodesFingerprintKey, "sync", "Workspace nodes updated from runtime sync.");
+      }
+      lastSharedRawByKeyRef.current[nodesFingerprintKey] = sharedNodesRaw;
+    }
+    if (canApplyNodes && shouldApplyWorkspaceView) {
+      const forceClear = forceWorkspaceClearRef.current;
+      const wouldWipeLocalCanvas =
+        !forceClear && sharedNodes.length === 0 && workspaceNodesRef.current.length > 0;
+      if (forceClear || !wouldWipeLocalCanvas) {
+        if (forceClear) {
+          forceWorkspaceClearRef.current = false;
+        }
+        setWorkspaceNodes(sharedNodes);
+      }
+    }
+
+    const sharedEdgesRaw = readSharedWorkspaceValue(branchId, "edges");
+    const canApplyEdges = shouldApplySharedKeyWrite(edgesKey, sharedEdgesRaw, { isRemotePack });
+    if (canApplyEdges && sharedEdgesRaw !== (lastSharedRawByKeyRef.current[edgesKey] ?? null)) {
+      if ((lastSharedRawByKeyRef.current[edgesKey] ?? null) !== null) {
+        pushPersistenceEvent(edgesKey, "sync", "Workspace edges updated from runtime sync.");
+      }
+      lastSharedRawByKeyRef.current[edgesKey] = sharedEdgesRaw;
+    }
+    if (canApplyEdges && sharedEdgesRaw !== null && shouldApplyWorkspaceView) {
+      setWorkspaceEdges(parseWorkspaceEdges(sharedEdgesRaw));
+    }
+
+    const sharedAssetsRaw = readSharedWorkspaceValue(branchId, "assets");
+    const canApplyAssets = shouldApplySharedKeyWrite(assetsKey, sharedAssetsRaw, { isRemotePack });
+    if (canApplyAssets && sharedAssetsRaw !== (lastSharedRawByKeyRef.current[assetsKey] ?? null)) {
+      if ((lastSharedRawByKeyRef.current[assetsKey] ?? null) !== null) {
+        pushPersistenceEvent(assetsKey, "sync", "Workspace assets updated from runtime sync.");
+      }
+      lastSharedRawByKeyRef.current[assetsKey] = sharedAssetsRaw;
+    }
+    if (canApplyAssets && sharedAssetsRaw !== null && shouldApplyWorkspaceView) {
+      setWorkspaceAssets(parseWorkspaceAssets(sharedAssetsRaw));
+    }
+
+    const sharedAnnotationsRaw = readSharedWorkspaceValue(branchId, "annotations");
+    const canApplyAnnotations = shouldApplySharedKeyWrite(annotationsKey, sharedAnnotationsRaw, { isRemotePack });
+    if (
+      canApplyAnnotations &&
+      sharedAnnotationsRaw !== (lastSharedRawByKeyRef.current[annotationsKey] ?? null)
+    ) {
+      if ((lastSharedRawByKeyRef.current[annotationsKey] ?? null) !== null) {
+        pushPersistenceEvent(annotationsKey, "sync", "Workspace notes updated from runtime sync.");
+      }
+      lastSharedRawByKeyRef.current[annotationsKey] = sharedAnnotationsRaw;
+    }
+    if (canApplyAnnotations && sharedAnnotationsRaw !== null && shouldApplyWorkspaceView) {
+      setWorkspaceAnnotations(parseWorkspaceAnnotations(sharedAnnotationsRaw));
+    }
+    const replayFingerprintKey = ALL_REPLAY_OP_KEY_PREFIX;
+    const sharedOps = readAllReplayOpsFromShared(
+      (key) => readSharedKey(key, preferCanonical ? { preferCanonical: true } : undefined),
+      listSharedKeys
+    );
+    const sharedReplayOpsRaw = JSON.stringify(sharedOps);
+    if (sharedReplayOpsRaw !== (lastSharedRawByKeyRef.current[replayFingerprintKey] ?? null)) {
+      lastSharedRawByKeyRef.current[replayFingerprintKey] = sharedReplayOpsRaw;
+      sharedReplayOpsRef.current = sharedOps;
+      syncReplayFromSharedOps(sharedOps);
+    }
+    const sharedBranchesRaw = sdkClient.getSharedValue(WORKSPACE_BRANCHES_KEY, preferCanonicalMetadata);
+    const canApplyBranches = shouldApplySharedKeyWrite(WORKSPACE_BRANCHES_KEY, sharedBranchesRaw, { isRemotePack });
+    if (
+      canApplyBranches &&
+      sharedBranchesRaw !== null &&
+      sharedBranchesRaw !== lastSharedRawByKeyRef.current[WORKSPACE_BRANCHES_KEY]
+    ) {
+      if ((lastSharedRawByKeyRef.current[WORKSPACE_BRANCHES_KEY] ?? null) !== null) {
+        pushPersistenceEvent(WORKSPACE_BRANCHES_KEY, "sync", "Shared branch topology updated from runtime sync.");
+      }
+      lastSharedRawByKeyRef.current[WORKSPACE_BRANCHES_KEY] = sharedBranchesRaw;
+      const sharedBranches = parseSharedBranches(sharedBranchesRaw);
+      sharedBranchesRef.current = sharedBranches;
+      syncBranchesFromSharedRecords(sharedBranches);
+    }
+    hydrateBranchBaselinesFromStorage([
+      ...Object.keys(replayBranchesRef.current),
+      ...sharedBranchesRef.current.map((entry) => entry.branchId),
+      replayState.cursor.branchId,
+      replayState.activeBranchId
+    ]);
+  }
+
+  function ensureWritableBranchForEdit(
+    actionLabel: string,
+    options?: { applySeedSnapshot?: boolean }
+  ): WriteBranchResolution | null {
+    const applySeedSnapshot = options?.applySeedSnapshot ?? true;
+    const selectedBranchId = activeBranchIdRef.current || replayState.activeBranchId || replayState.cursor.branchId;
+    const selectedBranchNodeIds = replayState.branchNodeIds[selectedBranchId] ?? [];
+    const selectedBranchHeadIndex = selectedBranchNodeIds.length - 1;
+    const selectedBranchCursorIndex =
+      replayState.cursor.branchId === selectedBranchId
+        ? replayState.cursor.nodeIndex
+        : Math.max(0, selectedBranchHeadIndex);
+    const routing = decideWriteRouting(replayState.cursor.mode, selectedBranchCursorIndex, selectedBranchHeadIndex);
+    if (routing === "direct-write") {
+      if (activeBranchIdRef.current !== selectedBranchId) {
+        dispatchReplay({ type: "set-active-branch", branchId: selectedBranchId });
+        activeBranchIdRef.current = selectedBranchId;
+      }
+      return { branchId: selectedBranchId, seededSnapshot: null };
+    }
+    if (routing === "switch-to-live-head-write") {
+      dispatchReplay({ type: "set-active-branch", branchId: selectedBranchId });
+      dispatchReplay({ type: "set-mode", mode: "live" });
+      activeBranchIdRef.current = selectedBranchId;
+      setActiveNotice(`Playback cursor is at ${selectedBranchId} head; switched to live for ${actionLabel}.`);
+      return { branchId: selectedBranchId, seededSnapshot: null };
+    }
+
+    const newBranchId = `branch-${branchCounterRef.current++}`;
+    const newRoomId = `${activeRoomId}-${newBranchId}`;
+    const sourceNodeIndex = Math.min(selectedBranchCursorIndex, Math.max(0, selectedBranchNodeIds.length - 1));
+    const sourceNodeId = selectedBranchNodeIds[sourceNodeIndex] ?? null;
+    const baseline = projectReplayWorkspaceSnapshotFor(selectedBranchId, sourceNodeIndex);
+    const didPersistBranch = persistBranchCreation(
+      {
+        branchId: newBranchId,
+        roomId: newRoomId,
+        label: newBranchId,
+        basedOnBranchId: selectedBranchId,
+        basedOnNodeId: sourceNodeId,
+        createdAtIso: new Date().toISOString()
+      },
+      baseline,
+      `Created ${newBranchId} from ${selectedBranchId}:${sourceNodeId ?? "root"}.`
+    );
+    if (!didPersistBranch) {
+      setLastAction("Branch creation failed; shared topology record was not persisted.");
+      return null;
+    }
+    dispatchReplay({
+      type: "create-branch-from-cursor",
+      newBranchId,
+      newRoomId,
+      newLabel: newBranchId,
+      reason: "playback-edit"
+    });
+    dispatchReplay({ type: "set-active-branch", branchId: newBranchId });
+    dispatchReplay({ type: "set-mode", mode: "live" });
+    if (applySeedSnapshot) {
+      applyWorkspaceSnapshot(baseline, "runtime");
+      suppressWorkspaceRefreshUntilRef.current = Date.now() + 1200;
+    }
+    activeBranchIdRef.current = newBranchId;
+    setActiveNotice(`Playback ${actionLabel} created ${newBranchId} from ${selectedBranchId}:${sourceNodeId ?? "root"}.`);
+    return {
+      branchId: newBranchId,
+      seededSnapshot: cloneWorkspaceSnapshot(baseline)
+    };
+  }
+
+  function persistClearWorkspaceNodes(
+    nodeIds: string[],
+    replayOp: SharedReplayOp,
+    nextOps: SharedReplayOp[],
+    actionLabel: string,
+    branchId = activeBranchIdRef.current
+  ): boolean {
+    if (backend !== "sdk") {
+      setLastAction("Workspace edits require runtime mode = npm sdk + wasm.");
+      return false;
+    }
+    const { writeEntries: replayWriteEntries } = appendReplayOpToShared(replayOp, branchId);
+    const entries = buildClearNodesWriteEntries(branchId, nodeIds, replayWriteEntries);
+    const writeResult = sdkClient.setSharedValues(entries);
+    if (!sharedWriteApplied(writeResult)) {
+      setLastAction("Workspace persistence failed; reconnect in npm sdk + wasm mode.");
+      return false;
+    }
+    markLocalCanvasWrite();
+    pushSyncWarningIfNeeded(writeResult, actionLabel);
+    for (const nodeId of nodeIds) {
+      const nodeKey = getNodeRecordKey(branchId, nodeId);
+      const memberKey = getNodeMemberKey(branchId, nodeId);
+      localWriteProtectUntilByKeyRef.current[nodeKey] = Date.now() + 4000;
+      localWriteProtectUntilByKeyRef.current[memberKey] = Date.now() + 4000;
+      lastSharedRawByKeyRef.current[nodeKey] = "";
+      lastSharedRawByKeyRef.current[memberKey] = "";
+    }
+    trackReplayOpWriteProtection(branchId, replayOp);
+    workspaceNodesRef.current = [];
+    setWorkspaceNodes([]);
+    sharedReplayOpsRef.current = nextOps;
+    syncReplayFromSharedOps(nextOps);
+    syncLocalReplayFingerprint();
+    setLastAction(actionLabel);
+    pushPersistenceEvent(getNodeMemberKeyPrefix(branchId), "write", actionLabel);
+    return true;
+  }
+
+  function persistAddedNodeWithReplayOps(
+    node: WorkspaceNode,
+    nextCanvasNodes: WorkspaceNode[],
+    replayOp: SharedReplayOp,
+    nextOps: SharedReplayOp[],
+    actionLabel: string,
+    branchId = activeBranchIdRef.current
+  ): boolean {
+    if (backend !== "sdk") {
+      setLastAction("Workspace edits require runtime mode = npm sdk + wasm.");
+      return false;
+    }
+    const { writeEntries: replayWriteEntries } = appendReplayOpToShared(replayOp, branchId);
+    const entries = buildAddNodeWriteEntries(branchId, node, replayWriteEntries);
+    const writeResult = sdkClient.setSharedValues(entries);
+    if (!sharedWriteApplied(writeResult)) {
+      setLastAction("Workspace persistence failed; reconnect in npm sdk + wasm mode.");
+      return false;
+    }
+    markLocalCanvasWrite();
+    pushSyncWarningIfNeeded(writeResult, actionLabel);
+    const nodesFingerprintKey = getNodeMemberKeyPrefix(branchId);
+    const nodesFingerprintRaw = JSON.stringify(nextCanvasNodes);
+    localWriteProtectUntilByKeyRef.current[nodesFingerprintKey] = Date.now() + 4000;
+    lastSharedRawByKeyRef.current[nodesFingerprintKey] = nodesFingerprintRaw;
+    const memberKey = getNodeMemberKey(branchId, node.id);
+    const nodeKey = getNodeRecordKey(branchId, node.id);
+    localWriteProtectUntilByKeyRef.current[memberKey] = Date.now() + 4000;
+    localWriteProtectUntilByKeyRef.current[nodeKey] = Date.now() + 4000;
+    lastSharedRawByKeyRef.current[memberKey] = "1";
+    lastSharedRawByKeyRef.current[nodeKey] = JSON.stringify(node);
+    trackReplayOpWriteProtection(branchId, replayOp);
+    workspaceNodesRef.current = nextCanvasNodes;
+    setWorkspaceNodes(nextCanvasNodes);
+    sharedReplayOpsRef.current = nextOps;
+    syncReplayFromSharedOps(nextOps);
+    syncLocalReplayFingerprint();
+    setLastAction(actionLabel);
+    pushPersistenceEvent(nodeKey, "write", actionLabel);
+    pushPersistenceEvent(getReplayOpRecordKey(branchId, replayOp.id), "write", actionLabel);
+    return true;
+  }
+
+  function persistMovedNodeWithReplayOps(
+    node: WorkspaceNode,
+    replayOp: SharedReplayOp,
+    nextOps: SharedReplayOp[],
+    branchId = activeBranchIdRef.current
+  ): boolean {
+    if (backend !== "sdk") {
+      return false;
+    }
+    const { writeEntries: replayWriteEntries } = appendReplayOpToShared(replayOp, branchId);
+    const entries = buildMoveNodeWriteEntries(branchId, node, replayWriteEntries);
+    const writeResult = sdkClient.setSharedValues(entries);
+    if (!sharedWriteApplied(writeResult)) {
+      return false;
+    }
+    markLocalCanvasWrite();
+    pushSyncWarningIfNeeded(writeResult, "Move node");
+    const nodeKey = getNodeRecordKey(branchId, node.id);
+    localWriteProtectUntilByKeyRef.current[nodeKey] = Date.now() + 4000;
+    lastSharedRawByKeyRef.current[nodeKey] = JSON.stringify(node);
+    trackReplayOpWriteProtection(branchId, replayOp);
+    sharedReplayOpsRef.current = nextOps;
+    syncReplayFromSharedOps(nextOps);
+    syncLocalReplayFingerprint();
+    pushPersistenceEvent(nodeKey, "write", "move-node");
+    return true;
+  }
+
+  function persistWorkspaceEdges(next: WorkspaceEdge[], actionLabel: string, branchId = activeBranchIdRef.current): boolean {
+    if (backend !== "sdk") {
+      setLastAction("Workspace edge edits require runtime mode = npm sdk + wasm.");
+      return false;
+    }
+    const key = getWorkspaceSharedKey(branchId, "edges");
+    const writeResult = sdkClient.setSharedValue(key, JSON.stringify(next));
+    if (!sharedWriteApplied(writeResult)) {
+      setLastAction("Workspace edge persistence failed; reconnect in npm sdk + wasm mode.");
+      return false;
+    }
+    markLocalCanvasWrite();
+    pushSyncWarningIfNeeded(writeResult, actionLabel);
+    lastSharedRawByKeyRef.current[key] = JSON.stringify(next);
+    setWorkspaceEdges(next);
+    setLastAction(actionLabel);
+    pushPersistenceEvent(key, "write", actionLabel);
+    return true;
+  }
+
+  function persistWorkspaceAssets(next: WorkspaceAsset[], actionLabel: string, branchId = activeBranchIdRef.current): boolean {
+    if (backend !== "sdk") {
+      setLastAction("Workspace asset edits require runtime mode = npm sdk + wasm.");
+      return false;
+    }
+    const key = getWorkspaceSharedKey(branchId, "assets");
+    const writeResult = sdkClient.setSharedValue(key, JSON.stringify(next));
+    if (!sharedWriteApplied(writeResult)) {
+      setLastAction("Workspace asset persistence failed; reconnect in npm sdk + wasm mode.");
+      return false;
+    }
+    markLocalCanvasWrite();
+    pushSyncWarningIfNeeded(writeResult, actionLabel);
+    lastSharedRawByKeyRef.current[key] = JSON.stringify(next);
+    setWorkspaceAssets(next);
+    setLastAction(actionLabel);
+    pushPersistenceEvent(key, "write", actionLabel);
+    return true;
+  }
+
+  function persistWorkspaceAnnotations(next: WorkspaceAnnotation[], actionLabel: string, branchId = activeBranchIdRef.current): boolean {
+    if (backend !== "sdk") {
+      setLastAction("Workspace annotation edits require runtime mode = npm sdk + wasm.");
+      return false;
+    }
+    const key = getWorkspaceSharedKey(branchId, "annotations");
+    const writeResult = sdkClient.setSharedValue(key, JSON.stringify(next));
+    if (!sharedWriteApplied(writeResult)) {
+      setLastAction("Workspace annotation persistence failed; reconnect in npm sdk + wasm mode.");
+      return false;
+    }
+    markLocalCanvasWrite();
+    pushSyncWarningIfNeeded(writeResult, actionLabel);
+    lastSharedRawByKeyRef.current[key] = JSON.stringify(next);
+    setWorkspaceAnnotations(next);
+    setLastAction(actionLabel);
+    pushPersistenceEvent(key, "write", actionLabel);
+    return true;
+  }
+
+  function publishDragPresence(nodeId: string, x: number, y: number, final: boolean) {
+    if (!canUseSdkActions) {
+      return;
+    }
+    const mode = replayState.cursor.mode;
+    const branchId = activeBranchIdRef.current;
+    if (mode !== "live") {
+      if (final) {
+        sdkClient.setPresence(
+          buildPresencePayload({
+            drag: {
+              active: false,
+              nodeId,
+              x,
+              y,
+              branchId,
+              mode,
+              atIso: new Date().toISOString()
+            }
+          })
+        );
+      }
+      return;
+    }
+    const now = Date.now();
+    if (!final && now - dragPresenceLastSentRef.current < 80) {
+      return;
+    }
+    dragPresenceLastSentRef.current = now;
+    sdkClient.setPresence(
+      buildPresencePayload({
+        drag: {
+          active: !final,
+          nodeId,
+          x,
+          y,
+          branchId,
+          mode,
+          atIso: new Date().toISOString()
+        }
+      })
+    );
+  }
+
+  useEffect(() => {
+    if (!isSdkConnected) {
+      return;
+    }
+    scheduleReplayCursorPresencePublish();
+    return () => {
+      if (replayCursorPublishTimerRef.current !== null) {
+        window.clearTimeout(replayCursorPublishTimerRef.current);
+        replayCursorPublishTimerRef.current = null;
+      }
+    };
+  }, [
+    isSdkConnected,
+    activeRoomId,
+    replayState.cursor.branchId,
+    replayState.cursor.nodeIndex,
+    replayState.cursor.mode,
+    replayState.cursor.nodeId
+  ]);
+
+  useEffect(() => {
+    setRemoteDragByPeer({});
+  }, [replayState.cursor.mode, replayState.activeBranchId]);
+
+  useEffect(() => {
+    if (!isReplayPlaying) {
+      return;
+    }
+    if (replayNodeCount <= 1) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      dispatchReplay({
+        type: "set-cursor-index",
+        branchId: replayState.cursor.branchId,
+        nodeIndex: replayState.cursor.nodeIndex + 1
+      });
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [isReplayPlaying, replayState.cursor.branchId, replayState.cursor.nodeIndex, replayNodeCount]);
+
+  useEffect(() => {
+    if (!isReplayPlaying) {
+      return;
+    }
+    if (replayNodeCount === 0) {
+      setIsReplayPlaying(false);
+      return;
+    }
+    const atLast = replayState.cursor.nodeIndex >= replayNodeCount - 1;
+    if (atLast) {
+      setIsReplayPlaying(false);
+    }
+  }, [isReplayPlaying, replayNodeCount, replayState.cursor.nodeIndex]);
+
+  useEffect(() => {
+    if (replayState.cursor.mode === "playback" && isCursorAtHead) {
+      dispatchReplay({ type: "set-mode", mode: "live" });
+      setActiveNotice(`Replay reached head on ${replayState.cursor.branchId}; resumed live mode.`);
+    }
+  }, [replayState.cursor.mode, isCursorAtHead, replayState.cursor.branchId]);
+
+  useEffect(() => {
+    if (replayState.cursor.mode !== "live") {
+      hydrateBranchBaselinesFromStorage([replayState.cursor.branchId, replayState.activeBranchId]);
+      const snapshot = projectReplayWorkspaceSnapshot();
+      applyWorkspaceSnapshot(snapshot, "replay");
+    }
+  }, [replayState.cursor.mode, replayState.cursor.branchId, replayState.cursor.nodeIndex, replayState.cursor.nodeId]);
+
+  useEffect(() => {
+    if (backend !== "sdk" || replayState.cursor.mode !== "live") {
+      return;
+    }
+    loadLiveWorkspaceForBranch(replayState.activeBranchId);
+  }, [backend, replayState.activeBranchId, replayState.cursor.mode]);
 
   function connectRoom() {
     const nextRoomId = roomIdInput.trim();
@@ -126,6 +2180,7 @@ export default function App() {
       return;
     }
     setActiveRoomId(nextRoomId);
+    setLastAction(`Switching room to ${nextRoomId}...`);
   }
 
   function applySharedDoc() {
@@ -140,15 +2195,396 @@ export default function App() {
       return;
     }
 
-    const didSet = sdkClient.setSharedValue("workspace/doc/main", nextText);
-    if (!didSet) {
+    const writeTarget = ensureWritableBranchForEdit("workspace.set-doc", { applySeedSnapshot: true });
+    if (!writeTarget) {
+      return;
+    }
+    const branchId = writeTarget.branchId;
+    const docKey = getWorkspaceSharedKey(branchId, "doc");
+    const writeResult = sdkClient.setSharedValue(docKey, nextText);
+    if (!sharedWriteApplied(writeResult)) {
       setLastAction("SDK sync API unavailable; reconnect in npm sdk + wasm mode.");
       return;
     }
+    markLocalCanvasWrite();
+    pushSyncWarningIfNeeded(writeResult, "Shared document");
 
-    const confirmed = sdkClient.getSharedValue("workspace/doc/main");
+    const confirmed = sdkClient.getSharedValue(docKey);
+    suppressWorkspaceRefreshUntilRef.current = Date.now() + 900;
+    lastSharedRawByKeyRef.current[docKey] = confirmed ?? nextText;
     setAppliedText(confirmed ?? nextText);
-    setLastAction(`Updated workspace/doc/main at ${new Date().toLocaleTimeString()}.`);
+    setDraftText(confirmed ?? nextText);
+    appendReplayWorkspaceEvent(
+      `set-doc ${docKey}`,
+      { type: "workspace.set-doc", text: confirmed ?? nextText },
+      "workspace.set-doc",
+      new Date().toISOString()
+    );
+    setLastAction(`Updated ${docKey} at ${new Date().toLocaleTimeString()}.`);
+    pushPersistenceEvent(docKey, "write", "Updated shared workspace document.");
+  }
+
+  function addWorkspaceNode() {
+    const writeTarget = ensureWritableBranchForEdit("workspace.add-node", { applySeedSnapshot: true });
+    if (!writeTarget) {
+      return;
+    }
+    const branchForAppend = writeTarget.branchId;
+    const branchRoomId = replayBranchesRef.current[branchForAppend]?.roomId ?? activeRoomId;
+    const branchSeedSnapshot = writeTarget.seededSnapshot;
+    if (replayState.cursor.mode === "playback" && !branchSeedSnapshot) {
+      setActiveNotice(`Playback cursor is at ${branchForAppend} head; appending on existing branch.`);
+    }
+    const baseNodes = branchSeedSnapshot ? branchSeedSnapshot.nodes : workspaceNodesRef.current;
+    const next: WorkspaceNode = {
+      id: `node-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      x: 40 + (baseNodes.length % 8) * 96,
+      y: 40 + Math.floor(baseNodes.length / 8) * 70,
+      label: `Node ${baseNodes.length + 1}`,
+      updatedAtIso: new Date().toISOString()
+    };
+    const replayOp = createReplayOp(
+      `add-node ${next.label}`,
+      { type: "workspace.add-node", nodeId: next.id },
+      "workspace.add-node",
+      next.updatedAtIso,
+      branchForAppend
+    );
+    const nextCanvasNodes = [next, ...baseNodes];
+    const nextOps = [...readReplayOpsForBranch(branchForAppend), replayOp].sort((left, right) =>
+      left.atIso.localeCompare(right.atIso)
+    );
+    const didPersist = persistAddedNodeWithReplayOps(
+      next,
+      nextCanvasNodes,
+      replayOp,
+      nextOps,
+      `Added ${next.label}.`,
+      branchForAppend
+    );
+    if (!didPersist) {
+      return;
+    }
+    activeBranchIdRef.current = branchForAppend;
+    setActiveNotice(`Workspace node ${next.label} added.`);
+  }
+
+  function addWorkspaceAsset() {
+    const writeTarget = ensureWritableBranchForEdit("workspace.add-asset", { applySeedSnapshot: true });
+    if (!writeTarget) {
+      return;
+    }
+    const branchId = writeTarget.branchId;
+    const baseAssets = writeTarget.seededSnapshot ? writeTarget.seededSnapshot.assets : workspaceAssets;
+    const name = assetDraftName.trim() || "asset.bin";
+    const next: WorkspaceAsset = {
+      id: `asset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      name,
+      x: 50 + (baseAssets.length % 6) * 132,
+      y: 40 + Math.floor(baseAssets.length / 6) * 64,
+      updatedAtIso: new Date().toISOString()
+    };
+    const didPersist = persistWorkspaceAssets([next, ...baseAssets], `Added asset ${next.name}.`, branchId);
+    if (!didPersist) {
+      return;
+    }
+    appendReplayWorkspaceEvent(`add-asset ${next.name}`, { type: "workspace.add-asset", asset: next }, "workspace.add-asset", next.updatedAtIso, branchId);
+    setActiveNotice(`Asset ${next.name} added.`);
+  }
+
+  function createReplayOp(
+    opSummary: string,
+    payload: Record<string, unknown>,
+    payloadRef: string,
+    atIso: string,
+    branchId?: string
+  ): SharedReplayOp {
+    const targetBranchId = branchId ?? activeBranchIdRef.current;
+    const opId = `${targetBranchId}:${new Date(atIso).getTime()}:${Math.random().toString(36).slice(2, 8)}`;
+    return {
+      id: opId,
+      branchId: targetBranchId,
+      opSummary,
+      payload,
+      payloadRef,
+      atIso
+    };
+  }
+
+  function appendReplayOpToShared(
+    op: SharedReplayOp,
+    branchId = activeBranchIdRef.current
+  ): { nextOps: SharedReplayOp[]; writeEntries: Array<{ key: string; value: string }> } {
+    const existingOps = readReplayOpsForBranch(branchId);
+    const nextOps = [...existingOps.filter((entry) => entry.id !== op.id), op].sort((left, right) =>
+      left.atIso.localeCompare(right.atIso)
+    );
+    const writeEntries = buildAppendReplayOpWriteEntries(branchId, op);
+    return { nextOps, writeEntries };
+  }
+
+  function trackReplayOpWriteProtection(branchId: string, op: SharedReplayOp): void {
+    const opKey = getReplayOpRecordKey(branchId, op.id);
+    localWriteProtectUntilByKeyRef.current[opKey] = Date.now() + 4000;
+    lastSharedRawByKeyRef.current[opKey] = JSON.stringify(op);
+  }
+
+  function buildNextReplayOps(
+    opSummary: string,
+    payload: Record<string, unknown>,
+    payloadRef: string,
+    atIso: string,
+    branchId?: string
+  ): SharedReplayOp[] {
+    const op = createReplayOp(opSummary, payload, payloadRef, atIso, branchId);
+    const existing = readReplayOpsForBranch(op.branchId);
+    return [...existing, op].sort((left, right) => left.atIso.localeCompare(right.atIso));
+  }
+
+  function appendReplayWorkspaceEvent(
+    opSummary: string,
+    payload: Record<string, unknown>,
+    payloadRef: string,
+    atIso: string,
+    branchId?: string
+  ) {
+    const targetBranchId = branchId ?? activeBranchIdRef.current;
+    const op = createReplayOp(opSummary, payload, payloadRef, atIso, targetBranchId);
+    const { nextOps, writeEntries } = appendReplayOpToShared(op, targetBranchId);
+    const writeResult = sdkClient.setSharedValues(writeEntries);
+    if (!sharedWriteApplied(writeResult)) {
+      return;
+    }
+    pushSyncWarningIfNeeded(writeResult, "Replay ops");
+    trackReplayOpWriteProtection(targetBranchId, op);
+    sharedReplayOpsRef.current = nextOps;
+    syncReplayFromSharedOps(nextOps);
+    syncLocalReplayFingerprint();
+  }
+
+  function syncLocalReplayFingerprint(): void {
+    const allOps = readAllReplayOpsFromShared((key) => readSharedKey(key), listSharedKeys);
+    sharedReplayOpsRef.current = allOps;
+    lastSharedRawByKeyRef.current[ALL_REPLAY_OP_KEY_PREFIX] = JSON.stringify(allOps);
+  }
+
+  function selectReplayBranchNode(branchId: string, nodeIndex: number) {
+    dispatchReplay({
+      type: "set-active-branch",
+      branchId
+    });
+    dispatchReplay({
+      type: "set-cursor-index",
+      branchId,
+      nodeIndex
+    });
+    activeBranchIdRef.current = branchId;
+    scheduleReplayCursorPresencePublish({ force: true });
+  }
+
+  function persistSharedBranchRecord(record: SharedBranchRecord): boolean {
+    const remoteRaw = sdkClient.getSharedValue(WORKSPACE_BRANCHES_KEY);
+    const existing = parseSharedBranches(remoteRaw);
+    const has = existing.some((entry) => entry.branchId === record.branchId);
+    if (has) {
+      sharedBranchesRef.current = existing;
+      lastSharedRawByKeyRef.current[WORKSPACE_BRANCHES_KEY] = JSON.stringify(existing);
+      syncBranchesFromSharedRecords(existing);
+      return true;
+    }
+    const next = [...existing, record].sort((left, right) => left.createdAtIso.localeCompare(right.createdAtIso));
+    const branchesRaw = JSON.stringify(next);
+    const writeResult = sdkClient.setSharedValue(WORKSPACE_BRANCHES_KEY, branchesRaw);
+    if (!sharedWriteApplied(writeResult)) {
+      return false;
+    }
+    pushSyncWarningIfNeeded(writeResult, "Branch topology");
+    lastSharedRawByKeyRef.current[WORKSPACE_BRANCHES_KEY] = branchesRaw;
+    localWriteProtectUntilByKeyRef.current[WORKSPACE_BRANCHES_KEY] = Date.now() + BRANCH_WRITE_PROTECT_MS;
+    sharedBranchesRef.current = next;
+    syncBranchesFromSharedRecords(next);
+    return true;
+  }
+
+  function clearWorkspaceAssets() {
+    const writeTarget = ensureWritableBranchForEdit("workspace.clear-assets", { applySeedSnapshot: true });
+    if (!writeTarget) {
+      return;
+    }
+    const didPersist = persistWorkspaceAssets([], "Cleared workspace assets.", writeTarget.branchId);
+    if (!didPersist) {
+      return;
+    }
+    appendReplayWorkspaceEvent(
+      "clear-assets",
+      { type: "workspace.clear-assets" },
+      "workspace.clear-assets",
+      new Date().toISOString(),
+      writeTarget.branchId
+    );
+    setActiveNotice("Workspace assets cleared.");
+  }
+
+  function clearWorkspaceAnnotations() {
+    const writeTarget = ensureWritableBranchForEdit("workspace.clear-annotations", { applySeedSnapshot: true });
+    if (!writeTarget) {
+      return;
+    }
+    const didPersist = persistWorkspaceAnnotations([], "Cleared workspace annotations.", writeTarget.branchId);
+    if (!didPersist) {
+      return;
+    }
+    appendReplayWorkspaceEvent(
+      "clear-annotations",
+      { type: "workspace.clear-annotations" },
+      "workspace.clear-annotations",
+      new Date().toISOString(),
+      writeTarget.branchId
+    );
+    setActiveNotice("Workspace annotations cleared.");
+  }
+
+  function clearWorkspaceNodes() {
+    const writeTarget = ensureWritableBranchForEdit("workspace.clear-nodes", { applySeedSnapshot: true });
+    if (!writeTarget) {
+      return;
+    }
+    const branchId = writeTarget.branchId;
+    const nodeIds = workspaceNodesRef.current.map((entry) => entry.id);
+    const atIso = new Date().toISOString();
+    const clearNodesOp = createReplayOp(
+      "clear-nodes",
+      { type: "workspace.clear-nodes" },
+      "workspace.clear-nodes",
+      atIso,
+      branchId
+    );
+    const clearNodesOps = [...readReplayOpsForBranch(branchId), clearNodesOp].sort((left, right) =>
+      left.atIso.localeCompare(right.atIso)
+    );
+    const didPersist = persistClearWorkspaceNodes(nodeIds, clearNodesOp, clearNodesOps, "Cleared workspace nodes.", branchId);
+    if (!didPersist) {
+      return;
+    }
+    persistWorkspaceEdges([], "Cleared workspace nodes and edges.", branchId);
+    appendReplayWorkspaceEvent("clear-edges", { type: "workspace.clear-edges" }, "workspace.clear-edges", new Date().toISOString(), branchId);
+    persistWorkspaceAssets([], "Cleared workspace nodes, edges, and assets.", branchId);
+    appendReplayWorkspaceEvent("clear-assets", { type: "workspace.clear-assets" }, "workspace.clear-assets", new Date().toISOString(), branchId);
+    persistWorkspaceAnnotations([], "Cleared workspace objects.", branchId);
+    appendReplayWorkspaceEvent(
+      "clear-annotations",
+      { type: "workspace.clear-annotations" },
+      "workspace.clear-annotations",
+      new Date().toISOString(),
+      branchId
+    );
+    setActiveNotice("Workspace cleared.");
+  }
+
+  function handleWorkspaceNodeMouseDown(event: React.MouseEvent<HTMLDivElement>, nodeId: string) {
+    if (!canUseSdkActions) {
+      setLastAction("Connect in npm sdk + wasm mode before moving workspace nodes.");
+      return;
+    }
+    event.stopPropagation();
+    if (event.shiftKey) {
+      const source = edgeSourceNodeIdRef.current;
+      if (source && source !== nodeId) {
+        const writeTarget = ensureWritableBranchForEdit("workspace.add-edge", { applySeedSnapshot: true });
+        if (!writeTarget) {
+          return;
+        }
+        const branchId = writeTarget.branchId;
+        const baseEdges = writeTarget.seededSnapshot ? writeTarget.seededSnapshot.edges : workspaceEdges;
+        const edgeId = `edge:${source}:${nodeId}`;
+        const exists = baseEdges.some((edge) => edge.id === edgeId);
+        if (!exists) {
+          const didPersist = persistWorkspaceEdges(
+            [
+              {
+                id: edgeId,
+                fromNodeId: source,
+                toNodeId: nodeId,
+                updatedAtIso: new Date().toISOString()
+              },
+              ...baseEdges
+            ],
+            `Connected ${source} -> ${nodeId}.`,
+            branchId
+          );
+          if (didPersist) {
+            appendReplayWorkspaceEvent(
+              `add-edge ${source}->${nodeId}`,
+              {
+                type: "workspace.add-edge",
+                edge: {
+                  id: edgeId,
+                  fromNodeId: source,
+                  toNodeId: nodeId,
+                  updatedAtIso: new Date().toISOString()
+                }
+              },
+              "workspace.add-edge",
+              new Date().toISOString(),
+              branchId
+            );
+            setActiveNotice(`Edge created: ${source} -> ${nodeId}.`);
+          }
+        } else {
+          setLastAction(`Edge ${source} -> ${nodeId} already exists.`);
+        }
+        edgeSourceNodeIdRef.current = null;
+        return;
+      }
+      edgeSourceNodeIdRef.current = nodeId;
+      setLastAction(`Edge source selected: ${nodeId}. Shift-click another node to connect.`);
+      return;
+    }
+    draggingNodeRef.current = { nodeId };
+    isDraggingRef.current = true;
+  }
+
+  function handleWorkspaceSurfaceMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+    if (workspaceTool !== "annotate") {
+      return;
+    }
+    if (!canUseSdkActions) {
+      setLastAction("Connect in npm sdk + wasm mode before adding annotations.");
+      return;
+    }
+    const surface = workspaceSurfaceRef.current;
+    if (!surface) {
+      return;
+    }
+    const rect = surface.getBoundingClientRect();
+    const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 180, event.clientX - rect.left));
+    const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 90, event.clientY - rect.top));
+    const text = annotationDraft.trim() || "Untitled note";
+    const next: WorkspaceAnnotation = {
+      id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      text,
+      x,
+      y,
+      updatedAtIso: new Date().toISOString()
+    };
+    const writeTarget = ensureWritableBranchForEdit("workspace.add-annotation", { applySeedSnapshot: true });
+    if (!writeTarget) {
+      return;
+    }
+    const branchId = writeTarget.branchId;
+    const baseAnnotations = writeTarget.seededSnapshot ? writeTarget.seededSnapshot.annotations : workspaceAnnotations;
+    const didPersist = persistWorkspaceAnnotations([next, ...baseAnnotations], `Added annotation: ${text}`, branchId);
+    if (!didPersist) {
+      return;
+    }
+    appendReplayWorkspaceEvent(
+      `add-annotation ${text}`,
+      { type: "workspace.add-annotation", annotation: next },
+      "workspace.add-annotation",
+      next.updatedAtIso,
+      branchId
+    );
+    setActiveNotice(`Annotation added: ${text}.`);
   }
 
   function publishPresence() {
@@ -163,11 +2599,7 @@ export default function App() {
       return;
     }
 
-    const didSet = sdkClient.setPresence({
-      name: nextName,
-      room: activeRoomId,
-      updatedAtIso: new Date().toISOString()
-    });
+    const didSet = sdkClient.setPresence(buildPresencePayload({ includeReplayCursor: true }));
     if (!didSet) {
       setLastAction("Presence update failed; reconnect in npm sdk + wasm mode.");
       return;
@@ -208,6 +2640,180 @@ export default function App() {
     }
 
     setLastSignalStatus(`Signal sent to ${target} at ${new Date().toLocaleTimeString()}.`);
+  }
+
+  useEffect(() => {
+    function onPointerMove(event: MouseEvent) {
+      const drag = draggingNodeRef.current;
+      const surface = workspaceSurfaceRef.current;
+      if (!drag || !surface) {
+        return;
+      }
+      const rect = surface.getBoundingClientRect();
+      const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 120, event.clientX - rect.left));
+      const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, event.clientY - rect.top));
+      publishDragPresence(drag.nodeId, x, y, false);
+      setWorkspaceNodes((previous) => {
+        const next = previous.map((node) =>
+          node.id === drag.nodeId
+            ? {
+                ...node,
+                x,
+                y,
+                updatedAtIso: new Date().toISOString()
+              }
+            : node
+        );
+        workspaceNodesRef.current = next;
+        return next;
+      });
+    }
+
+    function onPointerUp() {
+      const drag = draggingNodeRef.current;
+      if (!drag) {
+        return;
+      }
+      const writeTarget = ensureWritableBranchForEdit("workspace.move-node", { applySeedSnapshot: false });
+      if (!writeTarget) {
+        draggingNodeRef.current = null;
+        isDraggingRef.current = false;
+        return;
+      }
+      const branchId = writeTarget.branchId;
+      const seedNodes = writeTarget.seededSnapshot?.nodes ?? null;
+      const liveNodes = workspaceNodesRef.current;
+      const snapshot = seedNodes
+        ? seedNodes.map((entry) => (entry.id === drag.nodeId ? { ...entry, ...((liveNodes.find((item) => item.id === drag.nodeId) ?? entry)) } : entry))
+        : liveNodes;
+      const moved = snapshot.find((node) => node.id === drag.nodeId);
+      draggingNodeRef.current = null;
+      isDraggingRef.current = false;
+      workspaceNodesRef.current = snapshot;
+      setWorkspaceNodes(snapshot);
+      if (!moved) {
+        return;
+      }
+      const moveOp = createReplayOp(
+        `move-node ${moved.id}`,
+        {
+          type: "workspace.move-node",
+          move: {
+            nodeId: moved.id,
+            x: moved.x,
+            y: moved.y,
+            updatedAtIso: moved.updatedAtIso
+          }
+        },
+        "workspace.move-node",
+        moved.updatedAtIso,
+        branchId
+      );
+      const nextOps = [...readReplayOpsForBranch(branchId), moveOp].sort((left, right) =>
+        left.atIso.localeCompare(right.atIso)
+      );
+      const didPersist = persistMovedNodeWithReplayOps(moved, moveOp, nextOps, branchId);
+      if (!didPersist) {
+        setLastAction("Workspace move failed to apply locally; reconnect in npm sdk + wasm mode.");
+        return;
+      }
+      setLastAction(`Moved workspace node at ${new Date().toLocaleTimeString()}.`);
+      window.setTimeout(() => publishDragPresence(moved.id, moved.x, moved.y, true), 0);
+      setActiveNotice("Workspace move persisted.");
+    }
+
+    window.addEventListener("mousemove", onPointerMove);
+    window.addEventListener("mouseup", onPointerUp);
+    return () => {
+      window.removeEventListener("mousemove", onPointerMove);
+      window.removeEventListener("mouseup", onPointerUp);
+    };
+  }, [backend, canUseSdkActions, replayState, branchBaselineById, activeRoomId]);
+
+  function clearWorkspaceEdges() {
+    const writeTarget = ensureWritableBranchForEdit("workspace.clear-edges", { applySeedSnapshot: true });
+    if (!writeTarget) {
+      return;
+    }
+    const didPersist = persistWorkspaceEdges([], "Cleared workspace edges.", writeTarget.branchId);
+    if (!didPersist) {
+      return;
+    }
+    appendReplayWorkspaceEvent(
+      "clear-edges",
+      { type: "workspace.clear-edges" },
+      "workspace.clear-edges",
+      new Date().toISOString(),
+      writeTarget.branchId
+    );
+    edgeSourceNodeIdRef.current = null;
+    setActiveNotice("Workspace edges cleared.");
+  }
+
+  function createBranchFromCursor() {
+    if (!replayState.cursor.nodeId) {
+      setLastAction("Cannot branch: no cursor node selected.");
+      return;
+    }
+    const newBranchId = `branch-${branchCounterRef.current++}`;
+    const newRoomId = `${activeRoomId}-${newBranchId}`;
+    const sourceBranchId = replayState.cursor.branchId;
+    const sourceBranchNodeIds = replayState.branchNodeIds[sourceBranchId] ?? [];
+    const sourceNodeIndex = Math.min(replayState.cursor.nodeIndex, Math.max(0, sourceBranchNodeIds.length - 1));
+    const sourceNodeId =
+      sourceBranchNodeIds[sourceNodeIndex] ?? null;
+    const baseline = projectReplayWorkspaceSnapshotFor(sourceBranchId, sourceNodeIndex);
+    const didPersistBranch = persistBranchCreation(
+      {
+        branchId: newBranchId,
+        roomId: newRoomId,
+        label: newBranchId,
+        basedOnBranchId: sourceBranchId,
+        basedOnNodeId: sourceNodeId,
+        createdAtIso: new Date().toISOString()
+      },
+      baseline,
+      `Created ${newBranchId} from ${sourceBranchId}:${sourceNodeId ?? "root"}.`
+    );
+    if (!didPersistBranch) {
+      setLastAction("Branch creation failed; shared topology record was not persisted.");
+      return;
+    }
+    dispatchReplay({
+      type: "create-branch-from-cursor",
+      newBranchId,
+      newRoomId,
+      newLabel: newBranchId,
+      reason: "manual"
+    });
+    dispatchReplay({ type: "set-active-branch", branchId: newBranchId });
+    dispatchReplay({ type: "set-mode", mode: "live" });
+    applyWorkspaceSnapshot(baseline, "runtime");
+    suppressWorkspaceRefreshUntilRef.current = Date.now() + 1200;
+    activeBranchIdRef.current = newBranchId;
+    scheduleReplayCursorPresencePublish({ force: true });
+    setLastAction(`Created ${newBranchId} from cursor node ${replayState.cursor.nodeId}.`);
+    setActiveNotice(`Branch ${newBranchId} created from replay cursor.`);
+  }
+
+  function mergeSelectedSourceIntoActiveHead() {
+    if (!mergeSourceNodeId) {
+      setLastAction("Select a source node before merge.");
+      return;
+    }
+    if (mergeSourceBranchId === replayState.activeBranchId && mergeSourceNodeId === replayState.cursor.nodeId) {
+      setLastAction("Cannot merge active cursor node into itself.");
+      return;
+    }
+    const targetBranchId = activeBranchIdRef.current;
+    dispatchReplay({
+      type: "merge-into-head",
+      sourceBranchId: mergeSourceBranchId,
+      sourceNodeId: mergeSourceNodeId,
+      targetBranchId
+    });
+    setLastAction(`Merged ${mergeSourceBranchId}:${mergeSourceNodeId} into ${targetBranchId} head.`);
+    setActiveNotice(`Merge applied to ${targetBranchId} head.`);
   }
 
   return (
@@ -263,22 +2869,732 @@ export default function App() {
         <span style={{ marginLeft: 8 }}>
           mode: <code>{backend}</code>
         </span>
+        <span
+          style={{
+            marginLeft: 8,
+            display: "inline-block",
+            padding: "2px 8px",
+            borderRadius: 999,
+            border: "1px solid #0f766e",
+            background: "#ecfeff",
+            color: "#155e75",
+            fontSize: 12
+          }}
+        >
+          transport configured=<code>{config.transportMode}</code>, runtime=<code>{diagnostics.transportMode}</code>
+        </span>
       </section>
 
       <section style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
         <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, padding: 12 }}>
+          <h2 style={{ marginTop: 0 }}>Workspace objects (persistent)</h2>
+          <p style={{ marginTop: 0 }}>
+            Add and drag nodes, connect edges with shift-click, place annotations in annotate mode, and attach shared assets.
+          </p>
+          <p
+            style={{
+              marginTop: 0,
+              padding: "8px 10px",
+              borderRadius: 6,
+              background: canUseSdkActions ? "#ecfdf5" : "#fff7ed",
+              color: canUseSdkActions ? "#065f46" : "#9a3412"
+            }}
+          >
+            <strong>Status:</strong> {activeNotice}
+          </p>
+          <p style={{ marginTop: 0 }}>
+            <strong>Peer activity:</strong> {onlinePeers.length > 0 ? `${onlinePeers.length} peer(s) online` : "No peers connected yet."}
+          </p>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <label htmlFor="workspaceTool">Tool</label>
+            <select
+              id="workspaceTool"
+              value={workspaceTool}
+              onChange={(event) => setWorkspaceTool(event.target.value === "annotate" ? "annotate" : "select")}
+              style={{ padding: 6 }}
+            >
+              <option value="select">select + drag + edge connect</option>
+              <option value="annotate">annotate on canvas click</option>
+            </select>
+            <label htmlFor="annotationDraft">Annotation</label>
+            <input
+              id="annotationDraft"
+              value={annotationDraft}
+              onChange={(event) => setAnnotationDraft(event.target.value)}
+              maxLength={64}
+              style={{ minWidth: 180, padding: 6 }}
+            />
+            <label htmlFor="assetDraftName">Asset name</label>
+            <input
+              id="assetDraftName"
+              value={assetDraftName}
+              onChange={(event) => setAssetDraftName(event.target.value)}
+              maxLength={72}
+              style={{ minWidth: 180, padding: 6 }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+            <button type="button" onClick={addWorkspaceNode} disabled={!canUseSdkActions}>
+              Add node
+            </button>
+            <button type="button" onClick={addWorkspaceAsset} disabled={!canUseSdkActions}>
+              Add asset
+            </button>
+            <button type="button" onClick={clearWorkspaceNodes} disabled={!canUseSdkActions || workspaceNodes.length === 0}>
+              Clear nodes
+            </button>
+            <button type="button" onClick={clearWorkspaceEdges} disabled={!canUseSdkActions || workspaceEdges.length === 0}>
+              Clear edges
+            </button>
+            <button
+              type="button"
+              onClick={clearWorkspaceAssets}
+              disabled={!canUseSdkActions || workspaceAssets.length === 0}
+            >
+              Clear assets
+            </button>
+            <button
+              type="button"
+              onClick={clearWorkspaceAnnotations}
+              disabled={!canUseSdkActions || workspaceAnnotations.length === 0}
+            >
+              Clear notes
+            </button>
+            <span>
+              nodes: <code>{workspaceNodes.length}</code>
+            </span>
+            <span>
+              edges: <code>{workspaceEdges.length}</code>
+            </span>
+            <span>
+              assets: <code>{workspaceAssets.length}</code>
+            </span>
+            <span>
+              notes: <code>{workspaceAnnotations.length}</code>
+            </span>
+          </div>
+          <div
+            ref={workspaceSurfaceRef}
+            onMouseDown={handleWorkspaceSurfaceMouseDown}
+            style={{
+              width: "100%",
+              maxWidth: WORKSPACE_WIDTH,
+              height: WORKSPACE_HEIGHT,
+              border: "1px solid #cbd5e1",
+              borderRadius: 8,
+              background: "linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
+              position: "relative",
+              overflow: "hidden",
+              marginBottom: 12
+            }}
+          >
+            <svg
+              width={WORKSPACE_WIDTH}
+              height={WORKSPACE_HEIGHT}
+              style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+            >
+              {workspaceEdges.map((edge) => {
+                const from = workspaceNodes.find((node) => node.id === edge.fromNodeId);
+                const to = workspaceNodes.find((node) => node.id === edge.toNodeId);
+                if (!from || !to) {
+                  return null;
+                }
+                return (
+                  <line
+                    key={edge.id}
+                    x1={from.x + 52}
+                    y1={from.y + 18}
+                    x2={to.x + 52}
+                    y2={to.y + 18}
+                    stroke="#1e293b"
+                    strokeOpacity={0.55}
+                    strokeWidth={2.2}
+                  />
+                );
+              })}
+            </svg>
+            {workspaceNodes.map((node) => {
+              const remoteDrag = remoteDragByNodeId[node.id];
+              const renderX = remoteDrag ? remoteDrag.x : node.x;
+              const renderY = remoteDrag ? remoteDrag.y : node.y;
+              return (
+                <div
+                  key={node.id}
+                  role="button"
+                  tabIndex={0}
+                  onMouseDown={(event) => handleWorkspaceNodeMouseDown(event, node.id)}
+                  style={{
+                    position: "absolute",
+                    left: renderX,
+                    top: renderY,
+                    width: 104,
+                    minHeight: 36,
+                    borderRadius: 8,
+                    border: remoteDrag ? "1px solid #0f766e" : "1px solid #2563eb",
+                    background: "white",
+                    padding: "6px 8px",
+                    cursor: canUseSdkActions ? "grab" : "not-allowed",
+                    boxShadow: remoteDrag ? "0 0 0 2px rgba(20, 184, 166, 0.18)" : "0 1px 3px rgba(15, 23, 42, 0.25)"
+                  }}
+                >
+                  <strong style={{ display: "block", fontSize: 12 }}>{node.label}</strong>
+                  <small style={{ color: "#475569" }}>{new Date(node.updatedAtIso).toLocaleTimeString()}</small>
+                </div>
+              );
+            })}
+            {workspaceAssets.map((asset) => (
+              <div
+                key={asset.id}
+                style={{
+                  position: "absolute",
+                  left: asset.x,
+                  top: asset.y,
+                  minWidth: 120,
+                  borderRadius: 8,
+                  border: "1px solid #7c3aed",
+                  background: "#faf5ff",
+                  padding: "6px 8px",
+                  boxShadow: "0 1px 3px rgba(15, 23, 42, 0.20)"
+                }}
+              >
+                <strong style={{ display: "block", fontSize: 12 }}>{asset.name}</strong>
+                <small style={{ color: "#5b21b6" }}>shared asset</small>
+              </div>
+            ))}
+            {Object.entries(remoteDragByPeer).map(([peerId, drag]) => (
+              <div
+                key={`${peerId}-${drag.nodeId}`}
+                style={{
+                  position: "absolute",
+                  left: drag.x + 106,
+                  top: drag.y - 10,
+                  borderRadius: 999,
+                  border: "1px solid #0f766e",
+                  background: "#ecfeff",
+                  color: "#155e75",
+                  fontSize: 11,
+                  padding: "2px 8px"
+                }}
+              >
+                {peerId} dragging {drag.nodeId}
+              </div>
+            ))}
+            {workspaceAnnotations.map((note) => (
+              <div
+                key={note.id}
+                style={{
+                  position: "absolute",
+                  left: note.x,
+                  top: note.y,
+                  minWidth: 130,
+                  maxWidth: 220,
+                  borderRadius: 8,
+                  border: "1px solid #f59e0b",
+                  background: "#fffbeb",
+                  padding: "6px 8px",
+                  boxShadow: "0 1px 3px rgba(15, 23, 42, 0.20)"
+                }}
+              >
+                <strong style={{ display: "block", fontSize: 12 }}>{note.text}</strong>
+                <small style={{ color: "#92400e" }}>{new Date(note.updatedAtIso).toLocaleTimeString()}</small>
+              </div>
+            ))}
+            {edgeSourceNodeIdRef.current ? (
+              <div style={{ position: "absolute", right: 10, top: 10, color: "#1e3a8a", fontSize: 12 }}>
+                Edge source: <code>{edgeSourceNodeIdRef.current}</code> (shift-click target)
+              </div>
+            ) : null}
+            <div
+              style={{
+                position: "absolute",
+                right: 10,
+                top: 10,
+                borderRadius: 999,
+                border: "1px solid #334155",
+                background: replayState.cursor.mode === "live" ? "#ecfeff" : "#fef3c7",
+                color: "#0f172a",
+                padding: "2px 10px",
+                fontSize: 12,
+                fontWeight: 600
+              }}
+            >
+              {canvasReplayBadge}
+            </div>
+            {replayState.cursor.mode === "playback" ? (
+              <div
+                style={{
+                  position: "absolute",
+                  right: 10,
+                  top: 36,
+                  borderRadius: 6,
+                  border: "1px solid #d97706",
+                  background: "#fffbeb",
+                  color: "#92400e",
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  fontWeight: 600
+                }}
+              >
+                PLAYBACK VIEW (writes may branch)
+              </div>
+            ) : (
+              <div
+                style={{
+                  position: "absolute",
+                  right: 10,
+                  top: 36,
+                  borderRadius: 6,
+                  border: "1px solid #0f766e",
+                  background: "#ecfeff",
+                  color: "#155e75",
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  fontWeight: 600
+                }}
+              >
+                LIVE VIEW (writes append to active head)
+              </div>
+            )}
+            {workspaceNodes.length === 0 ? (
+              <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#475569" }}>
+                {workspaceTool === "annotate"
+                  ? "Annotate mode: click canvas to place a note."
+                  : "Select mode: add nodes, shift-click node to start edge connect."}
+              </div>
+            ) : null}
+          </div>
+          <div
+            style={{
+              position: "sticky",
+              top: 8,
+              zIndex: 2,
+              border: "1px solid #cbd5e1",
+              borderRadius: 8,
+              padding: "8px 10px",
+              marginBottom: 10,
+              background: "#f8fafc"
+            }}
+          >
+            <strong style={{ display: "block", marginBottom: 6 }}>Replay quick scrub</strong>
+            <input
+              type="range"
+              aria-label="Replay quick scrub cursor"
+              min={0}
+              max={Math.max(0, replayNodeCount - 1)}
+              value={Math.min(replayState.cursor.nodeIndex, Math.max(0, replayNodeCount - 1))}
+              onChange={(event) => selectReplayBranchNode(replayState.cursor.branchId, Number(event.target.value) || 0)}
+              style={{ width: "100%", marginBottom: 6 }}
+              disabled={!replayCanStep}
+            />
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span>
+                <code>
+                  {replayState.cursor.branchId} [{replayState.cursor.nodeIndex}/{Math.max(0, replayNodeCount - 1)}]
+                </code>
+              </span>
+              <button
+                type="button"
+                onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayState.cursor.nodeIndex - 1)}
+                disabled={!replayCanStep}
+              >
+                Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayState.cursor.nodeIndex + 1)}
+                disabled={!replayCanStep}
+              >
+                Next
+              </button>
+              <span style={{ color: "#475569", fontSize: 12 }}>Scrub here while watching workspace objects above.</span>
+            </div>
+          </div>
+          <hr style={{ margin: "14px 0" }} />
+          <h3 style={{ marginTop: 0 }}>Replay canvas</h3>
+          <p style={{ marginTop: 0 }}>
+            Visual lane + timeline + room-at-cursor preview. Use the quick scrubber above the canvas for side-by-side replay viewing.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+            <label htmlFor="activeBranch">Active branch</label>
+            <select
+              id="activeBranch"
+              value={replayState.activeBranchId}
+              onChange={(event) => {
+                const branchId = event.target.value;
+                activeBranchIdRef.current = branchId;
+                dispatchReplay({
+                  type: "set-active-branch",
+                  branchId
+                });
+                if (replayModeRef.current === "live") {
+                  queueMicrotask(() => loadLiveWorkspaceForBranch(branchId));
+                }
+              }}
+              style={{ padding: 6 }}
+            >
+              {availableBranchIds.map((branchId) => (
+                <option key={branchId} value={branchId}>
+                  {branchId}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="replayMode">Replay mode</label>
+            <select
+              id="replayMode"
+              value={replayState.cursor.mode}
+              onChange={(event) => {
+                dispatchReplay({
+                  type: "set-mode",
+                  mode: event.target.value === "playback" ? "playback" : "live"
+                });
+                scheduleReplayCursorPresencePublish({ force: true });
+              }}
+              style={{ padding: 6 }}
+            >
+              <option value="live">live</option>
+              <option value="playback">playback</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                if (isReplayPlaying) {
+                  setIsReplayPlaying(false);
+                  return;
+                }
+                if (replayNodeCount > 1 && replayState.cursor.nodeIndex >= replayNodeCount - 1) {
+                  selectReplayBranchNode(replayState.cursor.branchId, 0);
+                }
+                setIsReplayPlaying(true);
+              }}
+              disabled={replayNodeCount <= 1}
+            >
+              {isReplayPlaying ? "Pause" : "Play"}
+            </button>
+            <button
+              type="button"
+              onClick={() => selectReplayBranchNode(replayState.cursor.branchId, 0)}
+              disabled={!replayCanStep}
+            >
+              Jump start
+            </button>
+            <button
+              type="button"
+              onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayNodeCount - 1)}
+              disabled={!replayCanStep}
+            >
+              Jump head
+            </button>
+            <span>
+              branch <code>{replayState.cursor.branchId}</code>
+            </span>
+            <span>
+              nodes <code>{replayNodeCount}</code>
+            </span>
+            <button type="button" onClick={createBranchFromCursor} disabled={!replayState.cursor.nodeId}>
+              Branch from cursor
+            </button>
+          </div>
+          <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 8, marginBottom: 10, background: "#f8fafc" }}>
+            <strong>Merge workflow</strong>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+              <label htmlFor="mergeSourceBranch">Source branch</label>
+              <select
+                id="mergeSourceBranch"
+                value={mergeSourceBranchId}
+                onChange={(event) => {
+                  setMergeSourceBranchId(event.target.value);
+                  setMergeSourceNodeId("");
+                }}
+                style={{ padding: 6 }}
+              >
+                {availableBranchIds.map((branchId) => (
+                  <option key={branchId} value={branchId}>
+                    {branchId}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="mergeSourceNode">Source node</label>
+              <select
+                id="mergeSourceNode"
+                value={mergeSourceNodeId}
+                onChange={(event) => setMergeSourceNodeId(event.target.value)}
+                style={{ minWidth: 220, padding: 6 }}
+              >
+                <option value="">select node</option>
+                {mergeSourceBranchNodeIds.map((nodeId) => (
+                  <option key={nodeId} value={nodeId}>
+                    {nodeId}
+                  </option>
+                ))}
+              </select>
+              <span>
+                target head: <code>{replayState.activeBranchId}</code>
+              </span>
+              <button type="button" onClick={mergeSelectedSourceIntoActiveHead} disabled={!mergeSourceNodeId}>
+                Merge into active head
+              </button>
+              <span style={{ color: "#334155", fontSize: 12 }}>{mergeEligibilityMessage}</span>
+            </div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <strong>Branch lanes:</strong>
+            <div
+              style={{
+                marginTop: 6,
+                border: "1px solid #cbd5e1",
+                borderRadius: 8,
+                padding: "8px 10px",
+                background: "#f8fafc",
+                overflowX: "auto"
+              }}
+            >
+              {sortedBranchIds.length === 0 ? (
+                <span>No branch streams yet.</span>
+              ) : (
+                <svg width={laneLayout.width} height={laneLayout.height} role="img" aria-label="Replay branch lanes">
+                  {sortedBranchIds.map((branchId) => {
+                    const branch = replayState.branches[branchId];
+                    const laneY = laneLayout.laneY[branchId] ?? 0;
+                    const nodeIds = replayState.branchNodeIds[branchId] ?? [];
+                    const isActiveLane = branchId === replayState.activeBranchId;
+                    const branchSource = branch?.basedOnBranchId && branch?.basedOnNodeId
+                      ? `${branch.basedOnBranchId}:${branch.basedOnNodeId}`
+                      : "root";
+                    return (
+                      <g key={`lane-${branchId}`}>
+                        <line
+                          x1={laneLayout.leftGutter - 10}
+                          y1={laneY}
+                          x2={Math.max(
+                            laneLayout.leftGutter + 16,
+                            ...nodeIds.map((nodeId) => laneLayout.nodeXByBranch[branchId]?.[nodeId] ?? laneLayout.leftGutter)
+                          )}
+                          y2={laneY}
+                          stroke={isActiveLane ? "#2563eb" : "#94a3b8"}
+                          strokeWidth={isActiveLane ? 2.5 : 1.5}
+                          strokeDasharray={isActiveLane ? "0" : "4 4"}
+                        />
+                        <text x={8} y={laneY - 6} fill={isActiveLane ? "#1d4ed8" : "#334155"} fontSize={12} fontWeight={isActiveLane ? 700 : 500}>
+                          {branch?.label ?? branchId}
+                          {branch?.isMain ? " (main)" : ""}
+                        </text>
+                        <text x={8} y={laneY + 12} fill="#64748b" fontSize={10}>
+                          from {branchSource}
+                        </text>
+                        {nodeIds.map((nodeId, index) => {
+                          const isCursor = replayState.cursor.nodeId === nodeId;
+                          const node = replayState.nodesById[nodeId];
+                          const isHead = branch?.headNodeId === nodeId;
+                          const x = laneLayout.nodeXByBranch[branchId]?.[nodeId] ?? laneLayout.leftGutter;
+                          const previousNodeId = index > 0 ? nodeIds[index - 1] : null;
+                          const previousX = previousNodeId ? laneLayout.nodeXByBranch[branchId]?.[previousNodeId] : undefined;
+                          return (
+                            <g
+                              key={nodeId}
+                              onClick={() => selectReplayBranchNode(branchId, index)}
+                              style={{ cursor: "pointer" }}
+                            >
+                              {typeof previousX === "number" ? (
+                                <line
+                                  x1={previousX}
+                                  y1={laneY}
+                                  x2={x}
+                                  y2={laneY}
+                                  stroke={isActiveLane ? "#2563eb" : "#64748b"}
+                                  strokeWidth={isActiveLane ? 2 : 1.4}
+                                />
+                              ) : null}
+                              <circle
+                                cx={x}
+                                cy={laneY}
+                                r={isCursor ? 11 : 8}
+                                fill={isCursor ? "#dbeafe" : "#ffffff"}
+                                stroke={isCursor ? "#2563eb" : isHead ? "#0f766e" : "#64748b"}
+                                strokeWidth={isCursor ? 2.5 : isHead ? 2 : 1.4}
+                              />
+                              <text x={x} y={laneY + 3.5} textAnchor="middle" fill="#0f172a" fontSize={9} fontWeight={600}>
+                                {index + (branchOffsetById[branchId] ?? 0)}
+                              </text>
+                              {isHead ? (
+                                <text x={x} y={laneY - 14} textAnchor="middle" fill="#0f766e" fontSize={9} fontWeight={700}>
+                                  HEAD
+                                </text>
+                              ) : null}
+                              {node?.payloadRef === "merge" ? (
+                                <text x={x} y={laneY + 20} textAnchor="middle" fill="#7c3aed" fontSize={8} fontWeight={700}>
+                                  MERGE
+                                </text>
+                              ) : null}
+                            </g>
+                          );
+                        })}
+                      </g>
+                    );
+                  })}
+
+                  {sortedBranchIds.map((branchId) => {
+                    const branch = replayState.branches[branchId];
+                    if (!branch?.basedOnBranchId || !branch.basedOnNodeId) {
+                      return null;
+                    }
+                    const fromX = laneLayout.nodeXByBranch[branch.basedOnBranchId]?.[branch.basedOnNodeId];
+                    const fromY = laneLayout.laneY[branch.basedOnBranchId];
+                    const toY = laneLayout.laneY[branchId];
+                    const firstNodeId = (replayState.branchNodeIds[branchId] ?? [])[0];
+                    const toX = firstNodeId ? laneLayout.nodeXByBranch[branchId]?.[firstNodeId] : undefined;
+                    if (typeof fromX !== "number" || typeof fromY !== "number" || typeof toX !== "number" || typeof toY !== "number") {
+                      return null;
+                    }
+                    const branchMidX = fromX + 16;
+                    return (
+                      <path
+                        key={`diverge-${branchId}`}
+                        d={`M ${fromX} ${fromY} C ${branchMidX} ${fromY}, ${branchMidX} ${toY}, ${toX} ${toY}`}
+                        fill="none"
+                        stroke="#a855f7"
+                        strokeWidth={1.8}
+                        strokeDasharray="3 3"
+                      />
+                    );
+                  })}
+
+                  {Object.entries(remoteReplayCursorByPeer).map(([peerId, remoteCursor]) => {
+                    const laneY = laneLayout.laneY[remoteCursor.branchId];
+                    const x = laneXForRemoteReplayCursor(remoteCursor);
+                    if (typeof laneY !== "number" || typeof x !== "number") {
+                      return null;
+                    }
+                    return (
+                      <g key={`remote-replay-cursor-${peerId}`}>
+                        <circle
+                          cx={x}
+                          cy={laneY}
+                          r={12}
+                          fill="none"
+                          stroke="#ea580c"
+                          strokeWidth={2}
+                          strokeDasharray="4 3"
+                        />
+                        <text x={x} y={laneY - 16} textAnchor="middle" fill="#ea580c" fontSize={9} fontWeight={700}>
+                          {remoteCursor.name}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {mergeConnectors.map((merge) => (
+                    <g key={`merge-${merge.id}`}>
+                      <path d={merge.path} fill="none" stroke="#f97316" strokeWidth={2.1} />
+                      <circle cx={merge.sourceX} cy={merge.sourceY} r={2.5} fill="#f97316" />
+                      <circle cx={merge.targetX} cy={merge.targetY} r={2.5} fill="#f97316" />
+                    </g>
+                  ))}
+                </svg>
+              )}
+            </div>
+            <div style={{ marginTop: 6, fontSize: 12, color: "#475569", display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <span>
+                <strong style={{ color: "#a855f7" }}>Divergence</strong>: dashed purple connector
+              </span>
+              <span>
+                <strong style={{ color: "#f97316" }}>Merge</strong>: orange connector
+              </span>
+              <span>
+                <strong style={{ color: "#ea580c" }}>Peer cursor</strong>: dashed orange ring
+              </span>
+              <span>
+                <strong>Click any node</strong> to move replay cursor
+              </span>
+            </div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <label htmlFor="replayCursorSlider" style={{ display: "block", marginBottom: 6 }}>
+              Timeline scrubber
+            </label>
+            <input
+              id="replayCursorSlider"
+              type="range"
+              min={0}
+              max={Math.max(0, replayNodeCount - 1)}
+              value={Math.min(replayState.cursor.nodeIndex, Math.max(0, replayNodeCount - 1))}
+              onChange={(event) => selectReplayBranchNode(replayState.cursor.branchId, Number(event.target.value) || 0)}
+              style={{ width: "100%" }}
+              disabled={!replayCanStep}
+            />
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <strong>Cursor:</strong>{" "}
+            <code>
+              index={replayState.cursor.nodeIndex}, node={replayState.cursor.nodeId ?? "(none)"}
+            </code>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayState.cursor.nodeIndex - 1)}
+              disabled={!replayCanStep}
+            >
+              Prev node
+            </button>
+            <button
+              type="button"
+              onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayState.cursor.nodeIndex + 1)}
+              disabled={!replayCanStep}
+            >
+              Next node
+            </button>
+          </div>
+          <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 10, background: "#f8fafc" }}>
+            <strong>Room at cursor</strong>
+            {currentReplayNode ? (
+              <div>
+                <p style={{ marginTop: 8, marginBottom: 4 }}>
+                  <strong>Node:</strong> <code>{currentReplayNode.nodeId}</code>
+                </p>
+                <p style={{ marginTop: 0, marginBottom: 4 }}>
+                  <strong>Summary:</strong> <code>{currentReplayNode.opSummary}</code>
+                </p>
+                <p style={{ marginTop: 0, marginBottom: 4 }}>
+                  <strong>Lamport:</strong> <code>{currentReplayNode.lamport ?? "(none)"}</code>, <strong>Author:</strong>{" "}
+                  <code>{currentReplayNode.author ?? "(unknown)"}</code>
+                </p>
+                <p style={{ marginTop: 0, marginBottom: 6 }}>
+                  <strong>Time:</strong> <code>{new Date(currentReplayNode.atIso).toLocaleTimeString()}</code>
+                </p>
+                <pre
+                  style={{
+                    marginTop: 0,
+                    marginBottom: 0,
+                    maxHeight: 110,
+                    overflow: "auto",
+                    background: "white",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 6,
+                    padding: 8
+                  }}
+                >
+                  {currentReplayNode.payloadJson}
+                </pre>
+              </div>
+            ) : (
+              <p style={{ marginBottom: 0 }}>No room state at cursor yet. Generate runtime events first.</p>
+            )}
+          </div>
+        </article>
+
+        <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, padding: 12 }}>
           <h2 style={{ marginTop: 0 }}>Shared document action</h2>
           <p style={{ marginTop: 0 }}>
-            This first non-placeholder interaction writes a shared document key through the SDK sync API.
+            Writes and reads `workspace/doc/&lt;branchId&gt;` through SDK sync. In replay mode this also emits replay events.
           </p>
           <label htmlFor="sharedDocText" style={{ display: "block", marginBottom: 6 }}>
-            Shared text (`workspace/doc/main`)
+            Shared text (`workspace/doc/&lt;branchId&gt;`)
           </label>
           <textarea
             id="sharedDocText"
             value={draftText}
             onChange={(event) => setDraftText(event.target.value)}
-            rows={8}
+            rows={6}
             style={{ width: "100%", resize: "vertical", padding: 8, boxSizing: "border-box", marginBottom: 10 }}
           />
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -290,8 +3606,7 @@ export default function App() {
             <strong>Last action:</strong> {lastAction}
           </p>
           <p style={{ marginBottom: 0 }}>
-            <strong>Last applied value:</strong>{" "}
-            <code>{appliedText || "(none yet)"}</code>
+            <strong>Last applied value:</strong> <code>{appliedText || "(none yet)"}</code>
           </p>
           <hr style={{ margin: "14px 0" }} />
           <h3 style={{ marginTop: 0 }}>Presence and peer signal</h3>
@@ -304,9 +3619,9 @@ export default function App() {
               value={presenceName}
               onChange={(event) => setPresenceName(event.target.value)}
               placeholder="display name"
-              style={{ minWidth: 260, padding: 6 }}
+              style={{ width: "100%", padding: 6, boxSizing: "border-box" }}
             />
-            <button type="button" onClick={publishPresence} style={{ marginLeft: 8 }} disabled={!canUseSdkActions}>
+            <button type="button" onClick={publishPresence} style={{ marginTop: 8 }} disabled={!canUseSdkActions}>
               Publish presence
             </button>
           </div>
@@ -327,7 +3642,7 @@ export default function App() {
               value={peerTarget}
               onChange={(event) => setPeerTarget(event.target.value)}
               placeholder="peer id"
-              style={{ minWidth: 260, padding: 6 }}
+              style={{ width: "100%", padding: 6, boxSizing: "border-box" }}
             />
           </div>
           <div style={{ marginBottom: 10 }}>
@@ -357,14 +3672,23 @@ export default function App() {
             ))}
             {incomingSignals.length === 0 ? <li>No incoming signals yet.</li> : null}
           </ul>
+          <h4 style={{ marginBottom: 6 }}>Workspace persistence feed</h4>
+          <ul style={{ marginTop: 0, paddingLeft: 18, maxHeight: 130, overflow: "auto" }}>
+            {persistenceFeed.map((item, index) => (
+              <li key={`${item.atIso}-${item.key}-${index}`}>
+                <code>{new Date(item.atIso).toLocaleTimeString()}</code> <strong>{item.key}</strong> [{item.action}] {item.detail}
+              </li>
+            ))}
+            {persistenceFeed.length === 0 ? <li>No shared workspace writes yet.</li> : null}
+          </ul>
           {!canUseSdkActions ? (
             <p style={{ marginBottom: 0, color: "#9a3412" }}>
               SDK actions are disabled until runtime mode is <code>npm sdk + wasm</code> and connection state is open.
             </p>
           ) : null}
+          <hr style={{ margin: "14px 0" }} />
+          <DiagnosticsPanel diagnostics={diagnostics} />
         </article>
-
-        <DiagnosticsPanel diagnostics={diagnostics} />
       </section>
     </main>
   );

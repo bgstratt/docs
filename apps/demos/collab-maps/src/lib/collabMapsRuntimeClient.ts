@@ -65,6 +65,7 @@ export class CollabMapsRuntimeClient {
   private listeners = new Set<Listener>();
   private runtimeMessageListeners = new Set<RuntimeMessageListener>();
   private activeRoomId: string | null = null;
+  private unsubscribeRuntimeStream: (() => void) | null = null;
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
@@ -90,6 +91,7 @@ export class CollabMapsRuntimeClient {
   }
 
   async connect(roomId: string): Promise<void> {
+    await this.disconnectAsync(true);
     this.activeRoomId = roomId;
     const createSdk = await maybeLoadSdkFactory();
     if (!createSdk) {
@@ -116,7 +118,7 @@ export class CollabMapsRuntimeClient {
       this.push("sdk", "initialized collab-maps sdk");
       this.emit();
       if (typeof sdk.on === "function") {
-        sdk.on("runtime-message", (payload) => {
+        this.unsubscribeRuntimeStream = sdk.on("runtime-message", (payload) => {
           if (payload && typeof payload === "object") {
             this.emitRuntimeMessage(payload as Record<string, unknown>);
           }
@@ -143,10 +145,19 @@ export class CollabMapsRuntimeClient {
   }
 
   disconnect(): void {
-    void this.disconnectAsync();
+    void this.disconnectAsync(false);
   }
 
-  private async disconnectAsync(): Promise<void> {
+  private async disconnectAsync(silent: boolean): Promise<void> {
+    if (this.unsubscribeRuntimeStream) {
+      try {
+        this.unsubscribeRuntimeStream();
+      } catch {
+        // best effort
+      }
+      this.unsubscribeRuntimeStream = null;
+    }
+
     if (this.sdk) {
       try {
         await this.sdk.room.disconnect();
@@ -154,6 +165,10 @@ export class CollabMapsRuntimeClient {
         // best effort
       }
       this.sdk = null;
+    }
+    this.activeRoomId = null;
+    if (silent) {
+      return;
     }
     this.diagnostics = {
       ...this.diagnostics,

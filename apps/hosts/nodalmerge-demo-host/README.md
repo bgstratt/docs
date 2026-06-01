@@ -25,6 +25,14 @@ From this folder:
 
 ```powershell
 dotnet restore .\NodalMerge.DemoHost.csproj --configfile .\NuGet.config -p:NodalMergePackageVersion=0.1.0-local
+dotnet run
+```
+
+`dotnet run` now uses `Properties/launchSettings.json` for the local URL/profile.
+
+If you need to override the package version ad hoc:
+
+```powershell
 dotnet run --project .\NodalMerge.DemoHost.csproj -p:NodalMergePackageVersion=0.1.0-local
 ```
 

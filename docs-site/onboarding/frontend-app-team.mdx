@@ -1,0 +1,83 @@
+---
+title: "Frontend app team path"
+description: "Role-specific onboarding for frontend teams building collaborative UI features on NodalMerge."
+icon: "code"
+---
+
+## Goal
+
+Ship one production-ready frontend collaboration workflow with clear runtime evidence and user-safe failure UX.
+
+## Step 1: Align product model and state lanes
+
+Read:
+
+- [quickstart](/quickstart)
+- [architecture/mental-model](/architecture/mental-model)
+- [architecture/speculative-vs-authoritative](/architecture/speculative-vs-authoritative)
+
+Outcome:
+
+- Your team has explicit `intent/**` and `world/**` conventions for the target feature.
+
+## Step 2: Start from proven app patterns
+
+Use:
+
+- [developer-experience/apps](/developer-experience/apps)
+- `apps/demos/infinite-room-workspace`
+- `apps/demos/collab-maps`
+
+Focus on:
+
+- one shared state write path
+- one presence or peer-signal path
+- one explicit failure state in UI
+
+Outcome:
+
+- Two browser windows converge on the same room behavior.
+
+## Step 3: Add subscription and conflict-safe UX
+
+Read and apply:
+
+- [sdk/javascript](/sdk/javascript)
+- [sdk/subscriptions](/sdk/subscriptions)
+- [sdk/undo-and-conflicts](/sdk/undo-and-conflicts)
+
+Outcome:
+
+- UI handles reconnect, rejection, and conflict outcomes without silent snap-back.
+
+## Step 4: Capture runtime proof
+
+Use:
+
+- `apps/playground/protocol-inspector`
+- `apps/playground/replay-lab`
+- [tutorials/trace-a-room-session](/tutorials/trace-a-room-session)
+
+Capture:
+
+- one trace snippet around user action
+- one replay before/after snapshot pair
+
+Outcome:
+
+- Feature behavior is backed by protocol and replay evidence, not only manual observation.
+
+## Step 5: Frontend readiness checklist
+
+- Room state model documented for feature keys
+- Presence payloads are ephemeral and minimal
+- Rejection/conflict UI states are user-visible
+- At least one offline/reconnect drill passed
+- Trace/replay artifacts attached to review notes
+
+## Related pages
+
+- [onboarding/first-day-builder](/onboarding/first-day-builder)
+- [tutorials/trace-a-room-session](/tutorials/trace-a-room-session)
+- [guides/offline-first-patterns](/guides/offline-first-patterns)
+- [operators/troubleshooting](/operators/troubleshooting)

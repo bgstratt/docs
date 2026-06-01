@@ -8,7 +8,10 @@ It currently provides:
 
 - Room connect/disconnect controls
 - Shared diagnostics panel contract
-- Simple replay snapshot capture placeholder
+- Replay snapshot capture with timeline cursor/range controls
+- Protocol-linked checkpoint jump buttons (`welcome`, `pack/request`, blob, peer/presence, control)
+- Protocol-inspector trace snippet import and replay correlation mapping
+- Confidence-scored correlation heuristics (exact/raw, same-type nearest timestamp, unmatched diagnostics by type)
 
 ## Config contract (shared)
 
@@ -28,5 +31,4 @@ It currently provides:
 
 ## Next slice
 
-- Add replay cursor/range controls and payload summaries
-- Cross-link to protocol and API reference docs
+- Add branch-style replay exploration once deepen/hardening slices complete

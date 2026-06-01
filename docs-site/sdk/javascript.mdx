@@ -59,6 +59,20 @@ sdk.sync.push();
 
 Advanced anchor-based APIs are available when your UI/editor needs stable positional semantics under concurrent edits.
 
+For attribution UIs (per-glyph author), read the visible RGA sequence:
+
+```ts
+const glyphs = sdk.sync.getTextSequence("notes/demo/body");
+// [{ lamport, author, ch }, ...] — tombstones omitted
+
+const atLamport = sdk.sync.getTextAtLamport("notes/demo/body", 42);
+const glyphsAt = sdk.sync.getTextSequenceAtLamport("notes/demo/body", 42);
+```
+
+`getTextAtLamport` / `getTextSequenceAtLamport` replay only DAG nodes with `transaction.lamport <= maxLamport` (tombstones included).
+
+Try the interactive surface: [Collab text playground](/developer-experience/apps#collab-text) (`http://127.0.0.1:4177`, default room `collab-text`).
+
 ## Presence and ephemeral collaboration
 
 Presence is for live ephemeral state, not durable business data:

@@ -13,6 +13,7 @@ This repo now includes interactive app surfaces alongside docs:
 - `apps/demos/collab-maps`
 - `apps/playground/replay-lab`
 - `apps/playground/protocol-inspector`
+- `apps/playground/collab-text`
 
 Use this page as the canonical local run and smoke-validation entrypoint.
 
@@ -43,6 +44,7 @@ Apps:
 - `http://127.0.0.1:4174` (`replay-lab`)
 - `http://127.0.0.1:4175` (`collab-maps`)
 - `http://127.0.0.1:4176` (`protocol-inspector`)
+- `http://127.0.0.1:4177` (`collab-text`)
 
 ## Infinite room workspace
 
@@ -51,11 +53,24 @@ Apps:
 1. Connect to a room in `direct websocket` mode.
 2. Switch to `npm sdk + wasm`.
 3. Connect again and confirm diagnostics show an open sdk session.
-4. Use **Shared document action** to update `workspace/doc/main`.
+4. Add workspace nodes and confirm they mirror across peers.
 
 ### Why this matters
 
-This is the first non-placeholder interactive path proving sdk/wasm runtime behavior in-browser from local package artifacts.
+This demo focuses on spatial workspace state (nodes, branches, replay lanes) — not collaborative text.
+
+## Collab text
+
+### What to validate
+
+1. Connect (default room `collab-text`; use a new id if an old room is polluted).
+2. Type in the editor; confirm peers converge on `notes/demo/body`.
+3. Open **DAG replay timeline** and scrub lamport cursor while editing.
+4. Confirm local peer-colored preview updates for inserted letters (not spaces).
+
+### Why this matters
+
+This playground showcases RGA text ops, contiguous edit batching, and history DAG reads — the right surface for fast typing and tombstone-aware text runtime behavior.
 
 ## Replay lab
 

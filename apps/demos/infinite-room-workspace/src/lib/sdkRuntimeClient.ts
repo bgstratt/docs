@@ -13,15 +13,42 @@ export type SharedWriteResult = {
 type NodalMergeSdkLike = {
   room: {
     connect: () => Promise<void>;
-    disconnect: () => Promise<void>;
+    disconnect: () => void | Promise<void>;
   };
   sync?: {
     set?: (key: string, value: string) => void;
     get?: (key: string) => string | null;
     getCanonical?: (key: string) => string | null;
+    getText?: (key: string) => string | null;
+    getTextCanonical?: (key: string) => string | null;
+    getTextSequence?: (key: string) => Array<{ lamport: number; author: string; ch: string }>;
+    getTextAtLamport?: (key: string, maxLamport: number) => string;
+    getTextSequenceAtLamport?: (
+      key: string,
+      maxLamport: number
+    ) => Array<{ lamport: number; author: string; ch: string }>;
     del?: (key: string) => void;
+    insertTextRange?: (key: string, anchor: { kind: string; pos?: number }, text: string) => void;
+    deleteTextRange?: (key: string, anchor: { kind: string; pos?: number }, len: number) => void;
+    insertTextAt?: (key: string, pos: number, text: string) => void;
+    deleteTextAt?: (key: string, pos: number, len: number) => void;
     push?: () => boolean;
     pull?: () => void;
+    readLocalReplayRange?: (args: {
+      keyPrefix: string;
+      fromLamport?: number;
+      limit?: number;
+      cursor?: string;
+    }) => Record<string, unknown> | null;
+  };
+  query?: {
+    readReplayRange?: (args: {
+      keyPrefix: string;
+      fromLamport?: number;
+      limit?: number;
+      cursor?: string;
+      timeoutMs?: number;
+    }) => Promise<Record<string, unknown>>;
   };
   replay?: {
     state?: () => Record<string, unknown>;
@@ -39,6 +66,7 @@ type NodalMergeSdkLike = {
     snapshot?: () => { pubkey?: string };
   };
   on?: (eventName: string, handler: (payload: unknown) => void) => () => void;
+  isWasmStoreBusy?: () => boolean;
 };
 
 type CreateNodalMergeSdkFn = (options: {
@@ -61,6 +89,35 @@ function nextEvents(list: RuntimeEventItem[], type: string, message: string): Ru
   return [{ atIso: new Date().toISOString(), type, message }, ...list].slice(0, 40);
 }
 
+function buildReplayRangeFromTextGlyphs(
+  glyphs: Array<{ lamport: number; author: string; ch: string }>,
+  textKey: string,
+  keyPrefix: string
+): Record<string, unknown> {
+  const byLamport = new Map<number, { authors: Set<string> }>();
+  for (const glyph of glyphs) {
+    const bucket = byLamport.get(glyph.lamport) ?? { authors: new Set<string>() };
+    bucket.authors.add(glyph.author.slice(0, 12));
+    byLamport.set(glyph.lamport, bucket);
+  }
+
+  const items = [...byLamport.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([lamport, bucket]) => ({
+      lamport,
+      node_id: [...bucket.authors].sort().join("+").slice(0, 12) || `L${lamport}`,
+      touched_keys: [textKey]
+    }));
+
+  return {
+    type: "replay.read-range.result",
+    key_prefix: keyPrefix,
+    from_lamport: 0,
+    items,
+    next_cursor: null
+  };
+}
+
 export class SdkRuntimeClient {
   private fallbackClient: RuntimeClient;
   private sdk: NodalMergeSdkLike | null = null;
@@ -70,7 +127,22 @@ export class SdkRuntimeClient {
   private activeRoomId: string | null = null;
   private localPubkey: string | null = null;
   private initialConnectPending = false;
+  private syncWriteDepth = 0;
   private unsubscribeRuntimeStreams: Array<() => void> = [];
+
+  /** True while a local sync mutation holds the WASM store (avoid overlapping reads). */
+  isSyncWriteInProgress(): boolean {
+    return this.syncWriteDepth > 0;
+  }
+
+  private runSyncWrite<T>(fn: () => T): T {
+    this.syncWriteDepth += 1;
+    try {
+      return fn();
+    } finally {
+      this.syncWriteDepth -= 1;
+    }
+  }
 
   constructor(private readonly config: RuntimeConfig) {
     this.fallbackClient = new RuntimeClient(config, { pubkeyPrefix: "workspace-sdk-fallback", maxEvents: 40 });
@@ -151,6 +223,231 @@ export class SdkRuntimeClient {
       };
       this.emit();
       return { applied: false, pushed: false };
+    }
+  }
+
+  getDocumentText(key: string, options?: { canonical?: boolean }): string | null {
+    if (this.syncWriteDepth > 0) {
+      return null;
+    }
+    const sync = this.sdk?.sync;
+    if (!sync) {
+      return null;
+    }
+    try {
+      if (options?.canonical && sync.getTextCanonical) {
+        return sync.getTextCanonical(key);
+      }
+      return sync.getText?.(key) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  getTextSequence(key: string): Array<{ lamport: number; author: string; ch: string }> {
+    if (this.syncWriteDepth > 0) {
+      return [];
+    }
+    const sync = this.sdk?.sync;
+    if (!sync?.getTextSequence) {
+      return [];
+    }
+    try {
+      return sync.getTextSequence(key);
+    } catch {
+      return [];
+    }
+  }
+
+  getTextAtLamport(key: string, maxLamport: number): string | null {
+    if (this.syncWriteDepth > 0) {
+      return null;
+    }
+    const sync = this.sdk?.sync;
+    if (!sync?.getTextAtLamport) {
+      return null;
+    }
+    try {
+      return sync.getTextAtLamport(key, maxLamport);
+    } catch {
+      return null;
+    }
+  }
+
+  getTextSequenceAtLamport(
+    key: string,
+    maxLamport: number
+  ): Array<{ lamport: number; author: string; ch: string }> {
+    if (this.syncWriteDepth > 0) {
+      return [];
+    }
+    const sync = this.sdk?.sync;
+    if (!sync?.getTextSequenceAtLamport) {
+      return [];
+    }
+    try {
+      return sync.getTextSequenceAtLamport(key, maxLamport);
+    } catch {
+      return [];
+    }
+  }
+
+  private async waitForSyncIdle(timeoutMs = 2000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const sdkBusy = this.sdk?.isWasmStoreBusy?.() === true;
+      if (this.syncWriteDepth === 0 && !sdkBusy) {
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 16);
+      });
+    }
+  }
+
+  /** Read glyphs for replay UI without the sync-write guard (call only after waitForSyncIdle). */
+  private getTextSequenceForReplay(key: string): Array<{ lamport: number; author: string; ch: string }> {
+    const sync = this.sdk?.sync;
+    if (!sync?.getTextSequence) {
+      return [];
+    }
+    try {
+      return sync.getTextSequence(key);
+    } catch {
+      return [];
+    }
+  }
+
+  applyTextEdits(
+    key: string,
+    edits: Array<{ pos: number; deleteLen: number; insertText: string }>,
+    options?: { useRangeOps?: boolean }
+  ): SharedWriteResult {
+    const sync = this.sdk?.sync;
+    if (!sync?.insertTextAt || !sync.deleteTextAt) {
+      this.push("warn", "sdk text ops unavailable; ensure runtime mode is npm sdk + wasm");
+      return { applied: false, pushed: false };
+    }
+    if (edits.length === 0) {
+      return { applied: true, pushed: true };
+    }
+    const docText = this.getDocumentText(key) ?? "";
+    const docLength = [...docText].length;
+    const safeEdits = edits.map((edit) => {
+      const pos = Math.min(Math.max(0, edit.pos), docLength);
+      const maxDelete = Math.max(0, docLength - pos);
+      const deleteLen = Math.min(Math.max(0, edit.deleteLen), maxDelete);
+      return { pos, deleteLen, insertText: edit.insertText };
+    }).filter((edit) => edit.deleteLen > 0 || edit.insertText.length > 0);
+    if (safeEdits.length === 0) {
+      return { applied: true, pushed: true };
+    }
+    const useRangeOps = options?.useRangeOps !== false;
+    try {
+      this.runSyncWrite(() => {
+        for (const edit of safeEdits) {
+          if (edit.deleteLen > 0) {
+            if (useRangeOps && edit.deleteLen > 1 && sync.deleteTextRange) {
+              sync.deleteTextRange(key, { kind: "offset", pos: edit.pos }, edit.deleteLen);
+            } else {
+              sync.deleteTextAt(key, edit.pos, edit.deleteLen);
+            }
+          }
+          if (edit.insertText.length > 0) {
+            if (useRangeOps && edit.insertText.length > 1 && sync.insertTextRange) {
+              sync.insertTextRange(key, { kind: "offset", pos: edit.pos }, edit.insertText);
+            } else {
+              sync.insertTextAt(key, edit.pos, edit.insertText);
+            }
+          }
+        }
+      });
+      let pushed = true;
+      if (sync.push) {
+        pushed = sync.push() === true;
+      }
+      if (!pushed) {
+        this.diagnostics = {
+          ...this.diagnostics,
+          lastError: "sync push produced no outbound pack after text edits",
+          recentEvents: nextEvents(this.diagnostics.recentEvents, "warn", `text push no-op for ${key}`)
+        };
+        this.emit();
+        return { applied: true, pushed: false };
+      }
+      this.diagnostics = {
+        ...this.diagnostics,
+        lastError: null,
+        recentEvents: nextEvents(this.diagnostics.recentEvents, "sdk", `text edits ${key} (${edits.length})`)
+      };
+      this.emit();
+      return { applied: true, pushed: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "sdk text edit failed";
+      this.diagnostics = {
+        ...this.diagnostics,
+        lastError: message,
+        recentEvents: nextEvents(this.diagnostics.recentEvents, "error", `text edit failed for ${key}: ${message}`)
+      };
+      this.emit();
+      return { applied: false, pushed: false };
+    }
+  }
+
+  async readReplayRange(args: {
+    keyPrefix: string;
+    textKey?: string;
+    fromLamport?: number;
+    limit?: number;
+    cursor?: string;
+    timeoutMs?: number;
+    queryHost?: boolean;
+  }): Promise<Record<string, unknown> | null> {
+    await this.waitForSyncIdle();
+
+    const readLocalReplayRange = this.sdk?.sync?.readLocalReplayRange;
+    if (readLocalReplayRange) {
+      try {
+        const localResult = readLocalReplayRange(args);
+        if (localResult?.type === "replay.read-range.result") {
+          const items = localResult.items;
+          if (Array.isArray(items) && items.length > 0) {
+            return localResult;
+          }
+        }
+      } catch {
+        // Fall through to glyph or host fallback.
+      }
+    }
+
+    if (args.textKey) {
+      const glyphs = this.getTextSequenceForReplay(args.textKey);
+      const glyphTimeline = buildReplayRangeFromTextGlyphs(glyphs, args.textKey, args.keyPrefix);
+      const glyphItems = glyphTimeline.items;
+      if (Array.isArray(glyphItems) && glyphItems.length > 0) {
+        return glyphTimeline;
+      }
+      if (args.queryHost !== true) {
+        return glyphTimeline;
+      }
+    }
+
+    if (args.queryHost === false) {
+      return null;
+    }
+
+    const readHostReplayRange = this.sdk?.query?.readReplayRange;
+    if (!readHostReplayRange) {
+      return null;
+    }
+
+    try {
+      return await readHostReplayRange({
+        ...args,
+        timeoutMs: Math.min(args.timeoutMs ?? 500, 200)
+      });
+    } catch {
+      return null;
     }
   }
 

@@ -169,9 +169,7 @@ export default function App() {
   const [roomIdInput, setRoomIdInput] = useState(config.defaultRoomId);
   const [activeRoomId, setActiveRoomId] = useState<string>(config.defaultRoomId);
   const [diagnostics, setDiagnostics] = useState<RuntimeDiagnostics>(sdkClient.getDiagnostics());
-  const [draftText, setDraftText] = useState("Hello from infinite workspace");
-  const [appliedText, setAppliedText] = useState<string>("");
-  const [lastAction, setLastAction] = useState<string>("No shared document action yet.");
+  const [lastAction, setLastAction] = useState<string>("Ready.");
   const [presenceName, setPresenceName] = useState("operator-1");
   const [peerTarget, setPeerTarget] = useState("");
   const [signalPayload, setSignalPayload] = useState('{"intent":"ping"}');
@@ -207,7 +205,6 @@ export default function App() {
   const workspaceEdgesRef = useRef<WorkspaceEdge[]>([]);
   const workspaceAssetsRef = useRef<WorkspaceAsset[]>([]);
   const workspaceAnnotationsRef = useRef<WorkspaceAnnotation[]>([]);
-  const appliedTextRef = useRef<string>("");
   const draggingNodeRef = useRef<{ nodeId: string } | null>(null);
   const edgeSourceNodeIdRef = useRef<string | null>(null);
   const dragPresenceLastSentRef = useRef(0);
@@ -231,7 +228,6 @@ export default function App() {
   const sharedBranchesRef = useRef<SharedBranchRecord[]>([]);
   const appliedSharedReplayOpIdsRef = useRef<Set<string>>(new Set());
   const lastSharedRawByKeyRef = useRef<Record<string, string | null>>({
-    "workspace/doc/main": null,
     "workspace/nodes/main": null,
     "workspace/edges/main": null,
     "workspace/assets/main": null,
@@ -255,8 +251,6 @@ export default function App() {
     setWorkspaceEdges([]);
     setWorkspaceAssets([]);
     setWorkspaceAnnotations([]);
-    setAppliedText("");
-    setDraftText("");
     setRemoteDragByPeer({});
     setRemoteReplayCursorByPeer({});
     setPresenceByPeer({});
@@ -264,9 +258,7 @@ export default function App() {
     workspaceEdgesRef.current = [];
     workspaceAssetsRef.current = [];
     workspaceAnnotationsRef.current = [];
-    appliedTextRef.current = "";
     lastSharedRawByKeyRef.current = {
-      "workspace/doc/main": null,
       "workspace/nodes/main": null,
       "workspace/edges/main": null,
       "workspace/assets/main": null,
@@ -301,10 +293,6 @@ export default function App() {
   useEffect(() => {
     workspaceAnnotationsRef.current = workspaceAnnotations;
   }, [workspaceAnnotations]);
-
-  useEffect(() => {
-    appliedTextRef.current = appliedText;
-  }, [appliedText]);
 
   useEffect(() => {
     activeBranchIdRef.current = replayState.activeBranchId;
@@ -793,7 +781,7 @@ export default function App() {
 
   function createWorkspaceSnapshot(): WorkspaceSnapshot {
     return {
-      doc: appliedTextRef.current,
+      doc: "",
       nodes: workspaceNodesRef.current.map((entry) => ({ ...entry })),
       edges: workspaceEdgesRef.current.map((entry) => ({ ...entry })),
       assets: workspaceAssetsRef.current.map((entry) => ({ ...entry })),
@@ -1411,10 +1399,6 @@ export default function App() {
   }
 
   function applyWorkspaceSnapshot(snapshot: WorkspaceSnapshot, source: "runtime" | "replay") {
-    setAppliedText(snapshot.doc);
-    if (source === "runtime") {
-      setDraftText(snapshot.doc);
-    }
     setWorkspaceNodes(snapshot.nodes.map((entry) => ({ ...entry })));
     setWorkspaceEdges(snapshot.edges.map((entry) => ({ ...entry })));
     setWorkspaceAssets(snapshot.assets.map((entry) => ({ ...entry })));
@@ -1503,9 +1487,6 @@ export default function App() {
             });
           }
         }
-      }
-      if (typed.type === "workspace.set-doc" && typeof typed.text === "string") {
-        projected.doc = typed.text;
       }
       if (typed.type === "workspace.add-asset" && typed.asset && typeof typed.asset === "object") {
         const raw = typed.asset as WorkspaceAsset;
@@ -1701,24 +1682,10 @@ export default function App() {
     const branchId = activeBranchIdRef.current || replayState.activeBranchId;
     const preferCanonicalMetadata = preferCanonical ? { canonical: true as const } : undefined;
 
-    const docKey = getWorkspaceSharedKey(branchId, "doc");
     const nodesFingerprintKey = getNodeMemberKeyPrefix(branchId);
     const edgesKey = getWorkspaceSharedKey(branchId, "edges");
     const assetsKey = getWorkspaceSharedKey(branchId, "assets");
     const annotationsKey = getWorkspaceSharedKey(branchId, "annotations");
-
-    const sharedText = readSharedWorkspaceValue(branchId, "doc");
-    const canApplyDoc = shouldApplySharedKeyWrite(docKey, sharedText, { isRemotePack });
-    if (canApplyDoc && sharedText !== (lastSharedRawByKeyRef.current[docKey] ?? null)) {
-      if ((lastSharedRawByKeyRef.current[docKey] ?? null) !== null) {
-        pushPersistenceEvent(docKey, "sync", "Remote shared text update pulled.");
-      }
-      lastSharedRawByKeyRef.current[docKey] = sharedText;
-    }
-    if (canApplyDoc && sharedText !== null && shouldApplyWorkspaceView) {
-      setAppliedText(sharedText);
-      setDraftText(sharedText);
-    }
 
     const sharedNodes = readWorkspaceNodesForBranch(branchId);
     const sharedNodesRaw = JSON.stringify(sharedNodes);
@@ -2181,47 +2148,6 @@ export default function App() {
     }
     setActiveRoomId(nextRoomId);
     setLastAction(`Switching room to ${nextRoomId}...`);
-  }
-
-  function applySharedDoc() {
-    if (backend !== "sdk") {
-      setLastAction("Shared document write requires runtime mode = npm sdk + wasm.");
-      return;
-    }
-
-    const nextText = draftText.trim();
-    if (!nextText) {
-      setLastAction("Shared document text cannot be empty.");
-      return;
-    }
-
-    const writeTarget = ensureWritableBranchForEdit("workspace.set-doc", { applySeedSnapshot: true });
-    if (!writeTarget) {
-      return;
-    }
-    const branchId = writeTarget.branchId;
-    const docKey = getWorkspaceSharedKey(branchId, "doc");
-    const writeResult = sdkClient.setSharedValue(docKey, nextText);
-    if (!sharedWriteApplied(writeResult)) {
-      setLastAction("SDK sync API unavailable; reconnect in npm sdk + wasm mode.");
-      return;
-    }
-    markLocalCanvasWrite();
-    pushSyncWarningIfNeeded(writeResult, "Shared document");
-
-    const confirmed = sdkClient.getSharedValue(docKey);
-    suppressWorkspaceRefreshUntilRef.current = Date.now() + 900;
-    lastSharedRawByKeyRef.current[docKey] = confirmed ?? nextText;
-    setAppliedText(confirmed ?? nextText);
-    setDraftText(confirmed ?? nextText);
-    appendReplayWorkspaceEvent(
-      `set-doc ${docKey}`,
-      { type: "workspace.set-doc", text: confirmed ?? nextText },
-      "workspace.set-doc",
-      new Date().toISOString()
-    );
-    setLastAction(`Updated ${docKey} at ${new Date().toLocaleTimeString()}.`);
-    pushPersistenceEvent(docKey, "write", "Updated shared workspace document.");
   }
 
   function addWorkspaceNode() {
@@ -2901,6 +2827,8 @@ export default function App() {
             }}
           >
             <strong>Status:</strong> {activeNotice}
+            <br />
+            <strong>Last action:</strong> {lastAction}
           </p>
           <p style={{ marginTop: 0 }}>
             <strong>Peer activity:</strong> {onlinePeers.length > 0 ? `${onlinePeers.length} peer(s) online` : "No peers connected yet."}
@@ -3583,33 +3511,11 @@ export default function App() {
         </article>
 
         <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, padding: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Shared document action</h2>
-          <p style={{ marginTop: 0 }}>
-            Writes and reads `workspace/doc/&lt;branchId&gt;` through SDK sync. In replay mode this also emits replay events.
+          <h2 style={{ marginTop: 0 }}>Presence and peer signal</h2>
+          <p style={{ marginTop: 0, marginBottom: 10 }}>
+            Collaborative text (RGA ops, replay timeline, peer-colored inserts) lives in the{" "}
+            <strong>collab-text</strong> playground on port <code>4177</code>.
           </p>
-          <label htmlFor="sharedDocText" style={{ display: "block", marginBottom: 6 }}>
-            Shared text (`workspace/doc/&lt;branchId&gt;`)
-          </label>
-          <textarea
-            id="sharedDocText"
-            value={draftText}
-            onChange={(event) => setDraftText(event.target.value)}
-            rows={6}
-            style={{ width: "100%", resize: "vertical", padding: 8, boxSizing: "border-box", marginBottom: 10 }}
-          />
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <button type="button" onClick={applySharedDoc} disabled={!canUseSdkActions}>
-              Apply shared document
-            </button>
-          </div>
-          <p style={{ marginBottom: 6 }}>
-            <strong>Last action:</strong> {lastAction}
-          </p>
-          <p style={{ marginBottom: 0 }}>
-            <strong>Last applied value:</strong> <code>{appliedText || "(none yet)"}</code>
-          </p>
-          <hr style={{ margin: "14px 0" }} />
-          <h3 style={{ marginTop: 0 }}>Presence and peer signal</h3>
           <div style={{ marginBottom: 10 }}>
             <label htmlFor="presenceName" style={{ display: "block", marginBottom: 6 }}>
               Presence name

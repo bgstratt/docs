@@ -9,6 +9,25 @@ const config = client.getConfig();
 const BOARD_WIDTH = 640;
 const BOARD_HEIGHT = 360;
 
+const AUTHOR_COLORS: Array<{ bg: string; border: string }> = [
+  { bg: "#dc2626", border: "#7f1d1d" },
+  { bg: "#2563eb", border: "#1e3a8a" },
+  { bg: "#16a34a", border: "#14532d" },
+  { bg: "#d97706", border: "#78350f" },
+  { bg: "#7c3aed", border: "#4c1d95" },
+  { bg: "#0891b2", border: "#164e63" },
+  { bg: "#be185d", border: "#831843" },
+  { bg: "#ea580c", border: "#7c2d12" },
+];
+
+function authorColor(author: string): { bg: string; border: string } {
+  let hash = 0;
+  for (let i = 0; i < author.length; i++) {
+    hash = (hash * 31 + author.charCodeAt(i)) >>> 0;
+  }
+  return AUTHOR_COLORS[hash % AUTHOR_COLORS.length];
+}
+
 export default function App() {
   const [roomIdInput, setRoomIdInput] = useState(config.defaultRoomId);
   const [activeRoomId, setActiveRoomId] = useState(config.defaultRoomId);
@@ -19,7 +38,7 @@ export default function App() {
   const [lastAction, setLastAction] = useState("No map action yet.");
   const [peerCount, setPeerCount] = useState(0);
   const [lastRuntimeMessage, setLastRuntimeMessage] = useState("none");
-  const [activeNotice, setActiveNotice] = useState("Connect to start shared map actions.");
+  const [activeNotice, setActiveNotice] = useState("Click the board to add pins. Connecting to server...");
 
   useEffect(() => {
     const unsubscribe = client.subscribe((next) => {
@@ -28,7 +47,12 @@ export default function App() {
     });
     void client.connect(config.defaultRoomId).then(() => {
       setPins(client.getPins());
-      setActiveNotice(`Connected to ${config.defaultRoomId}.`);
+      const isConnected = client.getDiagnostics().connectionState === "open";
+      setActiveNotice(
+        isConnected
+          ? `Connected to ${config.defaultRoomId}. Click board to add pins.`
+          : "Server unavailable — pins saved locally, will sync when connected."
+      );
     });
     return () => {
       unsubscribe();
@@ -64,8 +88,8 @@ export default function App() {
   }, []);
 
   const canConnect = useMemo(() => roomIdInput.trim().length > 0, [roomIdInput]);
-  const canMapActions = diagnostics.connectionState === "open";
-  const canClearPins = canMapActions && pins.length > 0;
+  const isOnline = diagnostics.connectionState === "open";
+  const canClearPins = pins.length > 0;
 
   function connectRoom() {
     const roomId = roomIdInput.trim();
@@ -75,40 +99,44 @@ export default function App() {
     setActiveRoomId(roomId);
     void client.connect(roomId).then(() => {
       setPins(client.getPins());
-      setLastAction(`Connected to ${roomId}.`);
-      setActiveNotice(`Connected to ${roomId}. Click board to add pins.`);
+      const isConnected = client.getDiagnostics().connectionState === "open";
+      if (isConnected) {
+        setLastAction(`Connected to ${roomId}.`);
+        setActiveNotice(`Connected to ${roomId}. Click board to add pins.`);
+      } else {
+        setLastAction(`Could not reach server for ${roomId} — working offline.`);
+        setActiveNotice("Server unavailable — pins saved locally, will sync when connected.");
+      }
     });
   }
 
   function addPinFromClick(event: React.MouseEvent<HTMLDivElement>) {
-    if (!canMapActions) {
-      setLastAction("Map actions are disabled until sdk room connection is open.");
-      return;
-    }
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.round(event.clientX - rect.left);
     const y = Math.round(event.clientY - rect.top);
     const label = pinLabel.trim() || "Marker";
     const author = authorName.trim() || "mapper";
-    const didAdd = client.addPin({ x, y, label, author });
-    if (!didAdd) {
-      setLastAction("Failed to add pin; ensure sdk room connection is open.");
-      return;
-    }
+    client.addPin({ x, y, label, author });
     setPins(client.getPins());
-    setLastAction(`Added "${label}" at (${x}, ${y}).`);
-    setActiveNotice(`Pin "${label}" synced to room.`);
+    if (isOnline) {
+      setLastAction(`Added "${label}" at (${x}, ${y}).`);
+      setActiveNotice(`Pin "${label}" synced to room.`);
+    } else {
+      setLastAction(`Added "${label}" at (${x}, ${y}) — saved locally.`);
+      setActiveNotice(`Pin "${label}" saved locally; will sync when connected.`);
+    }
   }
 
   function clearPins() {
-    const didClear = client.clearPins();
-    if (!didClear) {
-      setLastAction("Failed to clear pins; ensure sdk room connection is open.");
-      return;
-    }
+    client.clearPins();
     setPins(client.getPins());
-    setLastAction("Cleared all pins.");
-    setActiveNotice("All shared pins cleared.");
+    if (isOnline) {
+      setLastAction("Cleared all pins.");
+      setActiveNotice("All shared pins cleared.");
+    } else {
+      setLastAction("Cleared all local pins.");
+      setActiveNotice("Local pins cleared.");
+    }
   }
 
   return (
@@ -180,8 +208,8 @@ export default function App() {
               marginTop: 0,
               padding: "8px 10px",
               borderRadius: 6,
-              background: canMapActions ? "#ecfdf5" : "#fff7ed",
-              color: canMapActions ? "#065f46" : "#9a3412"
+              background: isOnline ? "#ecfdf5" : "#fffbeb",
+              color: isOnline ? "#065f46" : "#92400e"
             }}
           >
             <strong>Status:</strong> {activeNotice}
@@ -199,35 +227,37 @@ export default function App() {
               border: "1px solid #cbd5e1",
               borderRadius: 8,
               background: "linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
-              cursor: canMapActions ? "crosshair" : "not-allowed",
+              cursor: "crosshair",
               overflow: "hidden",
-              marginBottom: 10,
-              opacity: canMapActions ? 1 : 0.7
+              marginBottom: 10
             }}
           >
-            {pins.map((pin) => (
-              <div
-                key={pin.id}
-                title={`${pin.label} (${pin.author})`}
-                style={{
-                  position: "absolute",
-                  left: Math.max(0, Math.min(pin.x - 5, BOARD_WIDTH - 12)),
-                  top: Math.max(0, Math.min(pin.y - 5, BOARD_HEIGHT - 12)),
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  background: "#dc2626",
-                  border: "1px solid #7f1d1d"
-                }}
-              />
-            ))}
+            {pins.map((pin) => {
+              const color = authorColor(pin.author);
+              return (
+                <div
+                  key={pin.id}
+                  title={`${pin.label} (${pin.author})`}
+                  style={{
+                    position: "absolute",
+                    left: Math.max(0, Math.min(pin.x - 5, BOARD_WIDTH - 12)),
+                    top: Math.max(0, Math.min(pin.y - 5, BOARD_HEIGHT - 12)),
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    background: color.bg,
+                    border: `1px solid ${color.border}`
+                  }}
+                />
+              );
+            })}
           </div>
-          {!canMapActions ? (
-            <p style={{ marginTop: 0, color: "#9a3412" }}>
-              Map actions are disabled until sdk room connection is open.
+          {!isOnline ? (
+            <p style={{ marginTop: 0, color: "#92400e" }}>
+              Offline mode — pins are saved locally and will sync to the room when connected.
             </p>
           ) : null}
-          {canMapActions && pins.length === 0 ? (
+          {isOnline && pins.length === 0 ? (
             <p style={{ marginTop: 0, color: "#334155" }}>No shared pins yet. Add the first one to confirm collaboration flow.</p>
           ) : null}
           <p style={{ marginBottom: 6 }}>

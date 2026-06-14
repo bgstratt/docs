@@ -58,6 +58,19 @@ export interface MapPin {
   atIso: string;
 }
 
+function isValidMapPin(entry: unknown): entry is MapPin {
+  return (
+    entry !== null &&
+    typeof entry === "object" &&
+    typeof (entry as MapPin).id === "string" &&
+    typeof (entry as MapPin).x === "number" &&
+    typeof (entry as MapPin).y === "number" &&
+    typeof (entry as MapPin).label === "string" &&
+    typeof (entry as MapPin).author === "string" &&
+    typeof (entry as MapPin).atIso === "string"
+  );
+}
+
 export class CollabMapsRuntimeClient {
   private readonly config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
   private sdk: NodalMergeSdkLike | null = null;
@@ -66,6 +79,7 @@ export class CollabMapsRuntimeClient {
   private runtimeMessageListeners = new Set<RuntimeMessageListener>();
   private activeRoomId: string | null = null;
   private unsubscribeRuntimeStream: (() => void) | null = null;
+  private localPins: MapPin[] = [];
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
@@ -131,6 +145,12 @@ export class CollabMapsRuntimeClient {
         connectionState: "open",
         lastError: null
       };
+      if (this.localPins.length > 0) {
+        const merged = this.getMergedPins();
+        sdk.sync?.set?.("maps/pins", JSON.stringify(merged));
+        sdk.sync?.push?.();
+        this.push("sdk", `flushed ${this.localPins.length} local pin(s) to room`);
+      }
       this.push("sdk", "connected room");
       this.emit();
     } catch (error) {
@@ -178,62 +198,60 @@ export class CollabMapsRuntimeClient {
     this.emit();
   }
 
-  getPins(): MapPin[] {
-    const raw = this.sdk?.sync?.get?.("maps/pins");
+  private getMergedPins(): MapPin[] {
+    if (!this.sdk?.sync?.get) {
+      return this.localPins;
+    }
+    const raw = this.sdk.sync.get("maps/pins");
     if (!raw) {
-      return [];
+      return this.localPins;
     }
     try {
       const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-      return parsed.filter((entry): entry is MapPin => {
-        return (
-          entry &&
-          typeof entry === "object" &&
-          typeof (entry as MapPin).id === "string" &&
-          typeof (entry as MapPin).x === "number" &&
-          typeof (entry as MapPin).y === "number" &&
-          typeof (entry as MapPin).label === "string" &&
-          typeof (entry as MapPin).author === "string" &&
-          typeof (entry as MapPin).atIso === "string"
-        );
-      });
+      if (!Array.isArray(parsed)) return this.localPins;
+      const sdkPins = parsed.filter(isValidMapPin);
+      const sdkIds = new Set(sdkPins.map((p) => p.id));
+      const unsynced = this.localPins.filter((p) => !sdkIds.has(p.id));
+      return [...unsynced, ...sdkPins].slice(0, 150);
     } catch {
-      return [];
+      return this.localPins;
     }
   }
 
+  getPins(): MapPin[] {
+    return this.getMergedPins();
+  }
+
   addPin(pin: Omit<MapPin, "id" | "atIso">): boolean {
-    const setValue = this.sdk?.sync?.set;
-    if (!setValue) {
-      this.push("warn", "sdk sync.set unavailable");
-      return false;
-    }
-    const existing = this.getPins();
     const next: MapPin = {
       id: `pin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
       atIso: new Date().toISOString(),
       ...pin
     };
-    const updated = [next, ...existing].slice(0, 150);
-    setValue("maps/pins", JSON.stringify(updated));
-    this.sdk?.sync?.push?.();
-    this.push("sdk", `pin added (${next.label})`);
+    this.localPins = [next, ...this.localPins].slice(0, 150);
+    const setValue = this.sdk?.sync?.set;
+    if (setValue) {
+      const merged = this.getMergedPins();
+      setValue("maps/pins", JSON.stringify(merged));
+      this.sdk?.sync?.push?.();
+      this.push("sdk", `pin added (${next.label})`);
+    } else {
+      this.push("sdk", `pin added locally (${next.label})`);
+    }
     this.emit();
     return true;
   }
 
   clearPins(): boolean {
+    this.localPins = [];
     const setValue = this.sdk?.sync?.set;
-    if (!setValue) {
-      this.push("warn", "sdk sync.set unavailable");
-      return false;
+    if (setValue) {
+      setValue("maps/pins", JSON.stringify([]));
+      this.sdk?.sync?.push?.();
+      this.push("sdk", "pins cleared");
+    } else {
+      this.push("sdk", "pins cleared locally");
     }
-    setValue("maps/pins", JSON.stringify([]));
-    this.sdk?.sync?.push?.();
-    this.push("sdk", "pins cleared");
     this.emit();
     return true;
   }

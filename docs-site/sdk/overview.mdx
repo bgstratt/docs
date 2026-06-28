@@ -116,6 +116,38 @@ For production local-first behavior, define and test persistence ownership expli
 
 Validate reconnect and hydration behavior with real offline/restart drills, not only unit tests.
 
+## Host-exposed commands (SDK perspective)
+
+The server runtime exposes a set of graph-level introspection and promotion commands beyond normal sync. As an SDK developer, you encounter these in two ways: the SDK wraps some automatically (e.g., `sdk.query.readReplayRange`), and others are available via direct host-core embedding for custom server builds.
+
+| Command | What it does | When an SDK developer cares |
+|---|---|---|
+| `GetFrontier` | Returns the CRDT frontier (leaf node IDs) | Building sync-status UIs, detecting convergence between peers |
+| `GetCausalParents` | Returns a node's causal parent IDs | Graph visualizers, debugging change history |
+| `GetCanonicalResolution` | Returns the conflict-resolved map state at the current canonical checkpoint | Conflict inspector UIs, verifying canonical state |
+| `ComputeSyncDiff` | Set difference between the room's nodes and a peer's claimed set | Custom sync progress displays, diagnosing gaps |
+| `InspectPack` | Decodes pack bytes to extract causal metadata without applying them | Debugging packs before import, validation tooling |
+| `PromoteCheckpointToGraph` | Promotes a canonical checkpoint snapshot into the CRDT graph as a synthetic origin | Controls where replay begins; affects `getTextCanonical` and projection behavior |
+
+See [api-reference/websocket-commands#graph-introspection-host-core-direct](/api-reference/websocket-commands#graph-introspection-host-core-direct) for full request/response schemas.
+
+## Checkpoint promotion and the canonical plane
+
+NodalMerge maintains two views of room state:
+
+- **Speculative** (intent lane): the local optimistic view, including uncommitted ops
+- **Canonical** (authoritative lane): the settled, policy-verified, conflict-resolved view
+
+The canonical lane is managed through the Canonical Checkpoint plane — a separate compute path that resolves conflicts and produces a deterministic `canonical_hash`.
+
+`PromoteCheckpointToGraph` bridges these two planes: it takes a canonical checkpoint (identified by seq, hash, or frontier) and materializes it as a synthetic origin node in the CRDT graph. After promotion:
+
+- Replay always begins from the promoted node, not original genesis
+- `sdk.sync.getTextCanonical()` reflects post-promotion state
+- `sdk.query.buildProjection()` with `{ selector: "latest" }` sees the promoted baseline
+
+As an SDK developer this matters when you are building history panes, undo stacks, or audit views that must distinguish pre- and post-promotion state. Promotion is idempotent — re-promoting the same checkpoint returns the existing node.
+
 ## Rejections, conflicts, and guardrails
 
 SDK surfaces expose rejection/conflict signals that should feed user-visible and operator-visible handling.
@@ -155,3 +187,4 @@ Then layer advanced query/projection/topology behavior.
 - [sdk/undo-and-conflicts](/sdk/undo-and-conflicts)
 - [sdk/subscriptions](/sdk/subscriptions)
 - [protocol/blob-flow](/protocol/blob-flow)
+- [api-reference/websocket-commands](/api-reference/websocket-commands)

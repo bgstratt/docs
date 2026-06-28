@@ -121,6 +121,115 @@ For any durable deployment, verify regularly:
 - Blob GC behavior matches configured interval/grace
 - Storage write latency metrics stay within SLO
 
+## SDK peer-local persistence (browser clients)
+
+The server persistence described above handles server-side durability. Separately, the JavaScript SDK supports optional peer-local graph persistence in browser clients using IndexedDB. This allows clients to hydrate from local storage on page reload without waiting for a full server sync.
+
+### IndexedDB adapter setup
+
+Off by default. Enable by passing `persistence` to `createNodalMergeSdk`:
+
+```ts
+const sdk = await createNodalMergeSdk({
+  wsUrl: "ws://your-host/ws/runtime",
+  roomId: "my-room",
+  persistence: {
+    enabled: true,
+    adapter: "indexeddb",
+    dbName: "nodalmerge-peer-local",  // default
+    dbVersion: 1,                      // default
+    debounceMs: 500                    // default auto-save interval
+  }
+});
+
+// Hydration runs during initialize(), before connect().
+await sdk.room.connect();
+```
+
+On `initialize()`, the SDK:
+1. Opens the IndexedDB database
+2. Loads the room's node pack and blobs into the WASM `SyncStore`
+3. Reports hydration via `sdk.persistence.hydrateReport()`
+
+Room data is scoped by `roomId` (nodes store) and `roomId:hash` (blobs store), so multiple rooms can safely share one database name.
+
+### Outbox persistence (separate from graph persistence)
+
+`offline.persistenceKey` controls **outbox** persistence in `localStorage` — queued writes that haven't been flushed to the server yet. This is independent of `persistence.*`:
+
+```ts
+const sdk = await createNodalMergeSdk({
+  wsUrl: "...",
+  roomId: "my-room",
+  offline: {
+    persistenceKey: "nodalmerge:my-room:outbox"
+  }
+});
+```
+
+`sdk.offline.outboxDepth()` returns the count of unsent ops. `sdk.offline.flush()` sends them immediately. `sdk.offline.clearPersisted()` wipes the localStorage queue.
+
+### Recovery patterns
+
+After hydration, inspect the report to decide if recovery is needed:
+
+```ts
+const report = sdk.persistence.hydrateReport();
+// { roomId, nodesPack, blobsRestored, canonicalHash }
+
+if (!report || !report.canonicalHash) {
+  // No local state — will sync fresh from server
+}
+```
+
+If local persistence is corrupt or mismatched:
+
+```ts
+// Re-hydrate from the last good persisted snapshot
+const freshReport = await sdk.persistence.recover();
+
+// Wipe all local state for this room and start clean
+await sdk.persistence.clearRoom();
+```
+
+Call `sdk.persistence.flush()` before page unload or navigation to ensure the latest graph state is written to IndexedDB. Flush is also invoked automatically on `sdk.room.disconnect()`.
+
+### Migration from app-managed storage
+
+If your app previously managed its own IndexedDB nodes/blobs storage:
+
+1. Remove hand-rolled `idbPut('nodes', 'all', …)` and blob cursor hydration.
+2. Pass `persistence: { enabled: true }` to `createNodalMergeSdk`.
+3. If you stored data under legacy demo key formats (`nodes/all`, flat blob hashes), pass `persistence: { migrateLegacyDemo: true }` during the first release to migrate in place.
+4. Keep `offline.persistenceKey` if you still need disconnected outbox replay.
+
+### Custom persistence adapters
+
+Implement `PeerLocalPersistenceAdapter` to use a different storage backend (e.g., OPFS, a custom cache):
+
+```ts
+import { createNodalMergeSdk, PeerLocalPersistenceAdapter } from "nodalmerge-sdk-js";
+
+const myAdapter: PeerLocalPersistenceAdapter = {
+  kind: "my-storage",
+  isAvailable: () => true,
+  open: async () => { /* open connection */ },
+  hydrate: async (store, roomId) => { /* load and return report */ },
+  schedulePersist: (store, roomId) => { /* debounce a save */ },
+  flush: async (store, roomId) => { /* immediate save */ },
+  recover: async (store, roomId) => { /* reload from last good state */ },
+  clearRoom: async (roomId) => { /* wipe room data */ }
+};
+
+const sdk = await createNodalMergeSdk({
+  wsUrl: "...",
+  roomId: "my-room",
+  persistence: { enabled: true, adapter: myAdapter }
+});
+```
+
+For server-side pod equivalents, use `NODALMERGE_HEADLESS_BACKEND=file` or `embedded` with a mounted data directory — not IndexedDB.
+
 ## Common pitfalls
 
 - Assuming `--store` is optional for production durability
@@ -135,3 +244,4 @@ For any durable deployment, verify regularly:
 - [operators/gc-and-lifecycle](/operators/gc-and-lifecycle)
 - [architecture/storage-and-blobs](/architecture/storage-and-blobs)
 - [operators/deployment-topologies](/operators/deployment-topologies)
+- [sdk/javascript](/sdk/javascript)

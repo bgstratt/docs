@@ -2743,22 +2743,23 @@ export default function App() {
   }
 
   return (
-    <main style={{ margin: "0 auto", maxWidth: 1080, padding: "16px 20px", fontFamily: "Arial, sans-serif" }}>
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ marginBottom: 6 }}>Infinite room workspace</h1>
-        <p style={{ marginTop: 0 }}>
-          Phase A Slice 2 baseline: room connect controls, runtime adapter shell, and diagnostics.
+    <main className="nm-app">
+      <header className="nm-page-header">
+        <h1 className="nm-page-title">Infinite room workspace</h1>
+        <p className="nm-page-desc">
+          Spatial shared-state demo: SDK-backed workspace nodes, branches, and replay lanes across peers.
         </p>
       </header>
 
-      <section style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
-        <label htmlFor="roomId">Room ID</label>
+      <div className="nm-content">
+      <section className="nm-controls">
+        <label className="nm-label" htmlFor="roomId">Room</label>
         <input
           id="roomId"
+          className="nm-input nm-input-xl"
           value={roomIdInput}
           onChange={(event) => setRoomIdInput(event.target.value)}
           placeholder="Enter room id"
-          style={{ minWidth: 280, padding: 6 }}
         />
         <button type="button" onClick={connectRoom} disabled={!canConnect}>
           Connect
@@ -3596,6 +3597,7 @@ export default function App() {
           <DiagnosticsPanel diagnostics={diagnostics} />
         </article>
       </section>
+      </div>
     </main>
   );
 }

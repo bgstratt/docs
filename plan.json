@@ -1,0 +1,54 @@
+{
+  "slices": [
+    {
+      "sliceId": "s1",
+      "goal": "Locate and review all node rendering and coloring code. Identify where node colors are assigned, how the coloring logic maps peers to colors, and any merge conflict markers or broken references that may have disabled multi-color support.",
+      "fileScope": ["src/rendering/", "src/nodes/", "src/visualization/", "src/ui/", "src/graph/"],
+      "dependsOn": [],
+      "steps": [
+        "Search the codebase for files related to node rendering, coloring, and visualization (e.g., nodeRenderer, nodeStyle, colorMap, drawNode).",
+        "Read each relevant file and note how node colors are currently determined (e.g., hardcoded, single color, or peer-based).",
+        "Look for merge conflict markers (<<<<<<<, =======, >>>>>>>) or commented-out code related to color assignment.",
+        "Document findings: which file(s) control node color, what the current logic is, and what appears broken."
+      ]
+    },
+    {
+      "sliceId": "s2",
+      "goal": "Locate and review all peer identity and node ownership code. Understand how nodes are associated with the peers that created them, so the coloring logic can differentiate nodes by peer origin.",
+      "fileScope": ["src/peer/", "src/network/", "src/data/", "src/models/", "src/identity/"],
+      "dependsOn": [],
+      "steps": [
+        "Search the codebase for peer-related data structures (e.g., peerId, originPeer, node.metadata, node.owner, node.source).",
+        "Identify how a node records which peer created it and how that identity is accessible during rendering.",
+        "Check for any recent changes or conflict artifacts in peer/node association code (imports, property access, type definitions).",
+        "Document the data path: how a node's peer origin flows from creation to rendering."
+      ]
+    },
+    {
+      "sliceId": "s3",
+      "goal": "Fix the merge conflict and restore/implement multi-colored node display. Nodes created by different peers must render in distinct colors. Resolve any conflict markers, reconcile divergent logic, and ensure the color assignment uses peer identity.",
+      "fileScope": ["src/rendering/", "src/nodes/", "src/visualization/", "src/ui/", "src/graph/", "src/peer/", "src/data/"],
+      "dependsOn": ["s1", "s2"],
+      "steps": [
+        "Resolve all merge conflict markers found in s1 and s2, keeping the version that supports peer-based coloring or combining both where needed.",
+        "Implement or restore a color mapping from peer identity to color (e.g., a deterministic hash of peerId mapped to an HSL palette, or a predefined color table).",
+        "Update the node rendering code to pass each node's peer identity to the color assignment function.",
+        "Ensure fallback behavior: if a node has no peer, assign a neutral default color.",
+        "Verify imports, types, and function signatures are consistent after changes."
+      ]
+    },
+    {
+      "sliceId": "s4",
+      "goal": "Validate that nodes from different peers display in different colors. Run the application, inspect the rendered output, and confirm multi-colored nodes work as expected. Fix any remaining issues.",
+      "fileScope": ["src/rendering/", "src/nodes/", "src/visualization/", "tests/"],
+      "dependsOn": ["s3"],
+      "steps": [
+        "Run the application and create or simulate nodes from at least 3 distinct peers.",
+        "Visually confirm each peer's nodes render in a distinct, consistent color.",
+        "Verify that nodes without peer information render in the fallback default color.",
+        "If colors are not distinct, adjust the color mapping algorithm and re-test.",
+        "If applicable, add or update unit tests for the color assignment function."
+      ]
+    }
+  ]
+}

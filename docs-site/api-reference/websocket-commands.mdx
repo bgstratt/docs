@@ -71,6 +71,8 @@ Currently routed client command types:
 - Query/read-model: `query.register`, `projection.build`, `projection.read`, `projection.invalidate`, `projection.list`, `replay.read-range`
 - Topology: `topology.create-child`, `topology.describe-lineage`, `topology.list-children`, `topology.propose-promotion`, `topology.validate-promotion`, `topology.apply-promotion`
 
+Graph introspection commands (`GetFrontier`, `GetCausalParents`, `GetCanonicalResolution`, `ComputeSyncDiff`, `InspectPack`, `PromoteCheckpointToGraph`) are available as `HostCommand` variants in `nodalmerge-host-core` for direct embedding use cases. See [Graph introspection (host-core direct)](#graph-introspection-host-core-direct) below.
+
 ## Core sync command schemas
 
 ### `subscribe`
@@ -1161,6 +1163,167 @@ Close codes used by server runtime:
 - `1011`: server overload
 
 Use these codes in client reconnect/error handling policies.
+
+## Graph introspection (host-core direct)
+
+These commands are available as `HostCommand` variants in `nodalmerge-host-core` for server integrators embedding the runtime directly (e.g., via `nodalmerge-host-axum`). They are not yet exposed as WebSocket commands.
+
+Frontend SDK developers encounter the _effects_ of these commands when:
+- `PromoteCheckpointToGraph` runs and changes replay/canonical behavior
+- `GetCanonicalResolution` is used server-side to build projections or detect conflicts
+
+### `PromoteCheckpointToGraph`
+
+Materializes a Canonical Checkpoint-plane snapshot into the room's CRDT graph as a synthetic origin node. This is an explicit promotion boundary — after promotion, replay of the room's graph always begins from the promoted node rather than original genesis.
+
+`selector` accepts the same checkpoint selector shape as `projection.build`:
+
+```json
+{
+  "PromoteCheckpointToGraph": {
+    "selector": { "selector": "seq", "canonical_seq": 42 }
+  }
+}
+```
+
+Response event: `CheckpointPromoted`
+
+```json
+{
+  "CheckpointPromoted": {
+    "room_id": "main",
+    "seq": 42,
+    "node_id_hex": "<hex>",
+    "frontier_heads_hex": ["<hex>"]
+  }
+}
+```
+
+This is idempotent: re-promoting the same checkpoint returns the existing node.
+
+### `GetFrontier`
+
+Returns the current CRDT frontier — the set of leaf node IDs that have no known successors.
+
+```json
+{ "GetFrontier": null }
+```
+
+Response event: `FrontierQueried`
+
+```json
+{
+  "FrontierQueried": {
+    "room_id": "main",
+    "frontier_heads_hex": ["<hex>", "<hex>"]
+  }
+}
+```
+
+The frontier identifies the "head" of the room's DAG. Useful for building custom sync-status UIs or validating that two peers have converged.
+
+### `GetCausalParents`
+
+Returns the causal parent node IDs for a specific node in the sync graph.
+
+```json
+{
+  "GetCausalParents": {
+    "node_id_hex": "<hex>"
+  }
+}
+```
+
+Response event: `CausalParentsQueried`
+
+```json
+{
+  "CausalParentsQueried": {
+    "room_id": "main",
+    "node_id_hex": "<hex>",
+    "parent_ids_hex": ["<hex>"],
+    "node_found": true
+  }
+}
+```
+
+Use this when building graph visualizers or debugging causal history for a specific change.
+
+### `GetCanonicalResolution`
+
+Returns the conflict-resolved map state for the room. This is the authoritative view of all keys, post-conflict-resolution, at the current canonical checkpoint.
+
+```json
+{ "GetCanonicalResolution": null }
+```
+
+Response event: `CanonicalResolutionQueried`
+
+```json
+{
+  "CanonicalResolutionQueried": {
+    "room_id": "main",
+    "entries": [
+      { "key": "world/name", "value_bytes_b64": "<base64>" }
+    ],
+    "entry_count": 1
+  }
+}
+```
+
+Values are raw bytes (base64-encoded). Use this to build conflict inspector UIs or verify canonical state outside the normal sync path.
+
+### `ComputeSyncDiff`
+
+Computes the set difference between the room's current node set and a peer's claimed node set. Returns which nodes only the server has and which the peer claims but the server lacks.
+
+```json
+{
+  "ComputeSyncDiff": {
+    "peer_node_ids_hex": ["<hex>", "<hex>"]
+  }
+}
+```
+
+Response event: `SyncDiffComputed`
+
+```json
+{
+  "SyncDiffComputed": {
+    "room_id": "main",
+    "only_in_server": ["<hex>"],
+    "only_in_peer": ["<hex>"]
+  }
+}
+```
+
+Use this in custom sync-status displays to show convergence progress or diagnose sync gaps.
+
+### `InspectPack`
+
+Decodes a pack's bytes and extracts causal metadata without applying it to any graph. Safe for debugging and validation workflows.
+
+```json
+{
+  "InspectPack": {
+    "nodes_b64": "<base64_postcard_pack>"
+  }
+}
+```
+
+Response event: `PackInspected`
+
+```json
+{
+  "PackInspected": {
+    "node_count": 4,
+    "external_parent_ids_hex": ["<hex>"],
+    "tip_node_ids_hex": ["<hex>"]
+  }
+}
+```
+
+Use this to validate a pack before importing it, or to extract structural metadata for diagnostics.
 
 ## Source-of-truth pointers
 

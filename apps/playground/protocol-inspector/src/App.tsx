@@ -122,96 +122,77 @@ export default function App() {
   }
 
   return (
-    <main style={{ margin: "0 auto", maxWidth: 1180, padding: "16px 20px", fontFamily: "Arial, sans-serif" }}>
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ marginBottom: 6 }}>Protocol inspector</h1>
-        <p style={{ marginTop: 0 }}>
-          Phase C playground for observing runtime websocket message flow, type distribution, and raw payloads.
+    <main className="nm-app">
+      <header className="nm-page-header">
+        <h1 className="nm-page-title">Protocol inspector</h1>
+        <p className="nm-page-desc">
+          Observe the live runtime WebSocket message stream, filter by command family, and export trace snippets.
         </p>
       </header>
 
-      <section style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-        <label htmlFor="roomId">Room ID</label>
+      <div className="nm-content">
+      <section className="nm-controls">
+        <label className="nm-label" htmlFor="roomId">Room</label>
         <input
           id="roomId"
+          className="nm-input nm-input-xl"
           value={roomIdInput}
           onChange={(event) => setRoomIdInput(event.target.value)}
           placeholder="Enter room id"
-          style={{ minWidth: 240, padding: 6 }}
         />
-        <button type="button" onClick={connectRoom} disabled={!canConnect}>
+        <button type="button" className="nm-btn nm-btn-primary" onClick={connectRoom} disabled={!canConnect}>
           Connect
         </button>
-        <button type="button" onClick={() => client.disconnect()}>
+        <button type="button" className="nm-btn" onClick={() => client.disconnect()}>
           Disconnect
         </button>
-        <label htmlFor="typeFilter">Type filter</label>
+        <label className="nm-label" htmlFor="typeFilter">Filter</label>
         <input
           id="typeFilter"
+          className="nm-input nm-input-lg"
           value={typeFilter}
           onChange={(event) => setTypeFilter(event.target.value)}
           placeholder="welcome, presence, peer..."
-          style={{ minWidth: 200, padding: 6 }}
         />
-        <button type="button" onClick={clearEvents}>
+        <button type="button" className="nm-btn" onClick={clearEvents}>
           Clear stream
         </button>
-        <button type="button" onClick={() => void exportTraceSnippet()}>
-          Export trace snippet
+        <button type="button" className="nm-btn" onClick={() => void exportTraceSnippet()}>
+          Export trace
         </button>
       </section>
 
-      <section style={{ marginBottom: 12 }}>
-        <strong>Filter presets:</strong>{" "}
+      <div className="nm-controls nm-mb-3">
+        <span className="nm-section-label" style={{ marginBottom: 0 }}>Presets:</span>
         {presetFilters.map((preset) => (
           <button
             key={preset.id}
             type="button"
+            className={`nm-btn${typeFilter === preset.value ? " nm-btn-primary" : ""}`}
             onClick={() => setTypeFilter(preset.value)}
-            style={{
-              marginRight: 6,
-              marginBottom: 6,
-              border: "1px solid #cbd5e1",
-              borderRadius: 6,
-              background: typeFilter === preset.value ? "#dbeafe" : "transparent",
-              padding: "4px 8px",
-              cursor: "pointer"
-            }}
           >
             {preset.label}
           </button>
         ))}
-      </section>
+      </div>
 
-      <section style={{ marginBottom: 16 }}>
-        <strong>Active room:</strong> <code>{activeRoomId}</code>{" "}
-        <span style={{ marginLeft: 8 }}>
-          (<code>{config.wsBaseUrl}</code>)
-        </span>
-        <span style={{ marginLeft: 8 }}>
-          visible events: <code>{filteredEvents.length}</code>
-        </span>
-        <span style={{ marginLeft: 8 }}>
-          export: <code>{lastExportStatus}</code>
-        </span>
-      </section>
+      <div className="nm-meta-bar">
+        <span><strong>Room:</strong> <code>{activeRoomId}</code></span>
+        <span><code>{config.wsBaseUrl}</code></span>
+        <span>visible: <code>{filteredEvents.length}</code></span>
+        <span>export: <code>{lastExportStatus}</code></span>
+      </div>
 
-      <section style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 14 }}>
-        <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 360, padding: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Filtered runtime stream</h2>
-          <ul style={{ maxHeight: 290, overflow: "auto", paddingLeft: 18, marginTop: 0 }}>
+      <section className="nm-layout-2col-wide">
+        <article className="nm-card">
+          <h2 className="nm-card-title">Filtered runtime stream</h2>
+          <ul className="nm-event-list nm-event-list-lg nm-mb-3">
             {filteredEvents.map((entry) => (
-              <li key={entry.id} style={{ marginBottom: 4 }}>
+              <li key={entry.id}>
                 <button
                   type="button"
+                  className={`nm-btn${selectedEventId === entry.id ? " nm-btn-primary" : ""}`}
                   onClick={() => setSelectedEventId(entry.id)}
-                  style={{
-                    border: "1px solid #cbd5e1",
-                    background: selectedEventId === entry.id ? "#e0f2fe" : "transparent",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    padding: "4px 6px"
-                  }}
                 >
                   <code>{entry.type}</code> @ {new Date(entry.atIso).toLocaleTimeString()}
                 </button>
@@ -219,30 +200,18 @@ export default function App() {
             ))}
             {filteredEvents.length === 0 ? <li>No runtime events yet for this filter.</li> : null}
           </ul>
-          <h3 style={{ marginBottom: 6 }}>Selected raw payload</h3>
+          <h3 className="nm-section-label">Selected raw payload</h3>
           {selectedEvent ? (
-            <pre
-              style={{
-                marginTop: 0,
-                maxHeight: 180,
-                overflow: "auto",
-                background: "#f8fafc",
-                border: "1px solid #e2e8f0",
-                borderRadius: 6,
-                padding: 8
-              }}
-            >
-              {selectedEvent.raw}
-            </pre>
+            <pre className="nm-pre">{selectedEvent.raw}</pre>
           ) : (
-            <p>Select an event to inspect its raw message payload.</p>
+            <p className="nm-p-muted">Select an event to inspect its raw message payload.</p>
           )}
         </article>
 
         <section style={{ display: "grid", gridTemplateRows: "auto 1fr", gap: 12 }}>
-          <article style={{ border: "1px solid #d0d7de", borderRadius: 8, padding: 12 }}>
-            <h2 style={{ marginTop: 0 }}>Message type counts</h2>
-            <ul style={{ marginBottom: 0, paddingLeft: 18, maxHeight: 180, overflow: "auto" }}>
+          <article className="nm-card">
+            <h2 className="nm-card-title">Message type counts</h2>
+            <ul className="nm-event-list nm-event-list-md">
               {Object.entries(typeCounts)
                 .sort((a, b) => b[1] - a[1])
                 .map(([type, count]) => (
@@ -256,6 +225,7 @@ export default function App() {
           <DiagnosticsPanel diagnostics={diagnostics} title="Protocol inspector diagnostics" />
         </section>
       </section>
+      </div>
     </main>
   );
 }

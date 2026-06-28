@@ -333,126 +333,93 @@ export default function App() {
   const scrubSliderValue = timelineCursor ?? scrubLamportMax;
 
   return (
-    <main style={{ fontFamily: "Segoe UI, system-ui, sans-serif", margin: 16, color: "#0f172a" }}>
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 6 }}>Collab text playground</h1>
-        <p style={{ marginTop: 0, maxWidth: 860 }}>
+    <main className="nm-app">
+      <header className="nm-page-header">
+        <h1 className="nm-page-title">Collab text playground</h1>
+        <p className="nm-page-desc">
           RGA collaborative text on <code>{TEXT_KEY}</code> using <code>insertTextRange</code> /{" "}
-          <code>deleteTextRange</code> for contiguous edits. Peer colors come from{" "}
-          <code>sync.getTextSequence</code> (bridge <code>resolve_text_seq_json</code>). DAG timeline uses{" "}
-          local WASM DAG replay (host <code>replay.read-range</code> when available).
+          <code>deleteTextRange</code>. Peer colors from <code>getTextSequence</code>. DAG timeline uses local WASM replay.
         </p>
       </header>
 
-      <section style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
-        <label>
-          Room{" "}
-          <input value={roomId} onChange={(event) => setRoomId(event.target.value)} style={{ padding: 6, width: 180 }} />
+      <div className="nm-content">
+      <section className="nm-controls">
+        <label className="nm-label">
+          Room
+          <input
+            className="nm-input nm-input-lg"
+            value={roomId}
+            onChange={(event) => setRoomId(event.target.value)}
+          />
         </label>
-        <button type="button" onClick={() => void connectRoom()} disabled={!roomId.trim()}>
+        <button type="button" className="nm-btn nm-btn-primary" onClick={() => void connectRoom()} disabled={!roomId.trim()}>
           Reconnect
         </button>
-        <button type="button" onClick={() => disconnectRoom()} disabled={!isConnected}>
+        <button type="button" className="nm-btn" onClick={() => disconnectRoom()} disabled={!isConnected}>
           Disconnect
         </button>
-        <button type="button" onClick={() => void refreshTimeline()} disabled={!canEdit}>
+        <button type="button" className="nm-btn" onClick={() => void refreshTimeline()} disabled={!canEdit}>
           Refresh timeline
         </button>
-        <span style={{ color: "#475569" }}>{status}</span>
+        <span className="nm-p-muted" style={{ marginBottom: 0 }}>{status}</span>
       </section>
 
-      <section style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 14 }}>
-        <article style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Editor</h2>
+      <section className="nm-layout-2col-wide">
+        <article className="nm-card">
+          <h2 className="nm-card-title">Editor</h2>
           <textarea
+            className="nm-textarea"
             value={editorText}
             onChange={(event) => handleEditorChange(event.target.value)}
             disabled={!canEdit}
             rows={12}
             spellCheck={false}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              fontFamily: "Consolas, monospace",
-              fontSize: 14,
-              lineHeight: 1.45,
-              padding: 10,
-              resize: "vertical"
-            }}
           />
-          <h3 style={{ marginBottom: 6 }}>Live peer-colored preview</h3>
-          <pre
-            style={{
-              marginTop: 0,
-              padding: 10,
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
-              borderRadius: 6,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              fontFamily: "Consolas, monospace",
-              fontSize: 14,
-              lineHeight: 1.45
-            }}
-          >
+          <h3 style={{ marginBottom: 6, marginTop: 14 }}>Live peer-colored preview</h3>
+          <pre className="nm-pre">
             {renderAttributedText(editorText, attributionSpans)}
           </pre>
-          <h3 style={{ marginBottom: 6 }}>Lamport scrub preview (authoritative replay)</h3>
-          <p style={{ marginTop: 0, fontSize: 12, color: "#64748b" }}>
+          <h3 style={{ marginBottom: 6, marginTop: 14 }}>Lamport scrub preview</h3>
+          <p className="nm-p-muted">
             Replays RGA state from DAG nodes with <code>transaction.lamport ≤</code> cursor via{" "}
-            <code>getTextAtLamport</code> / <code>getTextSequenceAtLamport</code>. The editor above is live head.
+            <code>getTextAtLamport</code> / <code>getTextSequenceAtLamport</code>.
           </p>
-          <pre
-            style={{
-              marginTop: 0,
-              padding: 10,
-              background: "#fff7ed",
-              border: "1px solid #fed7aa",
-              borderRadius: 6,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              fontFamily: "Consolas, monospace",
-              fontSize: 14,
-              lineHeight: 1.45
-            }}
-          >
+          <pre className="nm-pre nm-pre-scrub">
             {renderAttributedText(scrubText, scrubSpans)}
           </pre>
         </article>
 
-        <aside style={{ display: "grid", gap: 12 }}>
-          <article style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 12 }}>
-            <h2 style={{ marginTop: 0 }}>Room connections</h2>
-            <p style={{ marginTop: 0, fontSize: 13, color: "#475569" }}>
-              Runtime host at <code>{config.hostBaseUrl}</code> · transport{" "}
+        <aside style={{ display: "grid", gap: 12, alignContent: "start" }}>
+          <article className="nm-card">
+            <h2 className="nm-card-title">Room connections</h2>
+            <p className="nm-card-desc">
+              Host: <code>{config.hostBaseUrl}</code> · transport{" "}
               <code>{diagnostics.transportMode ?? config.transportMode}</code>
             </p>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
+            <ul className="nm-diagnostics-list" style={{ marginBottom: 8 }}>
               <li>
-                <strong>Server</strong> —{" "}
+                <strong>Server</strong>
                 {isConnected ? (
-                  <span style={{ color: "#15803d" }}>connected ({activeRoomId ?? roomId})</span>
+                  <span style={{ color: "var(--nm-text-success)" }}>connected ({activeRoomId ?? roomId})</span>
                 ) : (
-                  <span style={{ color: "#b45309" }}>{diagnostics.connectionState}</span>
+                  <span style={{ color: "var(--nm-text-warning)" }}>{diagnostics.connectionState}</span>
                 )}
               </li>
               <li>
-                <strong>You</strong> —{" "}
+                <strong>You</strong>
                 {localPeerId ? (
                   <code title={client.getLocalPubkey() ?? undefined}>{localPeerId}</code>
                 ) : (
-                  "(pending)"
+                  <span>(pending)</span>
                 )}
               </li>
               <li>
-                <strong>Peers in room</strong> — {roomPeers.length}
-                {roomPeers.length === 0 ? (
-                  <span style={{ color: "#64748b" }}> (only you until welcome lists others)</span>
-                ) : null}
+                <strong>Peers</strong>
+                <span>{roomPeers.length}{roomPeers.length === 0 ? " (only you)" : ""}</span>
               </li>
             </ul>
             {roomPeers.length > 0 ? (
-              <ul style={{ margin: "8px 0 0", paddingLeft: 18, maxHeight: 120, overflow: "auto", fontSize: 12 }}>
+              <ul className="nm-event-list nm-event-list-md">
                 {roomPeers.map((peer) => (
                   <li key={peer.id}>
                     <code title={peer.id}>{peer.shortId}</code>
@@ -461,31 +428,24 @@ export default function App() {
               </ul>
             ) : null}
           </article>
-          <article style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 12 }}>
-            <h2 style={{ marginTop: 0 }}>DAG replay timeline</h2>
-            <p style={{ marginTop: 0, fontSize: 13, color: "#475569" }}>
-              Scrub lamport to filter DAG events and the scrub preview pane.
-            </p>
+          <article className="nm-card">
+            <h2 className="nm-card-title">DAG replay timeline</h2>
+            <p className="nm-card-desc">Scrub lamport to filter DAG events and the scrub preview pane.</p>
             <input
               type="range"
+              className="nm-input-full"
               min={scrubLamportMin}
               max={scrubLamportMax}
               value={scrubSliderValue}
               disabled={scrubLamportMax === 0}
               onChange={(event) => setTimelineCursor(Number(event.target.value))}
-              style={{ width: "100%" }}
             />
-            <p style={{ margin: "8px 0", fontSize: 12 }}>
-              Cursor lamport: <code>{timelineCursor ?? (scrubLamportMax > 0 ? scrubLamportMax : "(none)")}</code> ·
-              events {filteredTimeline.length}/{timeline.length}
-              {localAuthorRef.current ? (
-                <>
-                  {" "}
-                  · you <code>{localAuthorRef.current}</code>
-                </>
-              ) : null}
+            <p className="nm-p-muted" style={{ margin: "8px 0" }}>
+              Cursor: <code>{timelineCursor ?? (scrubLamportMax > 0 ? scrubLamportMax : "(none)")}</code> ·
+              {" "}{filteredTimeline.length}/{timeline.length} events
+              {localAuthorRef.current ? <> · you <code>{localAuthorRef.current}</code></> : null}
             </p>
-            <ul style={{ margin: 0, paddingLeft: 18, maxHeight: 220, overflow: "auto", fontSize: 12 }}>
+            <ul className="nm-event-list nm-event-list-lg">
               {filteredTimeline.map((entry) => (
                 <li key={`${entry.lamport}-${entry.nodeId}`}>
                   L{entry.lamport} · {entry.nodeId} · {entry.touchedKeys.join(", ") || "(no keys)"}
@@ -496,6 +456,7 @@ export default function App() {
           <DiagnosticsPanel diagnostics={diagnostics} />
         </aside>
       </section>
+      </div>
     </main>
   );
 }

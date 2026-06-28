@@ -1,0 +1,36 @@
+{/*
+  Reusable PathSelector snippet.
+  Embeds a 3-persona card row (Frontend / Operator / Platform)
+  on any docs page. Import with:
+    import PathSelector from '/snippets/path-selector.mdx'
+    <PathSelector />
+*/}
+
+<div class="nm-section-label">Choose your path</div>
+
+<CardGroup cols={3}>
+  <Card
+    title="Frontend developer"
+    icon="laptop-code"
+    href="/sdk/overview"
+  >
+    Build collaborative UI — real-time editing, presence, offline UX.
+    Start with the **JavaScript SDK**.
+  </Card>
+  <Card
+    title="Backend / operator"
+    icon="server"
+    href="/operators/server-setup"
+  >
+    Run or embed the runtime — server setup, persistence, topology, auth.
+    Start with **Server setup**.
+  </Card>
+  <Card
+    title="Platform team"
+    icon="people-group"
+    href="/onboarding/first-hour"
+  >
+    Evaluate or onboard a team — architecture, runbooks, validation paths.
+    Start with **First hour onboarding**.
+  </Card>
+</CardGroup>

@@ -368,69 +368,63 @@ export default function App() {
   }
 
   return (
-    <main style={{ margin: "0 auto", maxWidth: 1080, padding: "16px 20px", fontFamily: "Arial, sans-serif" }}>
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ marginBottom: 6 }}>Replay lab</h1>
-        <p style={{ marginTop: 0 }}>
-          Phase A Slice 3 consumer app proving shared runtime config and diagnostics reuse.
+    <main className="nm-app">
+      <header className="nm-page-header">
+        <h1 className="nm-page-title">Replay lab</h1>
+        <p className="nm-page-desc">
+          Capture runtime snapshots, inspect event payload summaries, and adjust replay range windows.
         </p>
       </header>
 
-      <section style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
-        <label htmlFor="roomId">Room ID</label>
+      <div className="nm-content">
+      <section className="nm-controls">
+        <label className="nm-label" htmlFor="roomId">Room</label>
         <input
           id="roomId"
+          className="nm-input nm-input-xl"
           value={roomIdInput}
           onChange={(event) => setRoomIdInput(event.target.value)}
           placeholder="Enter room id"
-          style={{ minWidth: 280, padding: 6 }}
         />
-        <button type="button" onClick={connectRoom} disabled={!canConnect}>
+        <button type="button" className="nm-btn nm-btn-primary" onClick={connectRoom} disabled={!canConnect}>
           Connect
         </button>
-        <button type="button" onClick={() => client.disconnect()}>
+        <button type="button" className="nm-btn" onClick={() => client.disconnect()}>
           Disconnect
         </button>
-        <button type="button" onClick={captureSnapshot}>
-          Capture replay snapshot
+        <button type="button" className="nm-btn" onClick={captureSnapshot}>
+          Capture snapshot
         </button>
         <button
           type="button"
+          className="nm-btn"
           onClick={() => {
             setImportedTrace(null);
             setTraceJsonInput("");
             setTraceStatus("Protocol trace import cleared.");
           }}
         >
-          Clear imported trace
+          Clear trace
         </button>
       </section>
 
-      <section style={{ marginBottom: 16 }}>
-        <strong>Active room:</strong> <code>{activeRoomId}</code>{" "}
-        <span style={{ marginLeft: 8 }}>
-          (<code>{config.wsBaseUrl}</code>)
-        </span>
-      </section>
+      <div className="nm-meta-bar">
+        <span><strong>Room:</strong> <code>{activeRoomId}</code></span>
+        <span><code>{config.wsBaseUrl}</code></span>
+      </div>
 
-      <section style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
-        <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, padding: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Replay snapshot inspector</h2>
-          <p>Capture runtime snapshots, scrub timeline windows, and jump through protocol-linked checkpoints.</p>
-          <h3>Captured snapshots</h3>
-          <ul>
+      <section className="nm-layout-2col">
+        <article className="nm-card">
+          <h2 className="nm-card-title">Replay snapshot inspector</h2>
+          <p className="nm-card-desc">Capture runtime snapshots, scrub timeline windows, and jump through protocol-linked checkpoints.</p>
+          <p className="nm-section-label">Captured snapshots</p>
+          <ul className="nm-event-list nm-event-list-sm" style={{ marginBottom: 12 }}>
             {snapshots.map((entry) => (
               <li key={entry.id}>
                 <button
                   type="button"
+                  className={`nm-btn${selectedSnapshotId === entry.id ? " nm-btn-primary" : ""}`}
                   onClick={() => setSelectedSnapshotId(entry.id)}
-                  style={{
-                    background: selectedSnapshotId === entry.id ? "#dbeafe" : "transparent",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: 6,
-                    padding: "4px 6px",
-                    cursor: "pointer"
-                  }}
                 >
                   Snapshot {entry.id}: {new Date(entry.atIso).toLocaleTimeString()} ({entry.eventCount} events)
                 </button>
@@ -438,20 +432,16 @@ export default function App() {
             ))}
             {snapshots.length === 0 ? <li>No snapshots captured yet.</li> : null}
           </ul>
-          <h3>Snapshot details</h3>
+          <p className="nm-section-label">Snapshot details</p>
           {selectedSnapshot ? (
             <div>
-              <p style={{ marginBottom: 6 }}>
-                <strong>ID:</strong> {selectedSnapshot.id}
-              </p>
-              <p style={{ marginTop: 0, marginBottom: 6 }}>
-                <strong>Captured:</strong> {new Date(selectedSnapshot.atIso).toLocaleString()}
-              </p>
-              <p style={{ marginTop: 0 }}>
-                <strong>Event count:</strong> {selectedSnapshot.eventCount}
-              </p>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-                <label htmlFor="cursorIndex">Replay cursor</label>
+              <ul className="nm-diagnostics-list nm-mb-3">
+                <li><strong>ID</strong><span>{selectedSnapshot.id}</span></li>
+                <li><strong>Captured</strong><span>{new Date(selectedSnapshot.atIso).toLocaleString()}</span></li>
+                <li><strong>Events</strong><span>{selectedSnapshot.eventCount}</span></li>
+              </ul>
+              <div className="nm-controls nm-mb-3">
+                <label className="nm-label" htmlFor="cursorIndex">Replay cursor</label>
                 <input
                   id="cursorIndex"
                   type="range"
@@ -459,7 +449,7 @@ export default function App() {
                   max={Math.max(0, selectedSnapshot.events.length - 1)}
                   value={Math.min(cursorIndex, Math.max(0, selectedSnapshot.events.length - 1))}
                   onChange={(event) => setCursorIndex(Math.max(0, Number(event.target.value) || 0))}
-                  style={{ width: 220 }}
+                  className="nm-input-lg"
                 />
                 <input
                   id="cursorIndexNumber"
@@ -469,9 +459,9 @@ export default function App() {
                   value={Math.min(cursorIndex, Math.max(0, selectedSnapshot.events.length - 1))}
                   onChange={(event) => setCursorIndex(Math.max(0, Number(event.target.value) || 0))}
                   aria-label="Replay cursor index"
-                  style={{ width: 90, padding: 4 }}
+                  className="nm-input nm-input-sm"
                 />
-                <label htmlFor="rangeSize">Range size</label>
+                <label className="nm-label" htmlFor="rangeSize">Range</label>
                 <input
                   id="rangeSize"
                   type="number"
@@ -479,112 +469,89 @@ export default function App() {
                   max={50}
                   value={rangeSize}
                   onChange={(event) => setRangeSize(Math.max(1, Number(event.target.value) || 1))}
-                  style={{ width: 90, padding: 4 }}
+                  className="nm-input nm-input-sm"
                 />
-                <span>
-                  showing {rangedEvents.length} around cursor {Math.min(cursorIndex, Math.max(0, selectedSnapshot.events.length - 1))}
+                <span className="nm-text-hint">
+                  {rangedEvents.length} events around #{Math.min(cursorIndex, Math.max(0, selectedSnapshot.events.length - 1))}
                 </span>
               </div>
-              <div style={{ marginBottom: 8 }}>
-                <strong>Protocol checkpoints:</strong>
-                <ul style={{ marginTop: 6, maxHeight: 120, overflow: "auto", paddingLeft: 18 }}>
-                  {selectedSnapshot.checkpoints.map((checkpoint) => (
-                    <li key={checkpoint.id}>
-                      <button
-                        type="button"
-                        onClick={() => setCursorIndex(checkpoint.index)}
-                        style={{
-                          border: "1px solid #cbd5e1",
-                          borderRadius: 6,
-                          background: checkpoint.index === cursorIndex ? "#dbeafe" : "transparent",
-                          cursor: "pointer",
-                          padding: "2px 6px"
-                        }}
-                      >
-                        {checkpoint.label} @#{checkpoint.index}
-                      </button>
+              <p className="nm-section-label">Protocol checkpoints</p>
+              <ul className="nm-event-list nm-event-list-sm nm-mb-3">
+                {selectedSnapshot.checkpoints.map((checkpoint) => (
+                  <li key={checkpoint.id}>
+                    <button
+                      type="button"
+                      className={`nm-btn${checkpoint.index === cursorIndex ? " nm-btn-primary" : ""}`}
+                      onClick={() => setCursorIndex(checkpoint.index)}
+                    >
+                      {checkpoint.label} @#{checkpoint.index}
+                    </button>
+                  </li>
+                ))}
+                {selectedSnapshot.checkpoints.length === 0 ? <li>No protocol checkpoints found in this snapshot.</li> : null}
+              </ul>
+              <p className="nm-section-label">Protocol trace correlation</p>
+              <p className="nm-card-desc">
+                Paste a trace snippet exported from protocol-inspector, then map it to this replay snapshot timeline.
+              </p>
+              <label className="nm-label-block" htmlFor="traceJsonInput">
+                Protocol trace JSON
+              </label>
+              <textarea
+                id="traceJsonInput"
+                className="nm-textarea nm-mb-2"
+                rows={4}
+                value={traceJsonInput}
+                onChange={(event) => setTraceJsonInput(event.target.value)}
+                placeholder="Paste exported trace JSON from protocol-inspector (roomId/filter/items)."
+              />
+              <div className="nm-controls nm-mb-2">
+                <button type="button" className="nm-btn nm-btn-primary" onClick={importTraceSnippet}>
+                  Import trace
+                </button>
+                <span className="nm-text-hint">{traceStatus}</span>
+              </div>
+              {importedTrace ? (
+                <p className="nm-p-muted">
+                  trace room <code>{importedTrace.roomId}</code>, filter <code>{importedTrace.filter}</code>, matched{" "}
+                  <code>{matchedCorrelationCount}/{traceCorrelations.length}</code>
+                </p>
+              ) : null}
+              {traceCorrelations.length > 0 ? (
+                <ul className="nm-event-list nm-event-list-sm nm-mb-2">
+                  {traceCorrelations.map((correlation) => (
+                    <li key={correlation.traceId}>
+                      {correlation.matchedEventIndex !== null ? (
+                        <button
+                          type="button"
+                          className="nm-btn"
+                          onClick={() => setCursorIndex(correlation.matchedEventIndex ?? 0)}
+                        >
+                          <code>{correlation.traceType}</code> → event #{correlation.matchedEventIndex}
+                          {correlation.deltaMs !== null ? ` (${correlation.deltaMs}ms)` : ""}
+                          {" · "}confidence: {correlation.confidence}
+                        </button>
+                      ) : (
+                        <span><code>{correlation.traceType}</code> → no match</span>
+                      )}
+                      <span className="nm-text-hint nm-ml-2">{correlation.matchReason}</span>
                     </li>
                   ))}
-                  {selectedSnapshot.checkpoints.length === 0 ? <li>No protocol checkpoints found in this snapshot.</li> : null}
                 </ul>
-              </div>
-              <div style={{ marginBottom: 10 }}>
-                <strong>Protocol trace correlation</strong>
-                <p style={{ marginTop: 6, marginBottom: 6 }}>
-                  Paste a trace snippet exported from protocol-inspector, then map it to this replay snapshot timeline.
-                </p>
-                <label htmlFor="traceJsonInput" style={{ display: "block", marginBottom: 6 }}>
-                  Protocol trace JSON
-                </label>
-                <textarea
-                  id="traceJsonInput"
-                  rows={5}
-                  value={traceJsonInput}
-                  onChange={(event) => setTraceJsonInput(event.target.value)}
-                  placeholder='Paste exported trace JSON from protocol-inspector (roomId/filter/items).'
-                  style={{ width: "100%", boxSizing: "border-box", padding: 8, resize: "vertical", marginBottom: 8 }}
-                />
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
-                  <button type="button" onClick={importTraceSnippet}>
-                    Import trace snippet
-                  </button>
-                  <span>
-                    <strong>Status:</strong> {traceStatus}
-                  </span>
-                </div>
-                {importedTrace ? (
-                  <p style={{ marginTop: 0, marginBottom: 6 }}>
-                    trace room <code>{importedTrace.roomId}</code>, filter <code>{importedTrace.filter}</code>, matched{" "}
-                    <code>
-                      {matchedCorrelationCount}/{traceCorrelations.length}
-                    </code>
-                  </p>
-                ) : null}
-                {traceCorrelations.length > 0 ? (
-                  <ul style={{ maxHeight: 140, overflow: "auto", paddingLeft: 18, marginTop: 0 }}>
-                    {traceCorrelations.map((correlation) => (
-                      <li key={correlation.traceId}>
-                        {correlation.matchedEventIndex !== null ? (
-                          <button
-                            type="button"
-                            onClick={() => setCursorIndex(correlation.matchedEventIndex ?? 0)}
-                            style={{
-                              border: "1px solid #cbd5e1",
-                              borderRadius: 6,
-                              background: "transparent",
-                              cursor: "pointer",
-                              padding: "2px 6px"
-                            }}
-                          >
-                            <code>{correlation.traceType}</code> {"->"} event #{correlation.matchedEventIndex}
-                            {correlation.deltaMs !== null ? ` (${correlation.deltaMs}ms delta)` : ""}
-                            {" | "}
-                            confidence: {correlation.confidence}
-                          </button>
-                        ) : (
-                          <span>
-                            <code>{correlation.traceType}</code> {"->"} no replay match (confidence: none)
-                          </span>
-                        )}
-                        <span style={{ marginLeft: 6, color: "#64748b" }}>{correlation.matchReason}</span>
+              ) : null}
+              {unmatchedByType.length > 0 ? (
+                <div className="nm-mb-2">
+                  <p className="nm-section-label">Unmatched diagnostics</p>
+                  <ul className="nm-event-list">
+                    {unmatchedByType.map(([type, count]) => (
+                      <li key={type}>
+                        <code>{type}</code>: {count} unmatched
                       </li>
                     ))}
                   </ul>
-                ) : null}
-                {unmatchedByType.length > 0 ? (
-                  <div style={{ marginTop: 6 }}>
-                    <strong>Unmatched diagnostics:</strong>
-                    <ul style={{ marginTop: 4, marginBottom: 0, paddingLeft: 18 }}>
-                      {unmatchedByType.map(([type, count]) => (
-                        <li key={type}>
-                          <code>{type}</code>: {count} unmatched trace event(s)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-              <p style={{ marginTop: 0, marginBottom: 6 }}>
+                </div>
+              ) : null}
+              <p className="nm-p-muted">
                 <strong>Cursor event:</strong>{" "}
                 <code>
                   {selectedEvent
@@ -592,7 +559,7 @@ export default function App() {
                     : "(none)"}
                 </code>
               </p>
-              <ul style={{ maxHeight: 150, overflow: "auto", paddingLeft: 18 }}>
+              <ul className="nm-event-list nm-event-list-sm">
                 {rangedEvents.map((event) => (
                   <li key={`${selectedSnapshot.id}-${event.index}`}>
                     <code>{`[#${event.index}] [${event.streamType}] [${event.protocolType}] ${event.summary}`}</code>
@@ -602,12 +569,13 @@ export default function App() {
               </ul>
             </div>
           ) : (
-            <p>Select a snapshot to inspect details.</p>
+            <p className="nm-p-muted">Select a snapshot to inspect details.</p>
           )}
         </article>
 
         <DiagnosticsPanel diagnostics={diagnostics} />
       </section>
+      </div>
     </main>
   );
 }

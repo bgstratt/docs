@@ -1,0 +1,136 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { STUDIO_DOCS_URL } from "../data/nav";
+
+const pipeline = [
+  { title: "Goal", desc: "A human describes what needs to be accomplished." },
+  { title: "Plan", desc: "An orchestrator agent breaks the goal into work units and tasks — inspectable, reviewable, branchable." },
+  { title: "Work units", desc: "Worker agents execute tasks, each on its own branch. Every unit has lineage and scope." },
+  { title: "Branch changes", desc: "Auditable, attributable, comparable changes accumulate on the branch." },
+  { title: "Merge proposal", desc: "Workers submit structured proposals with full lineage — reviewable, approvable, supersedable, replayable." },
+  { title: "Approved state", desc: "By default a human approves; approved changes land in the authoritative branch, committed and traceable back to the goal." },
+];
+
+const pillars = [
+  {
+    icon: "🕸️",
+    title: "Durable artifact graph",
+    desc: "Every plan, task, proposal, and decision is a persistent DAG node. Trace any approved change back through its entire lineage to the original goal.",
+  },
+  {
+    icon: "✅",
+    title: "Human-governed by default",
+    desc: "Agents propose; humans decide. The merge review workflow enforces human approval before speculative work lands in the authoritative branch — unless a goal explicitly opts out.",
+  },
+  {
+    icon: "🌿",
+    title: "Branch and replay",
+    desc: "Branch from any artifact checkpoint to spawn alternate executions. Replay a proposal under a different model to compare outcomes. Roll back to any known good state.",
+  },
+  {
+    icon: "🔌",
+    title: "MCP-native",
+    desc: "A frozen MCP v1 tool surface with 66 tools across 19 namespaces. Integrate any MCP-compatible client with the Studio host.",
+  },
+];
+---
+<BaseLayout
+  title="NodalMerge Studio"
+  description="Git for agent reasoning and execution — not Git for files. An agent-native collaborative workspace built on NodalMerge."
+>
+  <section class="nm-hero">
+    <div class="nm-hero-inner">
+      <div class="nm-hero-eyebrow">Agent-native · Human-governed · Built on NodalMerge</div>
+      <h1 class="nm-hero-title">
+        Git for agent <span class="nm-gradient-text">reasoning</span> — not Git for files
+      </h1>
+      <p class="nm-hero-subtitle">
+        NodalMerge Studio is an agent-native collaborative workspace platform. It provides
+        agent orchestration, task management, projection-based context, MCP integration,
+        human review workflows, and a VS Code Control Tower — all backed by a persistent,
+        branchable, replayable artifact graph.
+      </p>
+      <div class="nm-hero-actions">
+        <a href={`${STUDIO_DOCS_URL}/quickstart`} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-primary">Get started →</a>
+        <a href={STUDIO_DOCS_URL} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-ghost">Studio docs</a>
+        <a href="/" class="nm-btn nm-btn-ghost">Back to NodalMerge</a>
+      </div>
+    </div>
+  </section>
+
+  <div class="nm-shell">
+    <section class="nm-section">
+      <img class="nm-studio-hero-image" src="/studio/studio-logo-large.png" alt="NodalMerge Studio" />
+    </section>
+
+    <section class="nm-section">
+      <div class="nm-section-label">The artifact pipeline</div>
+      <h2 class="nm-section-heading">Every step an agent takes produces a durable artifact.</h2>
+      <p class="nm-section-desc">
+        Every artifact can be inspected, branched, replayed, merged, and audited. The
+        durable graph is the product; agents are features of it.
+      </p>
+      <div class="nm-steps">
+        {pipeline.map((step) => (
+          <div class="nm-step">
+            <div class="nm-step-marker">↓</div>
+            <div>
+              <p class="nm-step-title">{step.title}</p>
+              <p class="nm-step-desc">{step.desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section class="nm-section">
+      <div class="nm-section-label">Why teams use Studio</div>
+      <h2 class="nm-section-heading">Structured autonomy, not blind trust.</h2>
+      <div class="nm-feature-row">
+        {pillars.map((p) => (
+          <div class="nm-feature-item">
+            <div class="nm-feature-icon">{p.icon}</div>
+            <p class="nm-feature-title">{p.title}</p>
+            <p class="nm-feature-desc">{p.desc}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section class="nm-section">
+      <div class="nm-section-label">Scope today</div>
+      <h2 class="nm-section-heading">Studio is v1 — deliberately scoped.</h2>
+      <p class="nm-section-desc">
+        Deliberately out of scope for now: autonomous self-directed agents (agents cannot
+        set their own goals), long-term memory databases or vector stores, cross-workspace
+        reasoning, enterprise RBAC, and multi-tenant SaaS architecture. Agent-controlled
+        merges are possible but only when a goal explicitly opts into agent or hybrid
+        review — human approval remains the default.
+      </p>
+    </section>
+
+    <section class="nm-section">
+      <div class="nm-cta">
+        <h2 class="nm-section-heading" style="margin: 0 auto var(--nm-sp-4); text-align: center;">
+          Run your first goal
+        </h2>
+        <p class="nm-section-desc" style="margin: 0 auto var(--nm-sp-8); text-align: center;">
+          Install the Control Tower VS Code extension and see the artifact graph build itself.
+        </p>
+        <div class="nm-hero-actions">
+          <a href={`${STUDIO_DOCS_URL}/quickstart`} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-primary">Studio quickstart →</a>
+          <a href={`${STUDIO_DOCS_URL}/concepts/overview`} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-ghost">How Studio works</a>
+        </div>
+      </div>
+    </section>
+  </div>
+</BaseLayout>
+
+<style>
+  .nm-studio-hero-image {
+    max-width: 720px;
+    margin: 0 auto;
+    border-radius: var(--nm-radius-2xl);
+    border: 1px solid var(--nm-border-subtle);
+  }
+</style>

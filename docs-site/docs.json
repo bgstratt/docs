@@ -64,7 +64,8 @@
             "pages": [
               "index",
               "quickstart",
-              "why-nodalmerge"
+              "why-nodalmerge",
+              "studio/overview"
             ]
           }
         ]

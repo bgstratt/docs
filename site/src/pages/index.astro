@@ -1,0 +1,163 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { DOCS_URL, STUDIO_DOCS_URL } from "../data/nav";
+import { demos, playground } from "../data/apps";
+import AppCard from "../components/AppCard.astro";
+
+const features = [
+  {
+    icon: "🔀",
+    title: "Deterministic CRDT merge",
+    desc: "All peers converge to the same canonical state regardless of write order or network partitions.",
+  },
+  {
+    icon: "📼",
+    title: "Replay-grade history DAG",
+    desc: "Every change is a node in an append-only DAG. Replay any window, branch, or ancestor state on demand.",
+  },
+  {
+    icon: "✈️",
+    title: "Full offline queue",
+    desc: "Writes queue locally while disconnected and flush deterministically on reconnect — no data loss.",
+  },
+  {
+    icon: "🏛️",
+    title: "Authority-scoped policies",
+    desc: "Lock write authority to specific key paths and peers. Policy violations are rejected, not silently dropped.",
+  },
+  {
+    icon: "🧵",
+    title: "RGA collaborative text",
+    desc: "Character-level RGA with tombstone semantics, anchor-based positioning, and per-glyph attribution.",
+  },
+  {
+    icon: "🔍",
+    title: "Canonical projections",
+    desc: "Register query specs, build paginated projections at any checkpoint, and invalidate on schema change.",
+  },
+];
+---
+<BaseLayout
+  title="NodalMerge"
+  description="A local-first, deterministic replication engine built around CRDT history replay, room-based sync, and policy-governed authority."
+>
+  <section class="nm-hero">
+    <div class="nm-hero-inner">
+      <div class="nm-hero-eyebrow">Local-first · Deterministic · CRDT</div>
+      <h1 class="nm-hero-title">
+        Build collaborative systems that <span class="nm-gradient-text">converge</span>
+      </h1>
+      <p class="nm-hero-subtitle">
+        NodalMerge is a replication engine built around deterministic history replay.
+        Write locally, merge concurrently, converge deterministically — with full
+        audit-grade replay semantics.
+      </p>
+      <div class="nm-hero-actions">
+        <a href={`${DOCS_URL}/quickstart`} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-primary">Get started →</a>
+        <a href="/studio" class="nm-btn nm-btn-ghost">Meet NodalMerge Studio</a>
+        <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-ghost">Read the docs</a>
+      </div>
+      <div class="nm-hero-stats">
+        <div class="nm-stat"><div class="nm-stat-value">CRDT</div><div class="nm-stat-label">State model</div></div>
+        <div class="nm-stat"><div class="nm-stat-value">DAG</div><div class="nm-stat-label">History structure</div></div>
+        <div class="nm-stat"><div class="nm-stat-value">∞</div><div class="nm-stat-label">Offline queue</div></div>
+        <div class="nm-stat"><div class="nm-stat-value">P2P</div><div class="nm-stat-label">Peer topology</div></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="nm-shell">
+    <section class="nm-section">
+      <div class="nm-concept-strip">
+        <span class="nm-pill nm-pill-brand">Deterministic replay</span>
+        <span class="nm-pill nm-pill-brand">Canonical resolution</span>
+        <span class="nm-pill nm-pill-accent">Speculative writes</span>
+        <span class="nm-pill nm-pill-accent">Authority policies</span>
+        <span class="nm-pill nm-pill-neutral">WebSocket-first</span>
+        <span class="nm-pill nm-pill-neutral">IndexedDB persistence</span>
+        <span class="nm-pill nm-pill-amber">Audit-grade history</span>
+      </div>
+    </section>
+
+    <section class="nm-section">
+      <div class="nm-section-label">Core capabilities</div>
+      <h2 class="nm-section-heading">Everything converges. Nothing gets lost.</h2>
+      <p class="nm-section-desc">
+        NodalMerge gives you a replication core that's honest about distributed systems —
+        deterministic merges, an inspectable history DAG, and authority you can actually enforce.
+      </p>
+      <div class="nm-feature-row">
+        {features.map((f) => (
+          <div class="nm-feature-item">
+            <div class="nm-feature-icon">{f.icon}</div>
+            <p class="nm-feature-title">{f.title}</p>
+            <p class="nm-feature-desc">{f.desc}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section class="nm-section" id="studio">
+      <div class="nm-section-label">NodalMerge Studio</div>
+      <div class="nm-studio-teaser">
+        <div class="nm-studio-teaser-copy">
+          <h2 class="nm-section-heading">Git for agent reasoning — not Git for files.</h2>
+          <p class="nm-section-desc" style="margin-bottom: var(--nm-sp-6);">
+            NodalMerge Studio is an agent-native collaborative workspace built on top of
+            NodalMerge. Every goal, plan, task, and merge proposal an agent produces is a
+            durable, branchable, replayable artifact — inspectable and human-governed by default.
+          </p>
+          <div class="nm-hero-actions" style="justify-content: flex-start;">
+            <a href="/studio" class="nm-btn nm-btn-primary">Explore Studio →</a>
+            <a href={STUDIO_DOCS_URL} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-ghost">Studio docs</a>
+          </div>
+        </div>
+        <img class="nm-studio-teaser-image" src="/studio/studio-logo-large.png" alt="NodalMerge Studio" />
+      </div>
+    </section>
+
+    <section class="nm-section">
+      <div class="nm-section-label">Try it live</div>
+      <h2 class="nm-section-heading">Demos &amp; playgrounds</h2>
+      <p class="nm-section-desc">
+        Interactive apps that exercise the SDK, replay engine, and protocol live. Several are
+        still landing — each card links to what it demonstrates and its current status.
+      </p>
+      <div class="nm-card-grid">
+        {[...demos, ...playground].map((app) => <AppCard app={app} />)}
+      </div>
+    </section>
+
+    <section class="nm-section">
+      <div class="nm-cta">
+        <h2 class="nm-section-heading" style="margin: 0 auto var(--nm-sp-4); text-align: center;">
+          Ready to build something that converges?
+        </h2>
+        <p class="nm-section-desc" style="margin: 0 auto var(--nm-sp-8); text-align: center;">
+          Start with the quickstart, or go deep on the architecture that makes it all deterministic.
+        </p>
+        <div class="nm-hero-actions">
+          <a href={`${DOCS_URL}/quickstart`} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-primary">Get started →</a>
+          <a href={`${DOCS_URL}/architecture/overview`} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-ghost">Explore the architecture</a>
+        </div>
+      </div>
+    </section>
+  </div>
+</BaseLayout>
+
+<style>
+  .nm-studio-teaser {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: var(--nm-sp-12);
+    align-items: center;
+  }
+  .nm-studio-teaser-image {
+    border-radius: var(--nm-radius-2xl);
+    border: 1px solid var(--nm-border-subtle);
+  }
+  @media (max-width: 768px) {
+    .nm-studio-teaser { grid-template-columns: 1fr; }
+    .nm-studio-teaser-image { order: -1; }
+  }
+</style>

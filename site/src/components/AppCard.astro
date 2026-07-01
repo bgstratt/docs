@@ -1,0 +1,22 @@
+---
+import type { AppEntry } from "../data/apps";
+
+interface Props {
+  app: AppEntry;
+}
+const { app } = Astro.props;
+const href = app.status === "live" && app.liveUrl ? app.liveUrl : `/${app.category}/${app.slug}`;
+const external = app.status === "live" && Boolean(app.liveUrl);
+---
+<a class="nm-card" href={href} target={external ? "_blank" : undefined} rel={external ? "noopener noreferrer" : undefined}>
+  <div class="nm-card-icon">{app.icon}</div>
+  <p class="nm-card-title">{app.name}</p>
+  <p class="nm-card-desc">{app.tagline}</p>
+  <div class="nm-card-footer">
+    {app.status === "coming-soon" ? (
+      <span class="nm-status nm-status-soon"><span class="nm-status-dot"></span>Coming soon</span>
+    ) : (
+      <span class="nm-status nm-status-live"><span class="nm-status-dot"></span>Live</span>
+    )}
+  </div>
+</a>

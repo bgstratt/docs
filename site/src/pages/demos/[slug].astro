@@ -1,0 +1,32 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { demos } from "../../data/apps";
+import { GITHUB_URL as REPO_URL } from "../../data/nav";
+
+export function getStaticPaths() {
+  return demos.map((app) => ({ params: { slug: app.slug }, props: { app } }));
+}
+
+const { app } = Astro.props;
+const sourceHref = `${REPO_URL}/tree/main/${app.sourcePath}`;
+---
+<BaseLayout title={app.name} description={app.description}>
+  <div class="nm-shell">
+    <section class="nm-section">
+      <div class="nm-section-label">Demos</div>
+      <div class="nm-card-icon" style="width:56px;height:56px;font-size:1.75rem;margin-bottom:var(--nm-sp-4);">{app.icon}</div>
+      <h1 class="nm-section-heading">{app.name}</h1>
+      <p class="nm-section-desc" style="margin-bottom: var(--nm-sp-6);">{app.description}</p>
+
+      <div class="nm-badge nm-badge-soon">
+        <span class="nm-status-dot"></span>
+        Coming soon — not yet publicly deployed
+      </div>
+
+      <div class="nm-hero-actions" style="justify-content: flex-start; margin-top: var(--nm-sp-8);">
+        <a class="nm-btn nm-btn-ghost" href={sourceHref} target="_blank" rel="noopener noreferrer">View source ↗</a>
+        <a class="nm-btn nm-btn-ghost" href="/demos">← All demos</a>
+      </div>
+    </section>
+  </div>
+</BaseLayout>

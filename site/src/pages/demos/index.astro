@@ -1,0 +1,25 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import AppCard from "../../components/AppCard.astro";
+import { demos } from "../../data/apps";
+---
+<BaseLayout
+  title="Demos"
+  description="Product-style demo apps that exercise the NodalMerge SDK, replay engine, and protocol end to end."
+>
+  <div class="nm-shell">
+    <section class="nm-section" style="padding-bottom: 0;">
+      <div class="nm-section-label">Developer experience</div>
+      <h1 class="nm-section-heading">Demos</h1>
+      <p class="nm-section-desc">
+        Product-style scenario apps that exercise real collaboration flows — shared state,
+        presence, and diagnostics — end to end on top of the NodalMerge runtime.
+      </p>
+    </section>
+    <section class="nm-section" style="padding-top: var(--nm-sp-8);">
+      <div class="nm-card-grid">
+        {demos.map((app) => <AppCard app={app} />)}
+      </div>
+    </section>
+  </div>
+</BaseLayout>

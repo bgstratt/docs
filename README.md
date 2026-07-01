@@ -2,7 +2,8 @@
 
 This repository hosts:
 
-- Mintlify documentation under `docs-site/`
+- the nodalmerge.com marketing site under `site/`
+- Mintlify documentation under `docs-site/` (docs.nodalmerge.com)
 - interactive demos/playgrounds under `apps/`
 - shared runtime/ui code under `shared/`
 - planning artifacts under `plans/`
@@ -12,9 +13,22 @@ This repository hosts:
 From repository root:
 
 ```powershell
+npm run dev:site
 npm run dev:docs
 npm run check:docs-links
 npm run dev:apps
+```
+
+## Marketing site
+
+The nodalmerge.com landing site lives in `site/` (Astro, static build). It links out to
+docs.nodalmerge.com and docs.nodalmerge.com/studio, and has a dedicated `/studio` page.
+See `site/README.md`.
+
+```powershell
+cd .\site
+npm install
+npm run dev
 ```
 
 ## Documentation app

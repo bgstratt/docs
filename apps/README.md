@@ -1,6 +1,7 @@
 # Apps workspace
 
 This workspace hosts interactive developer-experience surfaces that live beside Mintlify docs.
+The marketing site (`../site/`) links to these as "coming soon" until each has a public deployment.
 
 ## Structure
 

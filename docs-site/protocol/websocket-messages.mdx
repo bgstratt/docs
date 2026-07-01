@@ -36,11 +36,19 @@ At a high level:
 ### Server → Client
 
 - `welcome`: handshake response with negotiated sync context
-- `pack`: relayed accepted node deltas
+- `pack`: relayed accepted node deltas — also sent unsolicited as a full-state
+  catch-up immediately after `welcome` when a peer joins
+- `pack-ack`: acknowledges a submitted `pack` with accepted/rejected/incoming counts
 - `subscribe-ack`: confirms runtime subscription update
 - `mst-response`: MST segment response for client descent
-- `peer-joined`: room membership event
-- `peer-left`: room membership event
+- `peer-joined`: room membership event; includes `peer_id` and `peer_type`
+- `peer-left`: room membership event; includes `peer_id` and `peer_type`
+
+`peer_id` (stable logical identity, falls back to `pubkey`) and `peer_type`
+(free-form classification, falls back to `"ui"`) are supplied by the client at
+`hello` and let the server target broadcasts at a logical peer across reconnects.
+See `api-reference/websocket-commands#hello-client-server` for the full field
+reference.
 
 ## Blob messages
 

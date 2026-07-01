@@ -100,6 +100,85 @@ If expected updates are missing:
 - Using complex overlapping patterns without tests
 - Assuming `doc.onChange` always implies subscribed materialized changes
 
+## Runtime SDK event subscriptions
+
+The runtime SDK (`createNodalMergeSdk`) uses a separate event subscription model via `sdk.on(event, handler)`. These are process-level lifecycle and protocol events, not path-pattern subscriptions.
+
+```ts
+const stop = sdk.on("connected", () => {
+  console.log("room connected");
+});
+
+// Unsubscribe by calling the returned function
+stop();
+```
+
+### `NodalMergeSdkEvent` reference
+
+| Event | Payload | When it fires |
+|---|---|---|
+| `"connected"` | none | WebSocket session opened and `welcome` received |
+| `"disconnected"` | none | WebSocket connection closed (clean or error) |
+| `"reconnect"` | `{ attempt: number }` | Reconnect attempt starting (with backoff) |
+| `"state"` | `{ state: "connecting" \| "connected" \| "disconnected" }` | Any connection state transition |
+| `"message"` | raw WebSocket message string | Every inbound WebSocket frame (low-level) |
+| `"error"` | `{ msg: string }` | Server-sent `error` envelope received |
+| `"presence"` | presence envelope object | Presence update received from server |
+| `"signal"` | WebRTC signal envelope | `webrtc-offer`, `webrtc-answer`, or `webrtc-ice` received |
+| `"runtime-message"` | `NodalMergeRuntimeMessage` | Any parsed server message that passes `parseRuntimeMessage` |
+| `"transport"` | `{ active: "ws-only" \| "ws+webrtc" }` | Active transport layer changes |
+
+### Common patterns
+
+**Connection lifecycle**:
+
+```ts
+sdk.on("state", ({ state }) => {
+  setConnectionState(state); // "connecting" | "connected" | "disconnected"
+});
+```
+
+**Error and rejection handling**:
+
+```ts
+sdk.on("error", ({ msg }) => {
+  console.error("server error:", msg);
+  // msg may be "reject.control_plane_forbidden: ...", "auth: ...", etc.
+});
+```
+
+**Observing all runtime messages**:
+
+```ts
+sdk.on("runtime-message", (msg) => {
+  // msg.type is a NodalMergeRuntimeMessageType, e.g.:
+  // "projection.build.completed", "replay.read-range.result", "pack", etc.
+  if (msg.type === "projection.build.completed") {
+    handleProjectionReady(msg);
+  }
+});
+```
+
+**Presence updates**:
+
+```ts
+sdk.on("presence", (envelope) => {
+  updateCursorLayer(envelope);
+});
+```
+
+**WebRTC signaling**:
+
+```ts
+sdk.on("signal", (signal) => {
+  if (signal.type === "webrtc-offer") {
+    handleOffer(signal.from, signal.sdp);
+  }
+});
+```
+
+`NodalMergeRuntimeMessage.type` values are exhaustively typed in `NodalMergeRuntimeMessageType`. Use a `switch` or type-narrowed handler rather than string comparison against arbitrary values.
+
 ## Related pages
 
 - [sdk/javascript](/sdk/javascript)

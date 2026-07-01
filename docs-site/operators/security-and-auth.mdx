@@ -85,6 +85,11 @@ Current runtime behavior is expiry-driven; plan revocation through:
 - Restrict metrics and control-plane exposure by network boundary
 - Run runtime behind a reverse proxy or service mesh with explicit ingress policy
 - Separate public client traffic from operator/admin network paths where possible
+- If embedding the host library (`NodalMerge.DotNetHost` or `nodalmerge-host-axum`)
+  rather than running the standalone server, configure a scoped CORS policy yourself —
+  the embeddable hosts do not set one for you. See
+  [operators/server-setup#embedding-the-host-as-a-library](/operators/server-setup#embedding-the-host-as-a-library)
+  for the origin-scoped setup on both the .NET and Rust hosts.
 
 ## Key and secret handling
 

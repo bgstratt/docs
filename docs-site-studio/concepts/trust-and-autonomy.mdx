@@ -1,0 +1,97 @@
+---
+title: Trust & autonomy
+description: Configure review policy, promotion branches, and experiments to control how much human attention each goal needs.
+---
+
+# Trust & autonomy
+
+Beyond the core pipeline, Studio lets you configure *how much* human attention each
+goal actually needs, *where* speculative work is allowed to land, and *how many*
+alternatives get explored before you commit to one. These are independent,
+composable settings — each goal can use a different combination.
+
+## Review policy — who approves a proposal
+
+Set per goal in the Goal Workspace (or as a session default in Model & Agent Studio):
+
+| Policy | Behavior |
+|---|---|
+| `Human Required` (default) | Every proposal waits at the merge-review gate for manual Accept/Reject. |
+| `Agent Approval` | A reviewer agent evaluates the proposal (build/test evidence, goal satisfaction) and auto-applies on approval, or rejects with notes for a human to see. |
+| `Hybrid` | The reviewer agent approves immediately, then a countdown (default 5 minutes) starts. A human can override (reject) during the window; otherwise it auto-applies at expiry. |
+
+{/* IMAGE: trust-review-policy-selector.png — Goal Workspace Review/Target row
+    showing the Review policy dropdown expanded with all three options visible.
+    See IMAGE_LIST.md. */}
+
+## Optional execution gates — verify before proposing
+
+Independent of review policy, a work unit's branch can be required to **build**
+and/or **test** clean before it's even allowed to submit a proposal (toggled in
+Exploration Settings). Failing evidence is attached to the proposal either way, so
+reviewers — human or agent — always see it.
+
+## Promotion branches — a safety layer above "main"
+
+When enabled (session-wide, with a per-goal override), proposals never apply
+directly to `main`. They land on a shared `candidate` branch instead:
+
+```
+Agent Work Branches  →  Candidate Branch  →  Main
+ (per work unit,         (auto-applies         (explicit human
+  fully sandboxed)        land here)            "Promote to Main")
+```
+
+A goal can opt out of the candidate layer with the **Direct** target override,
+bypassing promotion even when it's on session-wide.
+
+## Experiments — explore several approaches in parallel
+
+A goal can fan out into 2+ sibling work units that run concurrently and converge
+into a side-by-side comparison:
+
+| Strategy | What differs between forks |
+|---|---|
+| **Multi-Model Comparison** | Same goal, different LLM/profile per fork |
+| **Architecture Fork** | Same goal, a different structural constraint injected per fork (e.g. "use CQRS" vs. "use a simple service layer") |
+| **Library Comparison** | Same goal, a different dependency constraint per fork |
+| **Product Strategy Fork** | Same goal, a different product-framing constraint per fork |
+
+Each fork runs to its own proposal; the Decision Tree shows a fork-count badge and a
+**Compare Results** view. **Pick Winner** accepts the chosen fork's proposal and
+rejects the others — all recorded in the decision log.
+
+{/* IMAGE: trust-compare-results-view.png — Compare Results view showing 3 forked
+    proposal cards side by side with the Pick Winner button. See IMAGE_LIST.md. */}
+
+## Steering — redirect a running agent without losing its history
+
+Instead of stopping and re-prompting an agent from scratch, you can **pause** a
+running work unit, inject a constraint or correction ("use Redis instead of
+SQLite"), and the system forks a sibling work unit that resumes with that constraint
+in its plan context. The original work unit's decision log is untouched — steering
+never rewrites history, it branches from it. You can also fork from any specific
+node in Trajectory Replay, not just the live edge.
+
+## Counterfactual replay — "what would a different model do here?"
+
+From any completed work unit, **Run with different model** branches from that
+proposal's base state and re-runs the same goal under a different profile. The
+result is a new sibling work unit; selecting it shows a **Compare with Original**
+view (proposals, confidence, file coverage side by side) without disturbing the
+original.
+
+## Putting it together
+
+A typical autonomous run: you describe a goal, pick `Agent Approval` (or `Hybrid`)
+so it doesn't need you at the merge gate, turn on the candidate branch so nothing
+touches `main` directly, optionally require build+test evidence before any proposal
+is even accepted, and — if you're unsure which approach is best — launch it as a
+Multi-Model or Architecture experiment instead of a single run. You can walk away;
+when you come back, either a completed merge is waiting on `candidate` for you to
+promote, or a decision (a rejected proposal, a paused agent awaiting your steering
+input, or a set of forks awaiting **Pick Winner**) is waiting in the Decision Tree.
+
+See [Reference → Control Tower UI](/reference/ui-reference) for every control these
+features expose in the extension, and [Reference → API surface](/reference/api-reference)
+for the full MCP/REST surface behind them.

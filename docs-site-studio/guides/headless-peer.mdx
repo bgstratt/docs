@@ -1,0 +1,126 @@
+---
+title: Headless peer
+description: Run the full Studio agent runtime without an HTTP server — for CI/CD, background workers, and programmatic goal injection.
+---
+
+# Headless peer
+
+A headless peer runs the full Studio runtime — all agent loops, projections,
+storage, orchestrator, domain observers — without an HTTP server or MCP-over-HTTP
+endpoint. It is the primary integration point for CI/CD pipelines, autonomous
+background workers, and non-interactive goal injection.
+
+The embedded Studio host (the server powering the VS Code extension) and a headless
+peer are built from the same binary — the only difference is the build path used at
+startup.
+
+## Two modes
+
+### Standalone (no room presence)
+
+`Peer:HostUri` is null or omitted. All agent loops execute locally. Agent work
+units, artifacts, and proposals are stored in the peer's own workspace; nothing is
+replicated to a remote room.
+
+Use this for: local CI automation, test runners, script-triggered agent work, any
+scenario where multi-peer room replication is not needed.
+
+### Connected (room presence)
+
+`Peer:HostUri` is set (e.g., `ws://localhost:5080`). The peer opens an outbound
+WebSocket connection to the room and sends a `hello` message identifying itself
+with `peer_id`, `peer_type`, and an empty frontier. The peer then participates in
+NodalMerge CRDT replication — work units, artifacts, and proposals created by the
+peer are replicated to the room and visible to all connected peers, including the
+VS Code extension.
+
+This is also how goal creation stops being single-source: a persistent peer
+watching an external signal (logs, alerts, metrics) can inject goals into the same
+room a human is working in, and they show up identically — same review gate, same
+domain observers, same merge workflow. See
+[Concepts → Multi-peer goal sourcing](/concepts/architecture#multi-peer-goal-sourcing).
+
+Reconnection uses exponential backoff starting at 1s, capped at 30s. On a
+`participant.stop` message addressed to this peer, it shuts down cleanly.
+
+**What the VS Code extension sees in connected mode:** agents spawned by the
+headless peer appear in the Activity Center "Running Agents" list alongside
+interactively spawned agents. They can be paused, resumed, or stopped from the
+extension. The peer process itself is controlled externally.
+
+## Activation
+
+Three equivalent paths:
+
+**CLI argument:**
+```powershell
+dotnet run --project src/NodalMerge.Studio.Host -- --mode peer
+```
+
+**Environment variable:**
+```powershell
+$env:STUDIO_MODE = "peer"
+dotnet run --project src/NodalMerge.Studio.Host
+```
+
+**Configuration:**
+```json
+{ "Peer": { "Enabled": true } }
+```
+Or via env var: `Peer__Enabled=true`.
+
+## Configuration reference
+
+All keys live under `"Peer"` in `appsettings.json`:
+
+```json
+{
+  "Peer": {
+    "Enabled": true,
+    "HostUri": "ws://localhost:5080",
+    "RoomId": "studio",
+    "PeerType": "ephemeral-agent",
+    "PeerId": null
+  }
+}
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `Peer:Enabled` | `false` | Must be `true` (or CLI/env override) to activate peer mode |
+| `Peer:HostUri` | `null` | WebSocket base URI of the room host. `null` = standalone mode. |
+| `Peer:RoomId` | `"studio"` | The NodalMerge room to join. Must match the room ID on the host. |
+| `Peer:PeerType` | `"ephemeral-agent"` | `"ephemeral-agent"` for short-lived runs; `"persistent-agent"` for long-running workers. |
+| `Peer:PeerId` | `null` | Stable identity string. When null, a UUID is auto-generated and persisted to `{Workspace:RootPath}/.peer-id` so the same identity is reused on restart. |
+
+### Workspace flags for headless use
+
+Under `"Workspace"`:
+
+| Key | Default | Recommended for CI |
+|---|---|---|
+| `Workspace:AllowAgentGitCommits` | `false` | `true` — commit materialized files after a proposal is approved |
+| `Workspace:AllowAgentGitPush` | `false` | `true` — push branches to `origin` after committing (requires `AllowAgentGitCommits=true`) |
+| `Workspace:AllowAutoRequeue` | `false` | `true` — automatically retry a failed work unit instead of landing it in the dead-letter queue |
+| `Workspace:EnabledDomainAgents` | `[]` | Add observer names if you want reactive constraint checks in the peer |
+
+See [Guides → Repository virtualization](/guides/repository-virtualization) for the
+full `Workspace` config reference.
+
+## Injecting goals
+
+A headless peer has no MCP-over-HTTP endpoint of its own. Goal injection uses the
+REST API of the Studio host (either the embedded host the extension talks to, or the
+peer's own internal services if embedded as a library). See
+[Guides → Extending goals](/guides/extending-goals) for the full REST surface and
+external trigger patterns.
+
+## What the peer cannot do
+
+- **No MCP-over-HTTP endpoint.** External MCP clients must connect to the embedded
+  Studio host (the full HTTP server). The peer participates in the room as a write
+  peer only.
+- **No VS Code extension UI of its own.** All UI interaction happens through the
+  extension connected to the embedded host. In connected mode, the peer's agents
+  surface in the extension; the peer process itself is controlled externally
+  (start/stop, config) outside of Studio's UI.

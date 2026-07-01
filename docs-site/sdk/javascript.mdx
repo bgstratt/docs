@@ -39,16 +39,37 @@ await sdk.room.connect();
 ```ts
 sdk.sync.set("profile/name", "alice");
 sdk.sync.set("profile/role", "engineer");
-sdk.sync.push();
+const sent = sdk.sync.push();
 
 const name = sdk.sync.get("profile/name");
+const canonicalName = sdk.sync.getCanonical("profile/name");
 ```
 
-Call `sdk.sync.push()` after local mutations to flush updates.
+Call `sdk.sync.push()` after local mutations to flush updates. `push()` returns a
+`boolean` — `true` if a pack was actually sent, `false` if there was nothing pending.
+It sends only the delta accumulated since the last successful push (tracked
+internally), not a full state export.
+
+`sdk.sync.get()` returns the speculative/intent-lane view (including your own
+unconfirmed writes); `sdk.sync.getCanonical()` returns the authoritative
+canonical-lane view — the same intent-vs-canonical distinction described for text
+reads below.
+
+**Push acknowledgement and retry.** The server responds to each `push()` with a
+`pack-ack` message reporting accepted/rejected counts. The SDK handles this
+automatically: if any nodes are rejected, it reverts the corresponding local
+optimistic state and resends. You don't need to handle `pack-ack` directly unless
+you're building custom sync-status UI — see `protocol/websocket-messages` and
+`api-reference/websocket-commands#pack-ack-server-client`.
+
+**Pack size limit.** A single pushed pack is capped at 60 KiB of base64 (61,440
+characters). Pushes exceeding this are rejected client-side — the SDK reverts the
+pending marks and emits an `"error"` event rather than sending an oversized frame.
+Batch large sets of writes into multiple smaller `push()` calls if you hit this.
 
 ## Text operations
 
-Use range-safe helpers for collaborative text edits:
+Use positional helpers for collaborative text edits:
 
 ```ts
 sdk.sync.insertTextAt("doc/title", 0, "Hello");
@@ -57,7 +78,50 @@ sdk.sync.deleteTextAt("doc/title", 5, 1);
 sdk.sync.push();
 ```
 
-Advanced anchor-based APIs are available when your UI/editor needs stable positional semantics under concurrent edits.
+### Text range anchors
+
+When your editor needs stable positions under concurrent edits, use anchor-based helpers. Anchors identify _where_ to insert or delete relative to the document structure rather than a raw integer offset that may shift under concurrent changes.
+
+**Insert anchors** (`TextInsertAnchor`):
+
+| Shape | Meaning |
+|---|---|
+| `{ kind: "offset", pos: number }` | Insert at character offset `pos` |
+| `{ kind: "start" }` | Insert at the very beginning |
+| `{ kind: "end" }` | Append to the end |
+| `{ kind: "after", lamport, author }` | Insert after a specific RGA node |
+
+**Delete anchors** (`TextDeleteAnchor`):
+
+| Shape | Meaning |
+|---|---|
+| `{ kind: "offset", pos: number }` | Delete starting at character offset `pos` |
+| `{ kind: "start" }` | Delete from the beginning |
+| `{ kind: "after", lamport, author }` | Delete starting after a specific RGA node |
+
+```ts
+// Append to end
+sdk.sync.insertTextRange("doc/title", { kind: "end" }, " world");
+
+// Prepend
+sdk.sync.insertTextRange("doc/title", { kind: "start" }, "Hello ");
+
+// Delete 1 char at offset 5
+sdk.sync.deleteTextRange("doc/title", { kind: "offset", pos: 5 }, 1);
+
+// Insert after a known RGA node (useful in rich-text editors that track op IDs)
+sdk.sync.insertTextRange("doc/title", {
+  kind: "after",
+  lamport: 42,
+  author: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}, "!");
+
+sdk.sync.push();
+```
+
+Prefer anchor-based APIs in editors that maintain cursor/selection as logical positions rather than integer offsets; they survive concurrent insertions at the same position without extra rebasing logic.
+
+### Text reads and attribution
 
 For attribution UIs (per-glyph author), read the visible RGA sequence:
 
@@ -69,7 +133,7 @@ const atLamport = sdk.sync.getTextAtLamport("notes/demo/body", 42);
 const glyphsAt = sdk.sync.getTextSequenceAtLamport("notes/demo/body", 42);
 ```
 
-`getTextAtLamport` / `getTextSequenceAtLamport` replay only DAG nodes with `transaction.lamport <= maxLamport` (tombstones included).
+`getTextAtLamport` / `getTextSequenceAtLamport` replay only DAG nodes with `transaction.lamport <= maxLamport` (tombstones included). The speculative read (`getText`) returns the intent-lane view; `getTextCanonical` returns the canonical lane view.
 
 Try the interactive surface: [Collab text playground](/developer-experience/apps#collab-text) (`http://127.0.0.1:4177`, default room `collab-text`).
 
@@ -155,16 +219,70 @@ Model local optimism and authoritative outcomes in separate namespaces:
 
 This keeps your UI responsive while preserving deterministic refinement behavior.
 
+## Replay range read
+
+Retrieve a paginated history of key mutations from the server, useful for activity feeds, audit trails, and undo stacks:
+
+```ts
+const result = await sdk.query.readReplayRange({
+  keyPrefix: "world/",
+  fromLamport: 0,
+  limit: 100
+});
+
+// result.type === "replay.read-range.result"
+// result.items — array of mutation records
+// result.next_cursor — pass as `cursor` to page forward
+```
+
+For local-only history (offline/unsent ops), use `sdk.sync.readLocalReplayRange` which returns synchronously from the WASM store.
+
 ## Query and projection helpers
 
-Runtime query APIs support history and projection workflows:
+Runtime query APIs support canonical-lane analytics and read-model workflows. Use `sdk.query` when you need structured projections over room state rather than direct key access.
 
-- Register query specs
-- Build projections at target checkpoints
-- Read paginated projection results
-- Invalidate or list projections
+**Register a query spec** (once per descriptor version):
 
-Use these APIs when you need canonical-lane analytics/read models beyond direct key access.
+```ts
+await sdk.query.registerSpec({
+  querySpecId: "q.world",
+  version: "v1",
+  descriptor: { prefix: "world/" }
+});
+```
+
+**Build a projection** at a specific checkpoint:
+
+```ts
+const build = await sdk.query.buildProjection({
+  projectionId: "p.world",
+  querySpecId: "q.world",
+  targetCheckpoint: { selector: "latest" }
+  // other selectors: { selector: "seq", canonical_seq: 42 }
+  //                  { selector: "hash", canonical_hash: "<hex>" }
+  //                  { selector: "frontier", frontier: ["seq:42"] }
+});
+```
+
+**Read paginated results**:
+
+```ts
+if (build.type === "projection.build.completed") {
+  const page = await sdk.query.readProjection({
+    projectionId: "p.world",
+    limit: 50
+  });
+  console.log(page.rows, page.digest, page.next_page_token);
+}
+```
+
+**Invalidate or list projections**:
+
+```ts
+await sdk.query.invalidateProjection({ projectionId: "p.world", reason: "schema change" });
+
+const list = await sdk.query.listProjections({ querySpecId: "q.world", stateFilter: "active" });
+```
 
 ## Transport options
 
@@ -184,6 +302,35 @@ Treat rejection/error signals as first-class UX and ops inputs:
 - Avoid silent rollback paths
 
 In policy-governed systems, rejection handling is part of normal operation.
+
+## Configuration reference
+
+All options passed to `createNodalMergeSdk`:
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `wsUrl` | `string` | — | WebSocket endpoint URL (required) |
+| `roomId` | `string` | — | Room identifier (required) |
+| `authorKey` | `Uint8Array` | — | Ed25519 signing key bytes for this peer |
+| `token` | `unknown` | — | Auth token forwarded in hello payload |
+| `wasmModule` | `RequestInfo \| URL \| ...` | — | Custom WASM module source; defaults to bundled |
+| `tickIntervalMs` | `number` | server default | How often local tick loop fires (ms) |
+| `maxOpsPerTick` | `number` | server default | Max ops batched per tick flush |
+| `reconnect.enabled` | `boolean` | `false` | Enable automatic reconnect |
+| `reconnect.initialDelayMs` | `number` | `500` | First reconnect delay (ms) |
+| `reconnect.maxDelayMs` | `number` | `8000` | Reconnect backoff ceiling (ms) |
+| `reconnect.factor` | `number` | `2` | Backoff multiplier |
+| `reconnect.maxAttempts` | `number` | unlimited | Stop reconnecting after N failures |
+| `offline.persistenceKey` | `string` | — | localStorage key for outbox persistence |
+| `transport.mode` | `"auto" \| "ws-only"` | `"ws-only"` | Transport negotiation policy |
+| `persistence.enabled` | `boolean` | `false` | Enable peer-local graph persistence |
+| `persistence.adapter` | `"indexeddb" \| PeerLocalPersistenceAdapter` | `"indexeddb"` | Persistence backend |
+| `persistence.dbName` | `string` | `"nodalmerge-peer-local"` | IndexedDB database name |
+| `persistence.dbVersion` | `number` | `1` | IndexedDB schema version |
+| `persistence.debounceMs` | `number` | `500` | Debounce interval for auto-save writes (ms) |
+| `persistence.migrateLegacyDemo` | `boolean` | `false` | Migrate pre-Phase-C demo key formats |
+
+`offline.persistenceKey` controls **outbox** persistence (localStorage) and is independent of `persistence.*` which controls **graph/node** durability (IndexedDB).
 
 ## Production checklist
 

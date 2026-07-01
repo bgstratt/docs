@@ -1,0 +1,39 @@
+{/*
+  Reusable DemoLauncher snippet.
+
+  Import on any page with:
+    import DemoLauncher from '/snippets/demo-launcher.mdx'
+    <DemoLauncher />
+
+  Or use the raw HTML structure below directly in a page.
+
+  Props (via MDX variables if supported, or copy + edit):
+    title      — app name
+    port       — e.g. ":4173"
+    icon       — emoji or text icon
+    desc       — one-line description
+    docsHref   — link to the docs section for this app
+*/}
+
+<div class="nm-demo-card">
+  <div class="nm-demo-card-header">
+    <div class="nm-demo-card-icon">{props.icon ?? "🚀"}</div>
+    <span class="nm-status nm-status-local">
+      <span class="nm-status-dot"></span>local
+    </span>
+  </div>
+  <p class="nm-demo-card-title">{props.title ?? "Demo app"}</p>
+  <p class="nm-demo-card-desc">{props.desc ?? "Interactive demo running locally."}</p>
+  <div class="nm-demo-card-footer">
+    <span class="nm-demo-port">{props.port ?? ":4173"}</span>
+    {props.docsHref && (
+      <a
+        href={props.docsHref}
+        class="nm-btn nm-btn-ghost"
+        style="padding: 0.35rem 0.85rem; font-size: 0.8rem"
+      >
+        Open docs →
+      </a>
+    )}
+  </div>
+</div>

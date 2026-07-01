@@ -1,0 +1,118 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "sequoia",
+  "name": "NodalMerge Studio",
+  "favicon": "/favicon.svg",
+
+  "colors": {
+    "primary": "#6366F1",
+    "light":   "#818CF8",
+    "dark":    "#4F46E5"
+  },
+
+  "background": {
+    "color": {
+      "light": "#FAFAFA",
+      "dark":  "#0B0F1C"
+    }
+  },
+
+  "font": {
+    "headings": {
+      "family": "Inter",
+      "weight": 700
+    },
+    "body": {
+      "family": "Inter"
+    }
+  },
+
+  "custom": {
+    "css": "/custom.css"
+  },
+
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark":  "/logo/dark.svg"
+  },
+
+  "navbar": {
+    "links": [
+      { "label": "NodalMerge docs", "href": "https://docs.nodalmerge.com" },
+      { "label": "GitHub", "href": "https://github.com/your-org/nodalmerge-studio" },
+      { "label": "Quickstart", "href": "/quickstart" }
+    ]
+  },
+
+  "footer": {
+    "socials": {
+      "github": "https://github.com/your-org/nodalmerge-studio"
+    }
+  },
+
+  "modeToggle": {
+    "default": "dark",
+    "isHidden": false
+  },
+
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Getting started",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "index",
+              "quickstart"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Concepts",
+        "groups": [
+          {
+            "group": "How Studio works",
+            "pages": [
+              "concepts/overview",
+              "concepts/architecture",
+              "concepts/trust-and-autonomy"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Configuration and extension",
+            "pages": [
+              "guides/domain-observers",
+              "guides/extending-goals",
+              "guides/headless-peer",
+              "guides/repository-virtualization"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Control Tower UI",
+            "pages": [
+              "reference/ui-reference"
+            ]
+          },
+          {
+            "group": "API surface",
+            "pages": [
+              "reference/api-reference"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

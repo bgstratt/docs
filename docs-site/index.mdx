@@ -1,112 +1,290 @@
 ---
-title: "Introduction"
-description: "NodalMerge documentation for architecture, protocol, operations, SDK usage, benchmarks, and practical implementation guides."
-icon: "star"
+title: "NodalMerge"
+description: "A local-first, deterministic replication engine built around CRDT history replay, room-based sync, and policy-governed authority."
 ---
 
-## Build deterministic collaborative systems
+{/* ── HERO ──────────────────────────────────────────────────── */}
 
-NodalMerge is a local-first replication engine built around deterministic history replay.
+<div class="nm-hero">
+  <div class="nm-hero-eyebrow">
+    Local-first &nbsp;·&nbsp; Deterministic &nbsp;·&nbsp; CRDT
+  </div>
 
-<Card
-  title="Run your first room"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Start a local server, connect a client, and ship your first collaborative flow.
-</Card>
+  <h1 class="nm-hero-title">
+    Build collaborative systems<br/>
+    that <span class="nm-gradient-text">converge</span>
+  </h1>
 
-## Choose your path
+  <p class="nm-hero-subtitle">
+    NodalMerge is a replication engine built around deterministic history replay.
+    Write locally, merge concurrently, converge deterministically — with full
+    audit-grade replay semantics.
+  </p>
 
-<Columns cols={2}>
-  <Card title="Why NodalMerge" icon="compass" href="/why-nodalmerge">
-    Decide quickly whether NodalMerge is the right fit for your product and team.
-  </Card>
+  <div class="nm-hero-actions">
+    <a href="/quickstart" class="nm-btn nm-btn-primary">Get started →</a>
+    <a href="/architecture/overview" class="nm-btn nm-btn-ghost">Explore the architecture</a>
+    <a href="/why-nodalmerge" class="nm-btn nm-btn-ghost">Why NodalMerge</a>
+  </div>
+
+  <div class="nm-hero-stats">
+    <div class="nm-stat">
+      <div class="nm-stat-value">CRDT</div>
+      <div class="nm-stat-label">State model</div>
+    </div>
+    <div class="nm-stat">
+      <div class="nm-stat-value">DAG</div>
+      <div class="nm-stat-label">History structure</div>
+    </div>
+    <div class="nm-stat">
+      <div class="nm-stat-value">∞</div>
+      <div class="nm-stat-label">Offline queue</div>
+    </div>
+    <div class="nm-stat">
+      <div class="nm-stat-value">P2P</div>
+      <div class="nm-stat-label">Peer topology</div>
+    </div>
+  </div>
+</div>
+
+{/* ── CONCEPT PILLS ─────────────────────────────────────────── */}
+
+<div class="nm-concept-strip">
+  <span class="nm-pill nm-pill-brand">Deterministic replay</span>
+  <span class="nm-pill nm-pill-brand">Canonical resolution</span>
+  <span class="nm-pill nm-pill-accent">Speculative writes</span>
+  <span class="nm-pill nm-pill-accent">Authority policies</span>
+  <span class="nm-pill nm-pill-neutral">WebSocket-first</span>
+  <span class="nm-pill nm-pill-neutral">IndexedDB persistence</span>
+  <span class="nm-pill nm-pill-amber">Audit-grade history</span>
+</div>
+
+{/* ── CHOOSE YOUR PATH ──────────────────────────────────────── */}
+
+<div class="nm-section-label">Choose your path</div>
+
+<Tabs>
+  <Tab title="Frontend developer">
+    **You're building a collaborative UI** — real-time editing, presence, offline-first UX.
+
+    <Steps>
+      <Step title="Install the SDK">
+        ```bash
+        npm install nodalmerge-sdk-js
+        ```
+      </Step>
+      <Step title="Connect a room">
+        ```ts
+        const sdk = await createNodalMergeSdk({
+          wsUrl: "ws://localhost:7878/ws/runtime",
+          roomId: "my-room",
+          transport: { mode: "auto" },
+          reconnect: { enabled: true }
+        });
+        await sdk.room.connect();
+        ```
+      </Step>
+      <Step title="Read and write synced state">
+        ```ts
+        sdk.sync.set("profile/name", "Alice");
+        sdk.sync.push();
+        const name = sdk.sync.get("profile/name");
+        ```
+      </Step>
+    </Steps>
+
+    <CardGroup cols={2}>
+      <Card title="JavaScript SDK" icon="js" href="/sdk/javascript">
+        Full API reference — sync, text, presence, blobs, offline, and config.
+      </Card>
+      <Card title="SDK overview" icon="compass" href="/sdk/overview">
+        Pick the right surface, understand intent vs canonical patterns.
+      </Card>
+      <Card title="Subscriptions" icon="bell" href="/sdk/subscriptions">
+        Event subscriptions, runtime message types, lifecycle hooks.
+      </Card>
+      <Card title="Collab text playground" icon="keyboard" href="/developer-experience/apps#collab-text">
+        Interact with RGA text ops and DAG replay live.
+      </Card>
+    </CardGroup>
+  </Tab>
+
+  <Tab title="Backend / operator">
+    **You're running or embedding the runtime** — server setup, persistence, topology, auth.
+
+    <Steps>
+      <Step title="Start the server">
+        ```powershell
+        cargo run -p nodalmerge-server -- \
+          --store ./data \
+          --metrics-addr 127.0.0.1:9090
+        ```
+      </Step>
+      <Step title="Verify health">
+        ```bash
+        curl http://127.0.0.1:9090/metrics
+        ```
+        Server listens at `ws://127.0.0.1:7878/ws/<room>`.
+      </Step>
+      <Step title="Lock down auth">
+        Set `set-room-key` with an Ed25519 key and configure `set-policy` rules
+        before routing production traffic.
+      </Step>
+    </Steps>
+
+    <CardGroup cols={2}>
+      <Card title="Server setup" icon="server" href="/operators/server-setup">
+        Binary flags, storage options, and launch validation.
+      </Card>
+      <Card title="Persistence" icon="database" href="/operators/persistence">
+        SQLite node storage, blob backends, peer-local IndexedDB, and recovery.
+      </Card>
+      <Card title="Security and auth" icon="shield" href="/operators/security-and-auth">
+        Ed25519 room keys, JWT tokens, and policy rule wiring.
+      </Card>
+      <Card title="WebSocket commands" icon="terminal" href="/api-reference/websocket-commands">
+        Full command/response contract including topology and archive ops.
+      </Card>
+    </CardGroup>
+  </Tab>
+
+  <Tab title="Platform team">
+    **You're evaluating or onboarding a team** — architecture understanding, runbooks, validation.
+
+    <Steps>
+      <Step title="Understand the model">
+        Read [architecture/mental-model](/architecture/mental-model) and
+        [architecture/crdt-model](/architecture/crdt-model) first — they shape every
+        API decision.
+      </Step>
+      <Step title="Run the apps">
+        Start the demo host and playground apps locally to validate
+        end-to-end SDK, WASM, and protocol behavior before writing integration code.
+      </Step>
+      <Step title="Follow the onboarding paths">
+        Use the guided onboarding paths below to build team-wide baseline confidence.
+      </Step>
+    </Steps>
+
+    <CardGroup cols={2}>
+      <Card title="First hour path" icon="map" href="/onboarding/first-hour">
+        Run host + apps, validate collaboration flows, inspect protocol evidence.
+      </Card>
+      <Card title="First day builder path" icon="hammer" href="/onboarding/first-day-builder">
+        Move from setup to a small collaborative prototype with validation.
+      </Card>
+      <Card title="Frontend app team path" icon="laptop-code" href="/onboarding/frontend-app-team">
+        SDK + WASM baseline, subscription patterns, text and presence validation.
+      </Card>
+      <Card title="Platform operator path" icon="gears" href="/onboarding/platform-operator-team">
+        Host readiness, incident evidence collection, and support posture.
+      </Card>
+    </CardGroup>
+  </Tab>
+</Tabs>
+
+{/* ── CORE CAPABILITIES ─────────────────────────────────────── */}
+
+<div class="nm-section-label" style={{ marginTop: "3rem" }}>Core capabilities</div>
+
+<div class="nm-feature-row">
+  <div class="nm-feature-item">
+    <div class="nm-feature-icon">🔀</div>
+    <p class="nm-feature-title">Deterministic CRDT merge</p>
+    <p class="nm-feature-desc">All peers converge to the same canonical state regardless of write order or network partitions.</p>
+  </div>
+  <div class="nm-feature-item">
+    <div class="nm-feature-icon">📼</div>
+    <p class="nm-feature-title">Replay-grade history DAG</p>
+    <p class="nm-feature-desc">Every change is a node in an append-only DAG. Replay any window, branch, or ancestor state on demand.</p>
+  </div>
+  <div class="nm-feature-item">
+    <div class="nm-feature-icon">✈️</div>
+    <p class="nm-feature-title">Full offline queue</p>
+    <p class="nm-feature-desc">Writes queue locally while disconnected and flush deterministically on reconnect — no data loss.</p>
+  </div>
+  <div class="nm-feature-item">
+    <div class="nm-feature-icon">🏛️</div>
+    <p class="nm-feature-title">Authority-scoped policies</p>
+    <p class="nm-feature-desc">Lock write authority to specific key paths and peers. Policy violations are rejected, not silently dropped.</p>
+  </div>
+  <div class="nm-feature-item">
+    <div class="nm-feature-icon">🧵</div>
+    <p class="nm-feature-title">RGA collaborative text</p>
+    <p class="nm-feature-desc">Character-level RGA with tombstone semantics, anchor-based positioning, and per-glyph attribution.</p>
+  </div>
+  <div class="nm-feature-item">
+    <div class="nm-feature-icon">🔍</div>
+    <p class="nm-feature-title">Canonical projections</p>
+    <p class="nm-feature-desc">Register query specs, build paginated projections at any checkpoint, and invalidate on schema change.</p>
+  </div>
+</div>
+
+{/* ── REFERENCE SECTIONS ────────────────────────────────────── */}
+
+<div class="nm-section-label" style={{ marginTop: "3rem" }}>Reference sections</div>
+
+<CardGroup cols={3}>
   <Card title="Architecture" icon="diagram-project" href="/architecture/overview">
-    Understand the core model: CRDT semantics, history DAG, sync, authority, and storage.
-  </Card>
-  <Card title="Quickstart" icon="play" href="/quickstart">
-    Stand up a working local-first room and validate end-to-end sync.
-  </Card>
-  <Card title="SDK overview" icon="code" href="/sdk/overview">
-    Pick the right SDK surface and integration strategy for your app.
-  </Card>
-</Columns>
-
-## Core reference sections
-
-<Columns cols={2}>
-  <Card title="Architecture" icon="building" href="/architecture/overview">
-    System model, CRDT behavior, replay semantics, and topology boundaries.
+    System model, CRDT behavior, replay semantics, speculative vs authoritative, and topology boundaries.
   </Card>
   <Card title="Protocol" icon="network-wired" href="/protocol/websocket-messages">
-    Message-level sync, reconciliation, blob transfer, and failure semantics.
-  </Card>
-  <Card title="Operators" icon="server" href="/operators/server-setup">
-    Setup, persistence, lifecycle, observability, topology, and replay operations.
+    Message-level sync, reconciliation flow, blob transfer, and failure semantics.
   </Card>
   <Card title="SDK" icon="laptop-code" href="/sdk/javascript">
-    JavaScript and React integration patterns, subscriptions, presence, and conflicts.
+    JavaScript and React integration — sync, text anchors, presence, offline, projections, and config.
+  </Card>
+  <Card title="API and commands" icon="terminal" href="/api-reference/websocket-commands">
+    Full WebSocket command/response contract, capability gates, and rejection taxonomy.
+  </Card>
+  <Card title="Operators" icon="server" href="/operators/server-setup">
+    Setup, persistence, GC lifecycle, observability, topology, and replay operations.
   </Card>
   <Card title="Benchmarks" icon="gauge-high" href="/benchmarks/performance-overview">
-    Measure and interpret performance with release-ready attribution guidance.
+    Performance expectations and runtime attribution guidance.
   </Card>
   <Card title="Guides" icon="book-open" href="/guides/offline-first-patterns">
     Practical implementation guides for real product workflows.
   </Card>
-  <Card title="API and commands" icon="terminal" href="/api-reference/introduction">
-    HTTP endpoints, full WebSocket command contract, command library, and compatibility policy.
+  <Card title="Tutorials" icon="timeline" href="/tutorials/trace-a-room-session">
+    Hands-on walkthroughs: protocol tracing, incident triage, replay inspection.
   </Card>
-</Columns>
+</CardGroup>
 
-## Developer experience apps
+{/* ── DEVELOPER EXPERIENCE APPS ─────────────────────────────── */}
 
-<Columns cols={2}>
-  <Card title="Run demo and playground apps" icon="window-maximize" href="/developer-experience/apps">
-    Start the local host and app surfaces, then validate sdk/wasm and replay flows.
-  </Card>
-  <Card title="Infinite room workspace demo" icon="people-group" href="/developer-experience/apps#infinite-room-workspace">
-    Use the first interactive sdk-backed shared document action path.
-  </Card>
-  <Card title="Replay lab playground" icon="timeline" href="/developer-experience/apps#replay-lab">
-    Capture runtime snapshots and inspect replay-oriented event payload summaries.
-  </Card>
-</Columns>
+<div class="nm-section-label" style={{ marginTop: "3rem" }}>Developer experience apps</div>
 
-## Guided onboarding
+<Card title="Five interactive playground apps" icon="flask" href="/developer-experience/apps">
+  Infinite room workspace, collab text, protocol inspector, replay lab, and collab
+  maps — local playgrounds for exercising SDK, replay, and protocol behavior live.
+  See [developer-experience/apps](/developer-experience/apps) for what each app
+  demonstrates and how to run them.
+</Card>
 
-<Columns cols={2}>
-  <Card title="First hour path" icon="map" href="/onboarding/first-hour">
-    Run host and apps, validate collaboration flows, and inspect protocol + replay evidence.
-  </Card>
-  <Card title="First day builder path" icon="hammer" href="/onboarding/first-day-builder">
-    Move from baseline setup to a small collaborative prototype with evidence-backed validation.
-  </Card>
-  <Card title="Operator baseline path" icon="server" href="/onboarding/operator-baseline">
-    Build confidence in host readiness, support posture, and incident evidence collection.
-  </Card>
-  <Card title="Trace a room session tutorial" icon="timeline" href="/tutorials/trace-a-room-session">
-    Capture protocol trace snippets and replay windows for one collaborative workflow.
-  </Card>
-  <Card title="Incident debug sprint tutorial" icon="siren" href="/tutorials/incident-debug-sprint">
-    Practice a focused incident triage workflow with protocol + replay evidence.
-  </Card>
-</Columns>
+{/* ── SUGGESTED FIRST HOUR ──────────────────────────────────── */}
 
-## Suggested first hour
+<div class="nm-section-label" style={{ marginTop: "3rem" }}>Suggested first hour</div>
 
-1. Run `quickstart`.
-2. Follow `onboarding/first-hour`.
-3. Inspect runtime behavior in `developer-experience/apps` + `tutorials/trace-a-room-session`.
-4. Read `architecture/mental-model` and `architecture/crdt-model`.
-5. Configure `operators/server-setup` and `operators/persistence`.
-
-## Next for operators
-
-After your first successful room:
-
-- Lock down deployment posture in `operators/security-and-auth`
-- Add incident playbooks from `operators/troubleshooting`
-- Review upgrade safety in `operators/upgrades-and-migrations`
-- Review command contracts in `api-reference/websocket-commands`
+<Steps>
+  <Step title="Run the quickstart">
+    Start a local server and validate your first room end-to-end.
+    [→ Quickstart](/quickstart)
+  </Step>
+  <Step title="Follow the first-hour onboarding path">
+    Validate SDK + WASM flows, inspect protocol behavior, check presence and replay evidence.
+    [→ First hour path](/onboarding/first-hour)
+  </Step>
+  <Step title="Explore the interactive apps">
+    Use the collab-text and protocol-inspector playgrounds to observe runtime behavior live.
+    [→ Developer experience apps](/developer-experience/apps)
+  </Step>
+  <Step title="Read the architecture fundamentals">
+    Mental model + CRDT model are the highest-leverage reads before writing integration code.
+    [→ Mental model](/architecture/mental-model) · [→ CRDT model](/architecture/crdt-model)
+  </Step>
+  <Step title="Configure your production baseline">
+    Server setup, persistence strategy, security posture.
+    [→ Server setup](/operators/server-setup) · [→ Persistence](/operators/persistence)
+  </Step>
+</Steps>

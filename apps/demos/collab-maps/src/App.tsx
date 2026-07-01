@@ -9,6 +9,25 @@ const config = client.getConfig();
 const BOARD_WIDTH = 640;
 const BOARD_HEIGHT = 360;
 
+const AUTHOR_COLORS: Array<{ bg: string; border: string }> = [
+  { bg: "#dc2626", border: "#7f1d1d" },
+  { bg: "#2563eb", border: "#1e3a8a" },
+  { bg: "#16a34a", border: "#14532d" },
+  { bg: "#d97706", border: "#78350f" },
+  { bg: "#7c3aed", border: "#4c1d95" },
+  { bg: "#0891b2", border: "#164e63" },
+  { bg: "#be185d", border: "#831843" },
+  { bg: "#ea580c", border: "#7c2d12" },
+];
+
+function authorColor(author: string): { bg: string; border: string } {
+  let hash = 0;
+  for (let i = 0; i < author.length; i++) {
+    hash = (hash * 31 + author.charCodeAt(i)) >>> 0;
+  }
+  return AUTHOR_COLORS[hash % AUTHOR_COLORS.length];
+}
+
 export default function App() {
   const [roomIdInput, setRoomIdInput] = useState(config.defaultRoomId);
   const [activeRoomId, setActiveRoomId] = useState(config.defaultRoomId);
@@ -19,7 +38,7 @@ export default function App() {
   const [lastAction, setLastAction] = useState("No map action yet.");
   const [peerCount, setPeerCount] = useState(0);
   const [lastRuntimeMessage, setLastRuntimeMessage] = useState("none");
-  const [activeNotice, setActiveNotice] = useState("Connect to start shared map actions.");
+  const [activeNotice, setActiveNotice] = useState("Click the board to add pins. Connecting to server...");
 
   useEffect(() => {
     const unsubscribe = client.subscribe((next) => {
@@ -28,7 +47,12 @@ export default function App() {
     });
     void client.connect(config.defaultRoomId).then(() => {
       setPins(client.getPins());
-      setActiveNotice(`Connected to ${config.defaultRoomId}.`);
+      const isConnected = client.getDiagnostics().connectionState === "open";
+      setActiveNotice(
+        isConnected
+          ? `Connected to ${config.defaultRoomId}. Click board to add pins.`
+          : "Server unavailable — pins saved locally, will sync when connected."
+      );
     });
     return () => {
       unsubscribe();
@@ -64,8 +88,8 @@ export default function App() {
   }, []);
 
   const canConnect = useMemo(() => roomIdInput.trim().length > 0, [roomIdInput]);
-  const canMapActions = diagnostics.connectionState === "open";
-  const canClearPins = canMapActions && pins.length > 0;
+  const isOnline = diagnostics.connectionState === "open";
+  const canClearPins = pins.length > 0;
 
   function connectRoom() {
     const roomId = roomIdInput.trim();
@@ -75,166 +99,144 @@ export default function App() {
     setActiveRoomId(roomId);
     void client.connect(roomId).then(() => {
       setPins(client.getPins());
-      setLastAction(`Connected to ${roomId}.`);
-      setActiveNotice(`Connected to ${roomId}. Click board to add pins.`);
+      const isConnected = client.getDiagnostics().connectionState === "open";
+      if (isConnected) {
+        setLastAction(`Connected to ${roomId}.`);
+        setActiveNotice(`Connected to ${roomId}. Click board to add pins.`);
+      } else {
+        setLastAction(`Could not reach server for ${roomId} — working offline.`);
+        setActiveNotice("Server unavailable — pins saved locally, will sync when connected.");
+      }
     });
   }
 
   function addPinFromClick(event: React.MouseEvent<HTMLDivElement>) {
-    if (!canMapActions) {
-      setLastAction("Map actions are disabled until sdk room connection is open.");
-      return;
-    }
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.round(event.clientX - rect.left);
     const y = Math.round(event.clientY - rect.top);
     const label = pinLabel.trim() || "Marker";
     const author = authorName.trim() || "mapper";
-    const didAdd = client.addPin({ x, y, label, author });
-    if (!didAdd) {
-      setLastAction("Failed to add pin; ensure sdk room connection is open.");
-      return;
-    }
+    client.addPin({ x, y, label, author });
     setPins(client.getPins());
-    setLastAction(`Added "${label}" at (${x}, ${y}).`);
-    setActiveNotice(`Pin "${label}" synced to room.`);
+    if (isOnline) {
+      setLastAction(`Added "${label}" at (${x}, ${y}).`);
+      setActiveNotice(`Pin "${label}" synced to room.`);
+    } else {
+      setLastAction(`Added "${label}" at (${x}, ${y}) — saved locally.`);
+      setActiveNotice(`Pin "${label}" saved locally; will sync when connected.`);
+    }
   }
 
   function clearPins() {
-    const didClear = client.clearPins();
-    if (!didClear) {
-      setLastAction("Failed to clear pins; ensure sdk room connection is open.");
-      return;
-    }
+    client.clearPins();
     setPins(client.getPins());
-    setLastAction("Cleared all pins.");
-    setActiveNotice("All shared pins cleared.");
+    if (isOnline) {
+      setLastAction("Cleared all pins.");
+      setActiveNotice("All shared pins cleared.");
+    } else {
+      setLastAction("Cleared all local pins.");
+      setActiveNotice("Local pins cleared.");
+    }
   }
 
   return (
-    <main style={{ margin: "0 auto", maxWidth: 1120, padding: "16px 20px", fontFamily: "Arial, sans-serif" }}>
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ marginBottom: 6 }}>Collab maps</h1>
-        <p style={{ marginTop: 0 }}>
-          Phase B flagship demo: shared map pins backed by sdk/wasm room state.
+    <main className="nm-app">
+      <header className="nm-page-header">
+        <h1 className="nm-page-title">Collab maps</h1>
+        <p className="nm-page-desc">
+          Shared map pins backed by sdk/wasm room state — place pins and watch them converge across peers.
         </p>
       </header>
 
-      <section style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-        <label htmlFor="roomId">Room ID</label>
+      <div className="nm-content">
+      <section className="nm-controls">
+        <label className="nm-label" htmlFor="roomId">Room</label>
         <input
           id="roomId"
+          className="nm-input nm-input-lg"
           value={roomIdInput}
           onChange={(event) => setRoomIdInput(event.target.value)}
           placeholder="Enter room id"
-          style={{ minWidth: 240, padding: 6 }}
         />
-        <button type="button" onClick={connectRoom} disabled={!canConnect}>
+        <button type="button" className="nm-btn nm-btn-primary" onClick={connectRoom} disabled={!canConnect}>
           Connect
         </button>
-        <button type="button" onClick={() => client.disconnect()}>
+        <button type="button" className="nm-btn" onClick={() => client.disconnect()}>
           Disconnect
         </button>
-        <label htmlFor="authorName">Author</label>
+        <label className="nm-label" htmlFor="authorName">Author</label>
         <input
           id="authorName"
+          className="nm-input nm-input-sm"
           value={authorName}
           onChange={(event) => setAuthorName(event.target.value)}
           placeholder="mapper name"
-          style={{ minWidth: 140, padding: 6 }}
         />
-        <label htmlFor="pinLabel">Pin label</label>
+        <label className="nm-label" htmlFor="pinLabel">Pin label</label>
         <input
           id="pinLabel"
+          className="nm-input nm-input-md"
           value={pinLabel}
           onChange={(event) => setPinLabel(event.target.value)}
           placeholder="pin label"
-          style={{ minWidth: 160, padding: 6 }}
         />
-        <button type="button" onClick={clearPins} disabled={!canClearPins}>
+        <button type="button" className="nm-btn nm-btn-danger" onClick={clearPins} disabled={!canClearPins}>
           Clear pins
         </button>
       </section>
 
-      <section style={{ marginBottom: 16 }}>
-        <strong>Active room:</strong> <code>{activeRoomId}</code>{" "}
-        <span style={{ marginLeft: 8 }}>
-          (<code>{config.wsBaseUrl}</code>)
-        </span>
-        <span style={{ marginLeft: 8 }}>
-          pins: <code>{pins.length}</code>
-        </span>
-        <span style={{ marginLeft: 8 }}>
-          peers: <code>{peerCount}</code>
-        </span>
-        <span style={{ marginLeft: 8 }}>
-          last runtime: <code>{lastRuntimeMessage}</code>
-        </span>
-      </section>
+      <div className="nm-meta-bar">
+        <span><strong>Room:</strong> <code>{activeRoomId}</code></span>
+        <span><code>{config.wsBaseUrl}</code></span>
+        <span>pins: <code>{pins.length}</code></span>
+        <span>peers: <code>{peerCount}</code></span>
+        <span>last msg: <code>{lastRuntimeMessage}</code></span>
+      </div>
 
-      <section style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
-        <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, padding: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Shared pin board</h2>
-          <p
-            style={{
-              marginTop: 0,
-              padding: "8px 10px",
-              borderRadius: 6,
-              background: canMapActions ? "#ecfdf5" : "#fff7ed",
-              color: canMapActions ? "#065f46" : "#9a3412"
-            }}
-          >
+      <section className="nm-layout-2col">
+        <article className="nm-card">
+          <h2 className="nm-card-title">Shared pin board</h2>
+          <p className={`nm-notice ${isOnline ? "nm-notice-online" : "nm-notice-offline"}`}>
             <strong>Status:</strong> {activeNotice}
           </p>
-          <p style={{ marginTop: 0 }}>
+          <p className="nm-card-desc">
             Click anywhere in the board to add a shared pin. Pin state is persisted in sdk sync key <code>maps/pins</code>.
           </p>
           <div
             role="presentation"
             onClick={addPinFromClick}
-            style={{
-              position: "relative",
-              width: BOARD_WIDTH,
-              height: BOARD_HEIGHT,
-              border: "1px solid #cbd5e1",
-              borderRadius: 8,
-              background: "linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
-              cursor: canMapActions ? "crosshair" : "not-allowed",
-              overflow: "hidden",
-              marginBottom: 10,
-              opacity: canMapActions ? 1 : 0.7
-            }}
+            className="nm-canvas-board nm-board-640x360"
           >
-            {pins.map((pin) => (
-              <div
-                key={pin.id}
-                title={`${pin.label} (${pin.author})`}
-                style={{
-                  position: "absolute",
-                  left: Math.max(0, Math.min(pin.x - 5, BOARD_WIDTH - 12)),
-                  top: Math.max(0, Math.min(pin.y - 5, BOARD_HEIGHT - 12)),
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  background: "#dc2626",
-                  border: "1px solid #7f1d1d"
-                }}
-              />
-            ))}
+            {pins.map((pin) => {
+              const color = authorColor(pin.author);
+              return (
+                <div
+                  key={pin.id}
+                  className="nm-pin-dot"
+                  title={`${pin.label} (${pin.author})`}
+                  style={{
+                    left: Math.max(0, Math.min(pin.x - 5, BOARD_WIDTH - 12)),
+                    top: Math.max(0, Math.min(pin.y - 5, BOARD_HEIGHT - 12)),
+                    background: color.bg,
+                    border: `1px solid ${color.border}`
+                  }}
+                />
+              );
+            })}
           </div>
-          {!canMapActions ? (
-            <p style={{ marginTop: 0, color: "#9a3412" }}>
-              Map actions are disabled until sdk room connection is open.
+          {!isOnline ? (
+            <p className="nm-p-warning">
+              Offline mode — pins are saved locally and will sync to the room when connected.
             </p>
           ) : null}
-          {canMapActions && pins.length === 0 ? (
-            <p style={{ marginTop: 0, color: "#334155" }}>No shared pins yet. Add the first one to confirm collaboration flow.</p>
+          {isOnline && pins.length === 0 ? (
+            <p className="nm-p-muted">No shared pins yet. Add the first one to confirm collaboration flow.</p>
           ) : null}
-          <p style={{ marginBottom: 6 }}>
+          <p className="nm-last-action">
             <strong>Last action:</strong> {lastAction}
           </p>
-          <h3 style={{ marginBottom: 6 }}>Recent pins</h3>
-          <ul style={{ maxHeight: 140, overflow: "auto", paddingLeft: 18, marginTop: 0 }}>
+          <p className="nm-section-label">Recent pins</p>
+          <ul className="nm-event-list nm-event-list-sm">
             {pins.slice(0, 8).map((pin) => (
               <li key={`list-${pin.id}`}>
                 <code>{pin.label}</code> by <code>{pin.author}</code> at ({pin.x}, {pin.y})
@@ -246,6 +248,7 @@ export default function App() {
 
         <DiagnosticsPanel diagnostics={diagnostics} title="Collab maps diagnostics" />
       </section>
+      </div>
     </main>
   );
 }

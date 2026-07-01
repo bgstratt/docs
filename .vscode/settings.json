@@ -1,0 +1,22 @@
+{
+    "nodalmerge.agentProfiles": [
+        {
+            "id": "orchestrator",
+            "label": "Orchestrator",
+            "domain": "orchestration",
+            "provider": "openai",
+            "model": "deepseek-v4-pro",
+            "baseUrl": "https://api.deepseek.com",
+            "apiKeyRef": "nodalmerge.apikey.orchestrator"
+        },
+        {
+            "id": "worker",
+            "label": "Worker",
+            "domain": "general",
+            "provider": "openai",
+            "model": "deepseek-v4-flash",
+            "baseUrl": "https://api.deepseek.com",
+            "apiKeyRef": "nodalmerge.apikey.worker"
+        }
+    ]
+}

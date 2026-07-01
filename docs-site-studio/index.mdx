@@ -1,0 +1,87 @@
+---
+title: "NodalMerge Studio"
+description: "Git for agent reasoning and execution — not Git for files. An agent-native collaborative workspace built on NodalMerge."
+---
+
+# NodalMerge Studio
+
+**Git for agent reasoning and execution — not Git for files.**
+
+NodalMerge Studio is an agent-native collaborative workspace platform built on
+[NodalMerge](https://docs.nodalmerge.com). It provides agent orchestration, task
+management, projection-based context, MCP integration, human review workflows, and a
+VS Code Control Tower — all backed by a persistent, branchable, replayable artifact
+graph.
+
+Every step an agent takes produces a durable artifact in a DAG. Every artifact can be
+inspected, branched, replayed, merged, and audited. The durable graph is the product;
+agents are features of it.
+
+{/* IMAGE: hero-goal-workspace.png — Control Tower, Goal Workspace tab, hero shot
+    showing the Decision Tree with an in-progress goal and completed branches
+    converging. Primary above-the-fold product screenshot. See IMAGE_LIST.md. */}
+
+## The artifact pipeline
+
+```
+Goal
+  ↓
+Plan               ← inspectable, reviewable, branchable
+  ↓
+Work Units         ← inspectable, has lineage, has scope
+  ↓
+Branch Changes     ← auditable, attributable, comparable
+  ↓
+Merge Proposal     ← reviewable, approvable, supersedable, replayable
+  ↓
+Approved State     ← committed, traceable back to the goal
+```
+
+1. **You define a goal.** A human describes what needs to be accomplished.
+2. **An orchestrator agent plans it.** The orchestrator breaks the goal into work units and tasks.
+3. **Worker agents execute tasks.** Each worker operates on its own branch, producing changes.
+4. **Merge proposals are generated.** Workers submit structured proposals with full lineage.
+5. **A proposal is reviewed and approved.** By default a human approves it — a goal can opt into agent or hybrid review instead. See [Trust & autonomy](/concepts/trust-and-autonomy).
+6. **State converges.** Approved changes land in the authoritative branch.
+
+## Why teams use Studio
+
+<CardGroup cols={2}>
+  <Card title="Durable artifact graph" icon="diagram-project">
+    Every plan, task, proposal, and decision is a persistent DAG node. Trace any
+    approved change back through its entire lineage to the original goal.
+  </Card>
+  <Card title="Human-governed by default" icon="user-check">
+    Agents propose; humans decide. The merge review workflow enforces human approval
+    before speculative work lands in the authoritative branch — unless a goal
+    explicitly opts out.
+  </Card>
+  <Card title="Branch and replay" icon="code-branch">
+    Branch from any artifact checkpoint to spawn alternate executions. Replay a
+    proposal under a different model to compare outcomes. Roll back to any Known
+    Good State.
+  </Card>
+  <Card title="MCP-native" icon="plug">
+    A frozen MCP v1 tool surface with 66 tools across 19 namespaces. Integrate any
+    MCP-compatible client with the Studio host.
+  </Card>
+</CardGroup>
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the Control Tower VS Code extension and run your first goal.
+  </Card>
+  <Card title="How Studio works" icon="brain" href="/concepts/overview">
+    The three-layer architecture and how Studio relates to the NodalMerge core engine.
+  </Card>
+</CardGroup>
+
+## Scope today
+
+Studio is v1. Deliberately out of scope for now: autonomous self-directed agents
+(agents cannot set their own goals), long-term memory databases or vector stores,
+cross-workspace reasoning, enterprise RBAC, and multi-tenant SaaS architecture. Agent-
+controlled merges are possible but only when a goal explicitly opts into agent or
+hybrid review — human approval remains the default.

@@ -3,13 +3,72 @@
   "theme": "sequoia",
   "name": "NodalMerge",
   "favicon": "/favicon.svg",
+
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#10B981",
+    "light":   "#34D399",
+    "dark":    "#059669"
   },
+
+  "background": {
+    "color": {
+      "light": "#FAFAFA",
+      "dark":  "#0B0F1C"
+    }
+  },
+
+  "font": {
+    "headings": {
+      "family": "Inter",
+      "weight": 700
+    },
+    "body": {
+      "family": "Inter"
+    }
+  },
+
+  "custom": {
+    "css": "/custom.css"
+  },
+
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark":  "/logo/dark.svg"
+  },
+
+  "navbar": {
+    "links": [
+      { "label": "GitHub", "href": "https://github.com/bgstratt/nodalmerge" },
+      { "label": "Quickstart", "href": "/quickstart" }
+    ]
+  },
+
+  "footer": {
+    "socials": {
+      "github": "https://github.com/bgstratt/nodalmerge"
+    }
+  },
+
+  "modeToggle": {
+    "default": "dark",
+    "isHidden": false
+  },
+
   "navigation": {
     "tabs": [
+      {
+        "tab": "Getting started",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "index",
+              "quickstart",
+              "why-nodalmerge"
+            ]
+          }
+        ]
+      },
       {
         "tab": "Architecture",
         "groups": [
@@ -24,6 +83,37 @@
               "architecture/authority-and-topology",
               "architecture/sync-protocol",
               "architecture/storage-and-blobs"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SDK",
+        "groups": [
+          {
+            "group": "Client APIs",
+            "pages": [
+              "sdk/overview",
+              "sdk/javascript",
+              "sdk/react",
+              "sdk/presence",
+              "sdk/subscriptions",
+              "sdk/undo-and-conflicts"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "API and commands",
+            "pages": [
+              "api-reference/introduction",
+              "api-reference/http-endpoints",
+              "api-reference/websocket-commands",
+              "api-reference/command-library",
+              "api-reference/compatibility-and-support"
             ]
           }
         ]
@@ -61,49 +151,6 @@
         ]
       },
       {
-        "tab": "Reference",
-        "groups": [
-          {
-            "group": "API and commands",
-            "pages": [
-              "api-reference/introduction",
-              "api-reference/http-endpoints",
-              "api-reference/websocket-commands",
-              "api-reference/command-library",
-              "api-reference/compatibility-and-support"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "SDK",
-        "groups": [
-          {
-            "group": "Client APIs",
-            "pages": [
-              "sdk/overview",
-              "sdk/javascript",
-              "sdk/react",
-              "sdk/presence",
-              "sdk/undo-and-conflicts",
-              "sdk/subscriptions"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Benchmarks",
-        "groups": [
-          {
-            "group": "Performance",
-            "pages": [
-              "benchmarks/performance-overview",
-              "benchmarks/runtime-attribution"
-            ]
-          }
-        ]
-      },
-      {
         "tab": "Guides",
         "groups": [
           {
@@ -113,6 +160,18 @@
               "guides/offline-first-patterns",
               "guides/replay-debugging",
               "guides/ai-workspace"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Tutorials",
+        "groups": [
+          {
+            "group": "Hands-on",
+            "pages": [
+              "tutorials/trace-a-room-session",
+              "tutorials/incident-debug-sprint"
             ]
           }
         ]
@@ -144,41 +203,16 @@
         ]
       },
       {
-        "tab": "Tutorials",
+        "tab": "Benchmarks",
         "groups": [
           {
-            "group": "Hands-on",
+            "group": "Performance",
             "pages": [
-              "tutorials/trace-a-room-session",
-              "tutorials/incident-debug-sprint"
+              "benchmarks/performance-overview",
+              "benchmarks/runtime-attribution"
             ]
           }
         ]
-      },
-      {
-        "tab": "Getting started",
-        "groups": [
-          {
-            "group": "Introduction",
-            "pages": [
-              "index",
-              "quickstart",
-              "why-nodalmerge"
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "GitHub",
-        "href": "https://github.com/your-org/nodalmerge"
       }
     ]
   }

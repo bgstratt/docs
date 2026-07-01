@@ -1,0 +1,32 @@
+---
+import Logo from "./Logo.astro";
+import { footerNav } from "../data/nav";
+
+const year = new Date().getFullYear();
+---
+<footer class="nm-footer">
+  <div class="nm-footer-inner">
+    <div class="nm-footer-brand">
+      <Logo />
+      <p class="nm-footer-tagline">
+        A local-first, deterministic replication engine for collaborative systems —
+        and the agent-native workspace platform built on it.
+      </p>
+    </div>
+    <div class="nm-footer-cols">
+      {Object.entries(footerNav).map(([title, links]) => (
+        <div class="nm-footer-col">
+          <span class="nm-footer-col-title">{title}</span>
+          {links.map((link) => (
+            <a href={link.href} target={link.external ? "_blank" : undefined} rel={link.external ? "noopener noreferrer" : undefined}>
+              {link.label}
+            </a>
+          ))}
+        </div>
+      ))}
+    </div>
+  </div>
+  <div class="nm-footer-bottom">
+    © {year} NodalMerge. All rights reserved.
+  </div>
+</footer>

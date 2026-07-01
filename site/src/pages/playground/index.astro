@@ -1,0 +1,25 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import AppCard from "../../components/AppCard.astro";
+import { playground } from "../../data/apps";
+---
+<BaseLayout
+  title="Playground"
+  description="Exploratory, learning-oriented tools for inspecting the NodalMerge SDK, protocol, and replay engine live."
+>
+  <div class="nm-shell">
+    <section class="nm-section" style="padding-bottom: 0;">
+      <div class="nm-section-label">Developer experience</div>
+      <h1 class="nm-section-heading">Playground</h1>
+      <p class="nm-section-desc">
+        Exploratory tools for poking at the protocol, replay engine, and text CRDT directly —
+        built for understanding runtime behavior, not shipping a product.
+      </p>
+    </section>
+    <section class="nm-section" style="padding-top: var(--nm-sp-8);">
+      <div class="nm-card-grid">
+        {playground.map((app) => <AppCard app={app} />)}
+      </div>
+    </section>
+  </div>
+</BaseLayout>

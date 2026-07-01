@@ -1,0 +1,23 @@
+---
+import Logo from "./Logo.astro";
+import ThemeToggle from "./ThemeToggle.astro";
+import { primaryNav, GITHUB_URL } from "../data/nav";
+---
+<header class="nm-nav">
+  <div class="nm-nav-inner">
+    <a href="/" class="nm-nav-brand">
+      <Logo />
+    </a>
+    <nav class="nm-nav-links">
+      {primaryNav.map((item) => (
+        <a href={item.href} target={item.external ? "_blank" : undefined} rel={item.external ? "noopener noreferrer" : undefined}>
+          {item.label}{item.external ? " ↗" : ""}
+        </a>
+      ))}
+    </nav>
+    <div class="nm-nav-actions">
+      <a class="nm-btn nm-btn-ghost" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">GitHub</a>
+      <ThemeToggle />
+    </div>
+  </div>
+</header>

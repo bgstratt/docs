@@ -38,7 +38,7 @@ This is also how goal creation stops being single-source: a persistent peer
 watching an external signal (logs, alerts, metrics) can inject goals into the same
 room a human is working in, and they show up identically — same review gate, same
 domain observers, same merge workflow. See
-[Concepts → Multi-peer goal sourcing](/concepts/architecture#multi-peer-goal-sourcing).
+[Concepts → Multi-peer goal sourcing](/studio/concepts/architecture#multi-peer-goal-sourcing).
 
 Reconnection uses exponential backoff starting at 1s, capped at 30s. On a
 `participant.stop` message addressed to this peer, it shuts down cleanly.
@@ -104,7 +104,7 @@ Under `"Workspace"`:
 | `Workspace:AllowAutoRequeue` | `false` | `true` — automatically retry a failed work unit instead of landing it in the dead-letter queue |
 | `Workspace:EnabledDomainAgents` | `[]` | Add observer names if you want reactive constraint checks in the peer |
 
-See [Guides → Repository virtualization](/guides/repository-virtualization) for the
+See [Guides → Repository virtualization](/studio/guides/repository-virtualization) for the
 full `Workspace` config reference.
 
 ## Injecting goals
@@ -112,7 +112,7 @@ full `Workspace` config reference.
 A headless peer has no MCP-over-HTTP endpoint of its own. Goal injection uses the
 REST API of the Studio host (either the embedded host the extension talks to, or the
 peer's own internal services if embedded as a library). See
-[Guides → Extending goals](/guides/extending-goals) for the full REST surface and
+[Guides → Extending goals](/studio/guides/extending-goals) for the full REST surface and
 external trigger patterns.
 
 ## What the peer cannot do

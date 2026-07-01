@@ -6,8 +6,8 @@ description: Every user-facing action in the NodalMerge Studio VS Code extension
 # Control Tower UI reference
 
 Every user-facing action in the NodalMerge Studio VS Code extension, organized by
-panel — the practical "what can I click" companion to [How Studio works](/concepts/overview)
-and to [Reference → API surface](/reference/api-reference)'s backend catalog.
+panel — the practical "what can I click" companion to [How Studio works](/studio/concepts/overview)
+and to [Reference → API surface](/studio/reference/api-reference)'s backend catalog.
 
 ## Command palette
 
@@ -92,7 +92,7 @@ Click any artifact or event to load it into the Decision Lens.
 - **📋 Copy as Markdown** — copies the above to clipboard
 - Constraints proposed by domain observers appear in the Artifacts chain here,
   identifiable by their title prefix (e.g., `[SecurityAgent] Missing rate-limit on
-  /api/auth`). See [Guides → Domain observers](/guides/domain-observers).
+  /api/auth`). See [Guides → Domain observers](/studio/guides/domain-observers).
 
 {/* IMAGE: ui-ref-decision-lens.png — Decision Lens right column, Context tab open,
     showing goal/plan/constraints/evidence for a selected node. See IMAGE_LIST.md. */}
@@ -121,7 +121,7 @@ through the Goal Workspace's Decision Tree.
   `Interrupted` agents after a host restart) · **Stop**. Agents spawned by a
   connected headless peer appear in this list alongside interactively spawned
   agents and can be paused, resumed, or stopped from here — see
-  [Guides → Headless peer](/guides/headless-peer).
+  [Guides → Headless peer](/studio/guides/headless-peer).
 - Pending Decisions: **Review Decision →**
 - Blocked Explorations (dead-letter queue): **Retry** (when attempts remain)
 
@@ -162,7 +162,7 @@ Pipeline Profile**.
 Domain observer enable/disable is config-file only — there is no toggle in this
 panel. Set `Workspace:EnabledDomainAgents` in `appsettings.json` and restart the
 host, or override per-goal at agent spawn time. See
-[Guides → Domain observers](/guides/domain-observers).
+[Guides → Domain observers](/studio/guides/domain-observers).
 </Note>
 
 ## Decision Convergence

@@ -213,6 +213,47 @@
             ]
           }
         ]
+      },
+      {
+        "tab": "Studio",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "studio/overview",
+              "studio/quickstart"
+            ]
+          },
+          {
+            "group": "How Studio works",
+            "pages": [
+              "studio/concepts/overview",
+              "studio/concepts/architecture",
+              "studio/concepts/trust-and-autonomy"
+            ]
+          },
+          {
+            "group": "Configuration and extension",
+            "pages": [
+              "studio/guides/domain-observers",
+              "studio/guides/extending-goals",
+              "studio/guides/headless-peer",
+              "studio/guides/repository-virtualization"
+            ]
+          },
+          {
+            "group": "Control Tower UI",
+            "pages": [
+              "studio/reference/ui-reference"
+            ]
+          },
+          {
+            "group": "API surface",
+            "pages": [
+              "studio/reference/api-reference"
+            ]
+          }
+        ]
       }
     ]
   }

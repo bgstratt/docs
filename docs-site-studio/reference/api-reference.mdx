@@ -1,0 +1,220 @@
+---
+title: API surface — MCP tools & REST
+description: The MCP tool catalog and REST endpoint surface exposed by the Studio host.
+---
+
+# API surface — MCP tools, REST endpoints, and coverage
+
+The current catalog of MCP tools and REST endpoints exposed by the Studio Host, plus
+which surface (the VS Code extension, autonomous agents, or neither) actually reaches
+each one.
+
+Ground truth: **66 `nm_v1_*` MCP tools**, **42 of them** dispatched in-process to
+autonomous agents, **13 `nms_v1_*` external-caller tools**, and **112 REST routes**.
+
+<Note>
+Frozen design principles, request/response schemas, and the error envelope format
+live in the internal MCP v1 contract — this page is the practical, currently-verified
+catalog and supersedes tool counts anywhere they've drifted.
+</Note>
+
+## External caller surface (`nms_v1_*`)
+
+These 13 tools are the recommended entry point for external MCP clients — Claude
+Code, Cursor, scripts, CI agents. They cover the full human-in-the-loop lifecycle at
+a goal-centric level, without requiring knowledge of work units, branches, or the
+internal DAG.
+
+<Note>
+**Naming:** `nms_v1_*` (NodalMerge Studio v1) vs. `nm_v1_*` (NodalMerge v1). The
+extra `s` marks the Studio-level abstraction layer. Both namespaces share the same
+host and the same error envelope format.
+</Note>
+
+### Goal management
+| Tool | Purpose |
+|---|---|
+| `nms_v1_goal_run` | Start a new goal — creates a work unit, execution session, and enqueues the orchestrator in one call. Returns `goalId` and `sessionId`. |
+| `nms_v1_goal_list` | List all goals with current status. |
+| `nms_v1_goal_status` | Detailed status for one goal, including pending clarifications and session state. |
+| `nms_v1_goal_cancel` | Cancel a goal and its entire subtree. Completed or merged work units are left untouched. |
+| `nms_v1_goal_pause` | Pause a goal and all its active agents. |
+| `nms_v1_goal_resume` | Resume a paused goal. Optionally inject a steering message. |
+
+### Clarifications
+| Tool | Purpose |
+|---|---|
+| `nms_v1_clarification_respond` | Answer a pending agent clarification request. |
+
+### Results
+| Tool | Purpose |
+|---|---|
+| `nms_v1_results_get` | List merge proposals for a goal with status, summary, confidence, and files touched. |
+| `nms_v1_results_apply` | Apply an approved proposal (`ReadyForReview` or `Approved`). |
+
+### Repository registration
+| Tool | Purpose |
+|---|---|
+| `nms_v1_repo_register` | Register a local git repository path. Returns a `repositoryId`. Idempotent. |
+| `nms_v1_repo_list` | List all registered repositories and their IDs. |
+
+### Workspace / feedback
+| Tool | Purpose |
+|---|---|
+| `nms_v1_workspace_status` | Goal counts by status, active agent count, pending clarification count. |
+| `nms_v1_feedback_record` | Record a human feedback note as a durable Constraint artifact. |
+
+### Typical external-caller flow
+
+```
+1. nms_v1_repo_register        → repositoryId
+2. nms_v1_goal_run             → goalId, sessionId
+3. poll nms_v1_goal_status     → check status / pendingClarifications
+4. nms_v1_clarification_respond (if needed)
+5. nms_v1_results_get          → proposalId when status = ReadyForReview
+6. nms_v1_results_apply        → done
+```
+
+REST equivalents exist for all these operations (`/studio/goals`,
+`/studio/merges`, `/studio/repositories`, `/studio/clarifications`), but the
+`nms_v1_*` MCP surface is the preferred path for MCP-native clients.
+
+## How the transports relate
+
+```
+VS Code Extension  ──HTTP──▶  REST endpoints  ──┐
+                                                  ├──▶  Shared command services  ──▶  NodalMerge DAG
+External MCP client ──MCP───▶  MCP tools  ───────┘
+Orchestrator/Worker loops ──in-process call──▶  same MCP tool handlers
+```
+
+A capability that has both a REST endpoint and an MCP tool calls the *same* command
+service either way — they can't drift in behavior. Agents never make HTTP calls to
+their own host's REST API; they call the tool dispatcher in-process. A REST endpoint
+with no frontend caller can still be heavily used — just by agents, via the MCP tool
+it shares a command service with.
+
+## MCP tool catalog
+
+✅ = dispatched in-process to orchestrator/worker agents · — = MCP-client, REST, or
+extension only.
+
+### Projection
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_projection_get` | ✅ | Get a projection by type and compression level |
+| `nm_v1_projection_list` | — | List available projection types and levels |
+
+### Work unit
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_workunit_create` | ✅ | Create a work unit (goal + branch, optional parent/scope/deps/reviewPolicy) |
+| `nm_v1_workunit_get` | ✅ | Get a work unit by id |
+| `nm_v1_workunit_update` | ✅ | Update status or assigned agent |
+| `nm_v1_workunit_list` | ✅ | List work units, optionally filtered by branch |
+
+### Task
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_task_create` | ✅ | Create a task (intent only) under a work unit |
+| `nm_v1_task_update` | ✅ | Update task title/description/status/priority |
+| `nm_v1_task_list` | ✅ | List tasks, optionally by work unit |
+| `nm_v1_task_assign` | ✅ | Assign a task to an agent |
+
+### Branch
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_branch_create` | ✅ | Create a branch |
+| `nm_v1_branch_checkout` | — | Check out a branch |
+| `nm_v1_branch_list` | ✅ | List branches |
+| `nm_v1_branch_status` | ✅ | Branch status for agents |
+
+### Merge
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_merge_propose` | ✅ | Submit a proposal — diff, lineage, execution event, status transition |
+| `nm_v1_merge_validate` | ✅ | Validate a draft proposal, moves it to ReadyForReview |
+| `nm_v1_merge_review` | ✅ | Approve/reject (supports `automated=true` for the reviewer-agent path) |
+| `nm_v1_merge_apply` | ✅ | Apply an approved proposal — runs review-policy/promotion-branch gate logic |
+
+### Replay
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_replay_range` | — | Inspect a history range for a branch |
+| `nm_v1_replay_rollback` | — | Roll back a branch to a known-good state |
+| `nm_v1_replay_inspect` | — | Human-friendly replay summary |
+
+### State / Known Good
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_state_markKnownGood` | — | Mark current branch state as known-good |
+| `nm_v1_state_findKnownGood` | — | Find known-good states for a branch |
+| `nm_v1_state_checkoutKnownGood` | — | Restore a branch to a known-good state |
+
+### Snapshot
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_snapshot_get` | ✅ | Agent execution snapshot (goal, task, failure count, next action) |
+| `nm_v1_snapshot_compare` | — | Compare two agents' snapshots |
+
+### Agent
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_agent_spawn` | ✅ | Spawn an agent for a work unit |
+| `nm_v1_agent_pause` | — | Pause an agent |
+| `nm_v1_agent_resume` | — | Resume a paused agent |
+| `nm_v1_agent_status` | ✅ | Get agent status |
+| `nm_v1_agent_stop` | ✅ | Stop an agent |
+
+<Note>
+Agents cannot pause/resume themselves or each other — those are human/extension-only
+actions today.
+</Note>
+
+### Workspace — file I/O, execution, semantic navigation, and profile
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_workspace_read` / `_write` / `_delete` / `_list` / `_diff` / `_exists` | ✅ all | Branch-scoped file operations (write/delete respect `fileScope`) |
+| `nm_v1_workspace_summary` | ✅ | Control-tower summary (active work units, agents, merges, failures) |
+| `nm_v1_workspace_symbol_definition` / `_symbol_references` / `_symbol_implementation` | ✅ all | Compiler-backed symbol navigation |
+| `nm_v1_workspace_build` / `_test` / `_exec` / `_run` / `_run_stop` | ✅ all | Run build / test / build+test+lint / app run / run-stop on a branch |
+| `nm_v1_workspace_exec_status` | ✅ | Latest persisted execution result for a branch |
+| `nm_v1_workspace_path` | ✅ | Branch working-directory filesystem path |
+| `nm_v1_workspace_profile_get` / `_profile_rescan` | ✅ both | Detected project roots/stacks and resolved build/test/run command profile |
+
+Routing rule: when semantic tools are allowed in a profile, they are the authoritative
+path for symbol definition/reference/implementation questions. Use
+`nm_v1_workspace_search` for text/content questions, not symbol relationship
+resolution.
+
+### Scheduler
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_scheduler_enqueue` | ✅ | Queue a work unit for a profile (parallel execution, used by Experiments) |
+| `nm_v1_scheduler_pending` | ✅ | List pending scheduler queue items |
+| `nm_v1_clarification_request` | ✅ | Request human clarification and optionally pause execution |
+
+### Intent
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_intent_record` | ✅ | Record a change intent for conflict detection |
+
+### Artifact
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_artifact_record` | ✅ | Record a knowledge note (Research/Decision/Constraint) |
+| `nm_v1_artifact_query` | ✅ | Search artifacts by type/keyword across a work unit's ancestry |
+| `nm_v1_artifact_list` | ✅ | Full artifact chain for a work unit, ancestors included by default |
+
+### Goal, Decision, Evidence, Trajectory, Hypothesis (Phase 6.7+)
+| Namespace | Tools | Purpose |
+|---|---|---|
+| `nm_v1_goal_*` | `create`, `list` | Decision-centric goal nodes |
+| `nm_v1_decision_*` | `record`, `list` | Record Accepted/Rejected/Deferred/Superseded against a proposal |
+| `nm_v1_evidence_*` | `attach`, `list` | Attach/list build/test evidence for a work unit |
+| `nm_v1_trajectory_*` | `create`, `replay` | Record lifecycle phases; replay in Linear / BranchExplorer / Counterfactual mode |
+| `nm_v1_hypothesis_*` | `fork`, `list` | Fork a work unit/proposal with a typed fork (Code/Reasoning/Model/Research/Architecture/Library/Product) |
+
+None of these are dispatched to autonomous agents yet. Phase 7 capabilities
+(Experiments, Steering, Counterfactuals, Review Policy, Promotion Branches) are
+REST-only — see [Concepts → Trust & autonomy](/concepts/trust-and-autonomy).

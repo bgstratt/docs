@@ -7,14 +7,13 @@
   "colors": {
     "primary": "#10B981",
     "light":   "#34D399",
-    "dark":    "#059669",
-    "anchors": {
-      "from": "#10B981",
-      "to":   "#6366F1"
-    },
-    "background": {
-      "dark":  "#0B0F1C",
-      "light": "#FAFAFA"
+    "dark":    "#059669"
+  },
+
+  "background": {
+    "color": {
+      "light": "#FAFAFA",
+      "dark":  "#0B0F1C"
     }
   },
 
@@ -39,14 +38,14 @@
 
   "navbar": {
     "links": [
-      { "label": "GitHub", "href": "https://github.com/your-org/nodalmerge" },
+      { "label": "GitHub", "href": "https://github.com/bgstratt/nodalmerge" },
       { "label": "Quickstart", "href": "/quickstart" }
     ]
   },
 
   "footer": {
     "socials": {
-      "github": "https://github.com/your-org/nodalmerge"
+      "github": "https://github.com/bgstratt/nodalmerge"
     }
   },
 

@@ -1,0 +1,95 @@
+---
+title: Architecture
+description: The three-layer design behind NodalMerge Studio and how it relates to the NodalMerge core engine.
+---
+
+# Architecture
+
+## Three-layer design
+
+```
+Layer 3: UX + Peers               — VS Code Extension (Control Tower)
+         (TypeScript / .NET)        Web Dashboard
+                                    Headless Peer (no HTTP, optional room presence)
+              ↕ REST / in-process call / WebSocket room
+Layer 2: Studio Services (.NET)   — AgentRuntime, Orchestrator, Projections,
+                                    MCP Server, Tasks, Merge, Storage
+              ↕ NodalMerge APIs
+Layer 1: NodalMerge Core (Rust)   — DAG storage, CRDT convergence, replication,
+                                    replay, branching, promotion, sync
+```
+
+The VS Code extension and headless peers both sit at Layer 3 — they use Studio
+services (Layer 2), not [NodalMerge](https://docs.nodalmerge.com) APIs directly. The
+extension exposes an HTTP server and MCP-over-HTTP; a headless peer does not. See
+[Guides → Headless peer](/guides/headless-peer).
+
+## Key architectural principles
+
+1. **NodalMerge is the source of truth.** All persistent state resides in NodalMerge nodes.
+2. **Agents reason over projections.** Agents never consume raw DAG history.
+3. **Work unit-centric execution.** Every agent session is scoped to exactly one work unit.
+4. **Human-governed promotion by default.** Agents propose; a human approves merges unless a goal explicitly opts into agent-approved review, and even then a promotion branch can keep automated applies off `main`.
+5. **Immutable history.** DAG nodes are append-only; updates create new nodes.
+
+## Product surfaces today
+
+| Surface | Status | What it is |
+|---|---|---|
+| VS Code extension ("Control Tower") | Functional, primary UI | Tabbed webview: Goal Workspace, Activity Center, Model & Agent Studio, Decision Convergence, Pathways |
+| Headless peer | Functional | Runs the full agent runtime with no HTTP server — the integration point for CI/CD and programmatic goal injection |
+| Web dashboard | Placeholder | Not yet built |
+
+## Multi-peer goal sourcing
+
+Goal creation isn't limited to a human typing into the Goal Workspace. Anything that
+can reach the Studio host's REST or MCP surface — another headless peer, an external
+system, or a different human's Studio instance connected to the same room — can
+create goals and record constraint artifacts alongside interactively created ones.
+See [Guides → Extending goals](/guides/extending-goals) for the REST surface and
+[Guides → Headless peer](/guides/headless-peer) for how a connected peer joins a
+room and appears in the extension in real time.
+
+This matters architecturally because **every goal, regardless of source, funnels
+through the same governance surface**: review policy (`Human Required` / `Agent
+Approval` / `Hybrid`), optional build/test execution gates, and domain observers
+that record constraint artifacts reactively as work progresses. A goal created by a
+webhook handler or a persistent monitoring peer is not treated differently from one
+typed by a person — it still proposes, it doesn't unilaterally merge.
+
+In practice this means a persistent headless peer (`PeerType: "persistent-agent"`)
+watching logs, metrics, or alerts can turn a real-time operational signal directly
+into a goal or a recorded constraint, without a human having to notice the signal
+first and manually kick off the work. Combined with `AllowAgentGitCommits` /
+`AllowAgentGitPush` and an external CI/CD pipeline, this is the shape of a system
+that reacts to its own operational state — see
+[Guides → Extending goals](/guides/extending-goals#pattern-2--monitoring-alert-handler-persistent-peer)
+for the concrete pattern. Whether that loop closes all the way to production is a
+function of what you wire up outside Studio (your CI/CD pipeline, your review
+policy choices) — Studio's job is to make sure every step in that loop, however it's
+triggered, stays inspectable, branchable, and gated the same way manual work is.
+
+## MCP integration
+
+NodalMerge Studio exposes a frozen MCP v1 tool surface with 66 tools across 19
+namespaces (`nm_v1_*`), 42 of which are dispatched in-process to autonomous agents.
+A separate 13-tool `nms_v1_*` surface is the recommended entry point for external MCP
+clients (Claude Code, Cursor, CI scripts) — see
+[Reference → API surface](/reference/api-reference).
+
+## Repository layout
+
+| Path | Purpose |
+|---|---|
+| `src/NodalMerge.Studio.Contracts` | Frozen domain, projection, and MCP DTOs |
+| `src/NodalMerge.Studio.Core` | Service interfaces |
+| `src/NodalMerge.Studio.Storage` | NodalMerge node persistence adapters |
+| `src/NodalMerge.Studio.Projections` | Projection Manager |
+| `src/NodalMerge.Studio.Tasks` | Task services |
+| `src/NodalMerge.Studio.Merge` | Merge proposal and review workflow |
+| `src/NodalMerge.Studio.AgentRuntime` | Agent execution loop |
+| `src/NodalMerge.Studio.Orchestrator` | Work unit and orchestration |
+| `src/NodalMerge.Studio.McpServer` | MCP v1 tool surface |
+| `src/NodalMerge.Studio.Host` | ASP.NET composition root; peer mode |
+| `clients/vscode-extension` | VS Code extension (Control Tower) |
+| `clients/web-dashboard` | Web dashboard (placeholder) |

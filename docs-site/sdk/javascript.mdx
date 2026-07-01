@@ -39,12 +39,33 @@ await sdk.room.connect();
 ```ts
 sdk.sync.set("profile/name", "alice");
 sdk.sync.set("profile/role", "engineer");
-sdk.sync.push();
+const sent = sdk.sync.push();
 
 const name = sdk.sync.get("profile/name");
+const canonicalName = sdk.sync.getCanonical("profile/name");
 ```
 
-Call `sdk.sync.push()` after local mutations to flush updates.
+Call `sdk.sync.push()` after local mutations to flush updates. `push()` returns a
+`boolean` — `true` if a pack was actually sent, `false` if there was nothing pending.
+It sends only the delta accumulated since the last successful push (tracked
+internally), not a full state export.
+
+`sdk.sync.get()` returns the speculative/intent-lane view (including your own
+unconfirmed writes); `sdk.sync.getCanonical()` returns the authoritative
+canonical-lane view — the same intent-vs-canonical distinction described for text
+reads below.
+
+**Push acknowledgement and retry.** The server responds to each `push()` with a
+`pack-ack` message reporting accepted/rejected counts. The SDK handles this
+automatically: if any nodes are rejected, it reverts the corresponding local
+optimistic state and resends. You don't need to handle `pack-ack` directly unless
+you're building custom sync-status UI — see `protocol/websocket-messages` and
+`api-reference/websocket-commands#pack-ack-server-client`.
+
+**Pack size limit.** A single pushed pack is capped at 60 KiB of base64 (61,440
+characters). Pushes exceeding this are rejected client-side — the SDK reverts the
+pending marks and emits an `"error"` event rather than sending an oversized frame.
+Batch large sets of writes into multiple smaller `push()` calls if you hit this.
 
 ## Text operations
 

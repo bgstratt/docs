@@ -93,6 +93,64 @@ NodalMerge supports open and locked room patterns.
 
 For hosted auth integration, run a token-minting bridge service that issues room-capability tokens based on your identity provider.
 
+## Embedding the host as a library
+
+The standalone `nodalmerge-server` binary above is one deployment shape. If you're
+embedding NodalMerge inside your own web application instead of running it as a
+separate process, use one of the embeddable host libraries:
+
+- **.NET** — the `NodalMerge.DotNetHost` NuGet package exposes
+  `MapNodalMergeEndpoints()`, an ASP.NET Core extension method you call on your own
+  `WebApplication`. You own `Program.cs` and the full request pipeline.
+- **Rust** — the `nodalmerge-host-axum` crate exposes `build_router(rooms)`, which
+  returns an `axum::Router` you compose into your own application, alongside
+  `build_router_with_permissive_cors(rooms)` as an explicit dev-only convenience.
+
+<Warning>
+Both embeddable hosts hand you the request pipeline directly rather than owning it
+themselves — which means **CORS is your responsibility as the consumer**, not
+something the package configures for you. This is different from the standalone
+`nodalmerge-server` binary above, which has a permissive CORS layer baked in since
+it's a deployable service with no external "consumer" to hand that decision to.
+</Warning>
+
+### Configuring CORS when embedding
+
+**.NET (`NodalMerge.DotNetHost`):**
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+        policy.WithOrigins("https://your-app.example.com")
+              .AllowAnyHeader()
+              .AllowAnyMethod());
+});
+
+var app = builder.Build();
+app.UseCors();
+app.MapNodalMergeEndpoints();
+app.Run();
+```
+
+**Rust (`nodalmerge-host-axum`):**
+
+```rust
+use nodalmerge_host_axum::build_router;
+use tower_http::cors::{CorsLayer, AllowOrigin, Any};
+
+let app = build_router(rooms).layer(
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::exact("https://your-app.example.com".parse().unwrap()))
+        .allow_methods(Any)
+        .allow_headers(Any),
+);
+```
+
+Do not reach for `build_router_with_permissive_cors()` outside local development —
+it allows any origin and should never front internet-exposed production traffic.
+
 ## Health and verification checklist
 
 After startup, verify:
@@ -128,3 +186,4 @@ Use this as a starting template:
 - [operators/gc-and-lifecycle](/operators/gc-and-lifecycle)
 - [operators/metrics-and-observability](/operators/metrics-and-observability)
 - [operators/deployment-topologies](/operators/deployment-topologies)
+- [operators/security-and-auth](/operators/security-and-auth)

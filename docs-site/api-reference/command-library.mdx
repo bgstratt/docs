@@ -70,6 +70,40 @@ Optional policy timeline inputs:
 
 Timeline flags are mutually exclusive.
 
+## Token minting
+
+### `nodalmerge token mint`
+
+```
+nodalmerge token mint \
+  --room <room-id> \
+  --room-key-seed-hex <64-hex-chars> \
+  --peer-seed-hex <64-hex-chars> \
+  --caps <comma-separated-list> \
+  --ttl-secs <seconds, default 3600>
+```
+
+Signs a room-capability token entirely offline — this is a local `RoomToken::sign`
+call with no server round-trip, so the room key seed never leaves the CLI
+invocation. Useful for scripting locked-room access without standing up a
+token-minting bridge service.
+
+Output (`NODALMERGE_TOKEN_JSON` shape):
+
+```json
+{
+  "peer_pubkey": "<hex>",
+  "expiry": 1735689600,
+  "caps": ["query.read", "archive.read"],
+  "sig": "<hex>"
+}
+```
+
+Export the output as `NODALMERGE_TOKEN_JSON` for CLI/SDK calls that require a
+locked-room token (for example `--token-json` on other `nodalmerge query`/`replay`
+subcommands). See `operators/security-and-auth` for capability scope guidance —
+prefer least-privilege `--caps` and short `--ttl-secs` for scripted/CI use.
+
 ## WebSocket control-plane command families
 
 The following command families are invoked over WebSocket and are capability-gated:

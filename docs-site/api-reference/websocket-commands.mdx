@@ -24,6 +24,8 @@ Use this with:
 {
   "type": "hello",
   "pubkey": "<hex>",
+  "peer_id": "<string>",
+  "peer_type": "<string>",
   "known": ["<node_id_hex>"],
   "subscribe": ["**"],
   "caps": {
@@ -38,9 +40,19 @@ Use this with:
   - `type`
 - Common fields:
   - `pubkey`, `known`, `subscribe`, `caps`
+  - `peer_id` — logical peer identity, stable across reconnects. Falls back to
+    `pubkey` if omitted.
+  - `peer_type` — free-form peer classification (e.g. `"ui"`, `"ephemeral-agent"`,
+    `"persistent-agent"`). Falls back to `"ui"` if omitted.
 - Behavior:
   - If room is locked, token validation happens during hello handling
   - Capabilities are negotiated server-side from `caps`
+  - `peer_id`/`peer_type` are echoed in `peer-joined`/`peer-left` broadcasts to other
+    room members, and let the server target `pack` broadcasts at a specific logical
+    peer across reconnects rather than a single socket session
+  - On join, the server sends a full-state `pack` catch-up (an exported snapshot of
+    the room's node history) immediately after `welcome`, distinct from the
+    diff-based catch-up described in `protocol/synchronization`
 
 ### `welcome` (server -> client)
 
@@ -113,6 +125,25 @@ Request:
   - `error` with `msg = "invalid pack: bad base64"`
   - `error` with `msg = "invalid pack: bad postcard"`
   - close `4008` on peer rate-limit abuse
+
+### `pack-ack` (server -> client)
+
+Acknowledges a submitted `pack`, reporting how many of its nodes were accepted.
+
+```json
+{
+  "type": "pack-ack",
+  "accepted_count": 3,
+  "rejected_count": 0,
+  "incoming_count": 3
+}
+```
+
+- `accepted_count < incoming_count` or `rejected_count > 0` indicates a partial or
+  full rejection — SDK clients should treat this as a signal to revert local
+  optimistic state for the unaccepted nodes and resend.
+- The JavaScript SDK's `sync.push()` tracks pending node IDs internally and reacts to
+  this message automatically; see `sdk/javascript` for client-side handling.
 
 ### `request`
 

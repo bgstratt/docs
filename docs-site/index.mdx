@@ -185,7 +185,7 @@ description: "A local-first, deterministic replication engine built around CRDT 
 
 {/* ── CORE CAPABILITIES ─────────────────────────────────────── */}
 
-<div class="nm-section-label" style="margin-top: 3rem">Core capabilities</div>
+<div class="nm-section-label" style={{ marginTop: "3rem" }}>Core capabilities</div>
 
 <div class="nm-feature-row">
   <div class="nm-feature-item">
@@ -222,7 +222,7 @@ description: "A local-first, deterministic replication engine built around CRDT 
 
 {/* ── REFERENCE SECTIONS ────────────────────────────────────── */}
 
-<div class="nm-section-label" style="margin-top: 3rem">Reference sections</div>
+<div class="nm-section-label" style={{ marginTop: "3rem" }}>Reference sections</div>
 
 <CardGroup cols={3}>
   <Card title="Architecture" icon="diagram-project" href="/architecture/overview">
@@ -253,92 +253,18 @@ description: "A local-first, deterministic replication engine built around CRDT 
 
 {/* ── DEVELOPER EXPERIENCE APPS ─────────────────────────────── */}
 
-<div class="nm-section-label" style="margin-top: 3rem">Developer experience apps</div>
+<div class="nm-section-label" style={{ marginTop: "3rem" }}>Developer experience apps</div>
 
-<Tip>
-  Start the demo host with `dotnet run --project apps/hosts/nodalmerge-demo-host` and all apps with `npm run dev:apps` from the repo root.
-</Tip>
-
-<div class="nm-demo-grid">
-  <div class="nm-demo-card">
-    <div class="nm-demo-card-header">
-      <div class="nm-demo-card-icon">🌐</div>
-      <span class="nm-status nm-status-local">
-        <span class="nm-status-dot"></span>local
-      </span>
-    </div>
-    <p class="nm-demo-card-title">Infinite room workspace</p>
-    <p class="nm-demo-card-desc">Spatial shared-state demo: SDK-backed workspace nodes, branches, and replay lanes across peers.</p>
-    <div class="nm-demo-card-footer">
-      <span class="nm-demo-port">:4173</span>
-      <a href="/developer-experience/apps#infinite-room-workspace" class="nm-btn nm-btn-ghost" style="padding: 0.35rem 0.85rem; font-size: 0.8rem">Open docs →</a>
-    </div>
-  </div>
-
-  <div class="nm-demo-card">
-    <div class="nm-demo-card-header">
-      <div class="nm-demo-card-icon">⌨️</div>
-      <span class="nm-status nm-status-local">
-        <span class="nm-status-dot"></span>local
-      </span>
-    </div>
-    <p class="nm-demo-card-title">Collab text</p>
-    <p class="nm-demo-card-desc">RGA text ops, contiguous edit batching, DAG replay timeline, and per-character attribution.</p>
-    <div class="nm-demo-card-footer">
-      <span class="nm-demo-port">:4177</span>
-      <a href="/developer-experience/apps#collab-text" class="nm-btn nm-btn-ghost" style="padding: 0.35rem 0.85rem; font-size: 0.8rem">Open docs →</a>
-    </div>
-  </div>
-
-  <div class="nm-demo-card">
-    <div class="nm-demo-card-header">
-      <div class="nm-demo-card-icon">📡</div>
-      <span class="nm-status nm-status-local">
-        <span class="nm-status-dot"></span>local
-      </span>
-    </div>
-    <p class="nm-demo-card-title">Protocol inspector</p>
-    <p class="nm-demo-card-desc">Observe the live runtime message stream, filter by command family, and export trace snippets.</p>
-    <div class="nm-demo-card-footer">
-      <span class="nm-demo-port">:4176</span>
-      <a href="/developer-experience/apps#protocol-inspector" class="nm-btn nm-btn-ghost" style="padding: 0.35rem 0.85rem; font-size: 0.8rem">Open docs →</a>
-    </div>
-  </div>
-
-  <div class="nm-demo-card">
-    <div class="nm-demo-card-header">
-      <div class="nm-demo-card-icon">🧪</div>
-      <span class="nm-status nm-status-local">
-        <span class="nm-status-dot"></span>local
-      </span>
-    </div>
-    <p class="nm-demo-card-title">Replay lab</p>
-    <p class="nm-demo-card-desc">Capture runtime snapshots, inspect event payload summaries, and adjust replay range windows.</p>
-    <div class="nm-demo-card-footer">
-      <span class="nm-demo-port">:4174</span>
-      <a href="/developer-experience/apps#replay-lab" class="nm-btn nm-btn-ghost" style="padding: 0.35rem 0.85rem; font-size: 0.8rem">Open docs →</a>
-    </div>
-  </div>
-
-  <div class="nm-demo-card">
-    <div class="nm-demo-card-header">
-      <div class="nm-demo-card-icon">🗺️</div>
-      <span class="nm-status nm-status-local">
-        <span class="nm-status-dot"></span>local
-      </span>
-    </div>
-    <p class="nm-demo-card-title">Collab maps</p>
-    <p class="nm-demo-card-desc">Spatial shared-state interactions — place shared pins on a map board and watch them converge across peers.</p>
-    <div class="nm-demo-card-footer">
-      <span class="nm-demo-port">:4175</span>
-      <a href="/developer-experience/apps#collab-maps" class="nm-btn nm-btn-ghost" style="padding: 0.35rem 0.85rem; font-size: 0.8rem">Open docs →</a>
-    </div>
-  </div>
-</div>
+<Card title="Five interactive playground apps" icon="flask" href="/developer-experience/apps">
+  Infinite room workspace, collab text, protocol inspector, replay lab, and collab
+  maps — local playgrounds for exercising SDK, replay, and protocol behavior live.
+  See [developer-experience/apps](/developer-experience/apps) for what each app
+  demonstrates and how to run them.
+</Card>
 
 {/* ── SUGGESTED FIRST HOUR ──────────────────────────────────── */}
 
-<div class="nm-section-label" style="margin-top: 3rem">Suggested first hour</div>
+<div class="nm-section-label" style={{ marginTop: "3rem" }}>Suggested first hour</div>
 
 <Steps>
   <Step title="Run the quickstart">

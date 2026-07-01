@@ -139,6 +139,10 @@ After this quickstart:
 - Read `protocol/synchronization` and `protocol/blob-flow`
 - Implement from `sdk/javascript` or `sdk/react`
 - Configure production baseline from `operators/server-setup` and `operators/persistence`
+- Embedding NodalMerge inside your own web app instead of running the standalone
+  server? See `operators/server-setup#embedding-the-host-as-a-library` — the
+  embeddable hosts hand you the request pipeline directly, so you configure CORS
+  yourself rather than inheriting it from the package
 - Lock down auth posture in `operators/security-and-auth`
 - Add incident checks from `operators/troubleshooting`
 - Review command contracts in `api-reference/websocket-commands`

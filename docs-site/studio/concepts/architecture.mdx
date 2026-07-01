@@ -20,9 +20,9 @@ Layer 1: NodalMerge Core (Rust)   — DAG storage, CRDT convergence, replication
 ```
 
 The VS Code extension and headless peers both sit at Layer 3 — they use Studio
-services (Layer 2), not [NodalMerge](https://docs.nodalmerge.com) APIs directly. The
+services (Layer 2), not [NodalMerge](/) APIs directly. The
 extension exposes an HTTP server and MCP-over-HTTP; a headless peer does not. See
-[Guides → Headless peer](/guides/headless-peer).
+[Guides → Headless peer](/studio/guides/headless-peer).
 
 ## Key architectural principles
 
@@ -46,8 +46,8 @@ Goal creation isn't limited to a human typing into the Goal Workspace. Anything 
 can reach the Studio host's REST or MCP surface — another headless peer, an external
 system, or a different human's Studio instance connected to the same room — can
 create goals and record constraint artifacts alongside interactively created ones.
-See [Guides → Extending goals](/guides/extending-goals) for the REST surface and
-[Guides → Headless peer](/guides/headless-peer) for how a connected peer joins a
+See [Guides → Extending goals](/studio/guides/extending-goals) for the REST surface and
+[Guides → Headless peer](/studio/guides/headless-peer) for how a connected peer joins a
 room and appears in the extension in real time.
 
 This matters architecturally because **every goal, regardless of source, funnels
@@ -63,7 +63,7 @@ into a goal or a recorded constraint, without a human having to notice the signa
 first and manually kick off the work. Combined with `AllowAgentGitCommits` /
 `AllowAgentGitPush` and an external CI/CD pipeline, this is the shape of a system
 that reacts to its own operational state — see
-[Guides → Extending goals](/guides/extending-goals#pattern-2--monitoring-alert-handler-persistent-peer)
+[Guides → Extending goals](/studio/guides/extending-goals#pattern-2--monitoring-alert-handler-persistent-peer)
 for the concrete pattern. Whether that loop closes all the way to production is a
 function of what you wire up outside Studio (your CI/CD pipeline, your review
 policy choices) — Studio's job is to make sure every step in that loop, however it's
@@ -75,7 +75,7 @@ NodalMerge Studio exposes a frozen MCP v1 tool surface with 66 tools across 19
 namespaces (`nm_v1_*`), 42 of which are dispatched in-process to autonomous agents.
 A separate 13-tool `nms_v1_*` surface is the recommended entry point for external MCP
 clients (Claude Code, Cursor, CI scripts) — see
-[Reference → API surface](/reference/api-reference).
+[Reference → API surface](/studio/reference/api-reference).
 
 ## Repository layout
 

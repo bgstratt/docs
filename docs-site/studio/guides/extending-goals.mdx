@@ -92,7 +92,7 @@ pair with `Workspace:AllowAgentGitCommits=true` for a fully unattended flow.
 ```
 
 `enabledDomainAgents` overrides the session-wide `Workspace:EnabledDomainAgents`
-setting for this work unit's execution — see [Guides → Domain observers](/guides/domain-observers).
+setting for this work unit's execution — see [Guides → Domain observers](/studio/guides/domain-observers).
 
 ## Visibility in the extension
 
@@ -123,7 +123,7 @@ A headless peer (`PeerType: "persistent-agent"`) subscribes to a metrics/alertin
 bus. On alert receipt, it injects a goal in-process — no HTTP round-trip needed.
 Because the peer is connected to the room (`Peer:HostUri` set), the resulting work
 unit and agents appear in the extension in real time. See
-[Guides → Headless peer](/guides/headless-peer).
+[Guides → Headless peer](/studio/guides/headless-peer).
 
 ### Pattern 3 — Scheduled maintenance (cron → ephemeral peer)
 

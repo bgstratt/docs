@@ -1,6 +1,7 @@
 export const DOCS_URL = "https://docs.nodalmerge.com";
 export const STUDIO_DOCS_URL = "https://docs.nodalmerge.com/studio";
 export const GITHUB_URL = "https://github.com/bgstratt/nodalmerge";
+export const DOCS_REPO_URL = "https://github.com/bgstratt/docs";
 
 export const primaryNav = [
   { label: "Studio", href: "/studio" },
@@ -18,6 +19,7 @@ export const footerNav = {
   ],
   Docs: [
     { label: "Documentation", href: DOCS_URL, external: true },
+    { label: "Why NodalMerge", href: `${DOCS_URL}/why-nodalmerge`, external: true },
     { label: "Quickstart", href: `${DOCS_URL}/quickstart`, external: true },
     { label: "Studio docs", href: STUDIO_DOCS_URL, external: true },
     { label: "API reference", href: `${DOCS_URL}/api-reference/introduction`, external: true },

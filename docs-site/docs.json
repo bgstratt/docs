@@ -210,6 +210,7 @@
             "group": "Performance",
             "pages": [
               "benchmarks/performance-overview",
+              "benchmarks/text-engine-performance",
               "benchmarks/runtime-attribution"
             ]
           }

@@ -9,7 +9,7 @@ The current catalog of MCP tools and REST endpoints exposed by the Studio Host, 
 which surface (the VS Code extension, autonomous agents, or neither) actually reaches
 each one.
 
-Ground truth: **66 `nm_v1_*` MCP tools**, **42 of them** dispatched in-process to
+Ground truth: **70 `nm_v1_*` MCP tools**, **46 of them** dispatched in-process to
 autonomous agents, **13 `nms_v1_*` external-caller tools**, and **112 REST routes**.
 
 <Note>
@@ -94,7 +94,7 @@ their own host's REST API; they call the tool dispatcher in-process. A REST endp
 with no frontend caller can still be heavily used — just by agents, via the MCP tool
 it shares a command service with.
 
-## MCP tool catalog
+## MCP tool catalog (70 tools)
 
 ✅ = dispatched in-process to orchestrator/worker agents · — = MCP-client, REST, or
 extension only.
@@ -214,7 +214,21 @@ resolution.
 | `nm_v1_evidence_*` | `attach`, `list` | Attach/list build/test evidence for a work unit |
 | `nm_v1_trajectory_*` | `create`, `replay` | Record lifecycle phases; replay in Linear / BranchExplorer / Counterfactual mode |
 | `nm_v1_hypothesis_*` | `fork`, `list` | Fork a work unit/proposal with a typed fork (Code/Reasoning/Model/Research/Architecture/Library/Product) |
+| `nm_v1_reasoning_*` | `record` | Record a reasoning commit from an orchestration step |
+| `nm_v1_model_*` | `compare`, `replay` | Compare two proposals' diverged files/overlap; list all proposals for a work unit grouped for model comparison |
 
-None of these are dispatched to autonomous agents yet. Phase 7 capabilities
-(Experiments, Steering, Counterfactuals, Review Policy, Promotion Branches) are
-REST-only — see [Concepts → Trust & autonomy](/studio/concepts/trust-and-autonomy).
+None of these are dispatched to autonomous agents yet.
+
+### Phase 7 — REST-only, no MCP tool at all
+
+| Capability | REST endpoint | Why it matters |
+|---|---|---|
+| Experiments (create/list/get) | `POST/GET /studio/experiments`, `GET /studio/experiments/{id}` | An MCP client (or an agent) cannot launch a multi-fork experiment on its own |
+| Steering (redirect, fork-from-node) | `POST /studio/steering/redirect`, `POST /studio/steering/fork-from-node` | An agent cannot steer itself or another agent — human/extension only |
+| Counterfactuals (create) | `POST /studio/counterfactuals` | Read-only counterfactual *viewing* exists via `nm_v1_trajectory_replay` (mode=Counterfactual); *creating* one does not have a tool |
+| Review Policy on create | `reviewPolicy` field on `POST /studio/workunits` | `nm_v1_workunit_create` has no `reviewPolicy` parameter — MCP-created work units always default to `HumanRequired` |
+| Promotion branches | `usePromotionBranch`/`candidateBranchId` on `POST /studio/options`, `POST /studio/branches/candidate/promote` | No tool to toggle or promote |
+| Fork from Known Good | `POST /studio/state/{stateId}/fork` | An MCP client/agent can checkout (mutate) a known-good state via `nm_v1_state_checkoutKnownGood`, but can't fork a *new* work unit from one without writing its own `seedFromBranchId`-style call |
+
+See [Concepts → Trust & autonomy](/studio/concepts/trust-and-autonomy) for the
+human-in-the-loop rationale behind these boundaries.

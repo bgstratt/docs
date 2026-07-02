@@ -328,6 +328,8 @@ export class SdkRuntimeClient {
       this.push("warn", "sdk text ops unavailable; ensure runtime mode is npm sdk + wasm");
       return { applied: false, pushed: false };
     }
+    const insertTextAt = sync.insertTextAt;
+    const deleteTextAt = sync.deleteTextAt;
     if (edits.length === 0) {
       return { applied: true, pushed: true };
     }
@@ -350,14 +352,14 @@ export class SdkRuntimeClient {
             if (useRangeOps && edit.deleteLen > 1 && sync.deleteTextRange) {
               sync.deleteTextRange(key, { kind: "offset", pos: edit.pos }, edit.deleteLen);
             } else {
-              sync.deleteTextAt(key, edit.pos, edit.deleteLen);
+              deleteTextAt(key, edit.pos, edit.deleteLen);
             }
           }
           if (edit.insertText.length > 0) {
             if (useRangeOps && edit.insertText.length > 1 && sync.insertTextRange) {
               sync.insertTextRange(key, { kind: "offset", pos: edit.pos }, edit.insertText);
             } else {
-              sync.insertTextAt(key, edit.pos, edit.insertText);
+              insertTextAt(key, edit.pos, edit.insertText);
             }
           }
         }

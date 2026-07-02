@@ -104,6 +104,44 @@ This makes trend analysis and audit discussions straightforward.
 
 Tie actions to explicit evidence instead of intuition.
 
+## Latest results
+
+Run date: 2026-07-01. First full re-run since the `activesync` → `nodalmerge` rename
+(the benchmark harness itself already used current naming; the matrix config's env
+var keys did not — see caveat below).
+
+**Environment**: AMD Ryzen 9 5900X (12C/24T), 64 GB RAM, Windows 11 Pro. This is a
+different host than the 2026-05-22 numbers previously recorded for this project (an
+ASUS ProArt P16 laptop) — do not diff these results against that note's absolute
+numbers or deltas; only same-host runs are comparable. Treat this run as a fresh
+same-host baseline.
+
+**Scenario**: `Run-BenchmarkMatrix.ps1` rows `baseline-default-auth` and
+`auth-enforced-room-lock-tokened` (single A/B pair, not alternated). Targets:
+`rust-combined-server`, `dotnet-host-runtime-alias`. Peers: 2/10/20. Command mix:
+`map60/list60/blob20@4k`, 3 iterations per cell. (`rust-integrated-hosted-server`
+was skipped — it's optional and requires `MONGO_URI`.)
+
+Aggregate deltas (auth-enforced vs baseline, positive = auth is slower):
+
+| Target | map | list | blob |
+|---|---|---|---|
+| rust-combined-server | -1.4% | -1.0% | -3.9% |
+| dotnet-host-runtime-alias | -2.0% | -0.7% | -10.0% |
+
+Auth overhead was not observable in this run — deltas are flat to negative across
+every dimension, well inside single-A/B-pair noise. This differs from the
+2026-05-22 note's alternated (A-B-A-B) result of roughly `+2%` to `+8%` overhead,
+but the two are not directly comparable (different host, single-pair vs
+2x-averaged). Re-run with alternation on this host before concluding overhead has
+actually changed.
+
+**Known caveat**: blob operations in this harness log `direct upload failed;
+falling back to ws` on every call and fall back to the WebSocket blob path. Blob
+timings above reflect that fallback path, not the direct-upload path — this has
+been true since at least the 2026-05-22 run and is a harness/environment
+limitation, not a regression.
+
 ## Related pages
 
 - [benchmarks/runtime-attribution](/benchmarks/runtime-attribution)

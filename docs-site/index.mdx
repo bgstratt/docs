@@ -78,7 +78,7 @@ description: "A local-first, deterministic replication engine built around CRDT 
         const sdk = await createNodalMergeSdk({
           wsUrl: "ws://localhost:7878/ws/runtime",
           roomId: "my-room",
-          transport: { mode: "auto" },
+          transport: { mode: "auto" }, // SDK default is "ws-only"; "auto" adds WebRTC with WS fallback
           reconnect: { enabled: true }
         });
         await sdk.room.connect();

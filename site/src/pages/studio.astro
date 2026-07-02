@@ -2,6 +2,8 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { STUDIO_DOCS_URL } from "../data/nav";
 
+const STUDIO_GITHUB_URL = "https://github.com/bgstratt/nodalmerge-studio";
+
 const pipeline = [
   { title: "Goal", desc: "A human describes what needs to be accomplished." },
   { title: "Plan", desc: "An orchestrator agent breaks the goal into work units and tasks — inspectable, reviewable, branchable." },
@@ -30,7 +32,7 @@ const pillars = [
   {
     icon: "🔌",
     title: "MCP-native",
-    desc: "A frozen MCP v1 tool surface with 66 tools across 19 namespaces. Integrate any MCP-compatible client with the Studio host.",
+    desc: "A frozen MCP v1 tool surface with 70 tools across 20 namespaces. Integrate any MCP-compatible client with the Studio host.",
   },
 ];
 ---
@@ -53,6 +55,7 @@ const pillars = [
       <div class="nm-hero-actions">
         <a href={`${STUDIO_DOCS_URL}/quickstart`} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-primary">Get started →</a>
         <a href={STUDIO_DOCS_URL} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-ghost">Studio docs</a>
+        <a href={STUDIO_GITHUB_URL} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-ghost">GitHub ↗</a>
         <a href="/" class="nm-btn nm-btn-ghost">Back to NodalMerge</a>
       </div>
     </div>

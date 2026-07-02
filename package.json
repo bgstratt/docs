@@ -7,7 +7,9 @@
     "dev:docs": "powershell -ExecutionPolicy Bypass -Command \"cd ./docs-site; npx mint dev\"",
     "check:docs-links": "powershell -ExecutionPolicy Bypass -Command \"cd ./docs-site; npx mint broken-links\"",
     "dev:site": "powershell -ExecutionPolicy Bypass -Command \"cd ./site; npm run dev\"",
-    "build:site": "powershell -ExecutionPolicy Bypass -Command \"cd ./site; npm run build\""
+    "build:site": "powershell -ExecutionPolicy Bypass -Command \"cd ./site; npm run build\"",
+    "build:apps": "powershell -ExecutionPolicy Bypass -File ./scripts/build-apps.ps1",
+    "build:all": "npm run build:site && npm run build:apps"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

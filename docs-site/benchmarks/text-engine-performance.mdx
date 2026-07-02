@@ -1,0 +1,130 @@
+---
+title: Text engine performance
+description: Measured NodalMerge collaborative-text throughput, wire cost, and cold-start convergence on real-world editing traces.
+---
+
+# Text engine performance
+
+This page records measured performance of the NodalMerge text CRDT engine
+(`nodalmerge-core`, RGA with the incremental text projection enabled) on
+real-world, character-by-character editing traces. All numbers are NodalMerge
+runs — see [performance-overview](/benchmarks/performance-overview) for
+methodology framing and how to read benchmark results safely.
+
+## Environment
+
+- Run date: 2026-07-02
+- Host: ASUS ProArt P16 laptop — AMD Ryzen AI 9 HX 370 (12C/24T), ~31 GiB RAM, Windows 11
+- Build: `cargo test --release`, `TextProjectionMode::Enabled`
+- Only same-host runs are comparable; treat these as this host's baseline.
+
+## What's inside these numbers
+
+NodalMerge is not a bare text buffer — every number on this page includes the
+full integrity and auditability model, per operation:
+
+- **Hash-linked DAG node per transaction.** Each edit becomes a node with a
+  blake3 content hash as its identity and explicit parent pointers to the
+  causal frontier. Tampering with history is detectable by construction, and
+  any peer can verify the causal chain it receives. The blake3 hashing and
+  parent bookkeeping happen inside the timed apply loop.
+- **Stable per-character identity.** Every character carries a permanent
+  `(lamport, author)` op id — not just an ephemeral position. That is what
+  makes deterministic replay-to-a-point-in-time, cursor anchoring across
+  concurrent edits, and per-author attribution of every character possible.
+  The engine stores and indexes these identities for the whole document,
+  tombstones included.
+- **Policy enforcement on the apply path.** Every op key is checked against
+  the room write policy for its author before it is admitted.
+- **Deterministic audit trail.** The applied history is the wire format: a
+  fresh peer replays the same nodes and must reach the same document (the
+  cold-start rows below assert exactly that).
+
+These runs use unsigned nodes (signing is optional). With Ed25519 signing
+enabled, verification adds a per-node cost that is amortized by the batched
+parallel verify path on catch-up; see `benchmarks/benchmarks.md` in the main
+repository for signed-mode microbenchmarks.
+
+The per-edit wire cost shown below (~179 bytes for single-character edits) is
+the price of that framing: author key, parent hash, and node id travel with
+every transaction. Multi-character range edits (paste, bulk operations)
+amortize the framing across the whole edit, so realistic client batching
+brings amortized overhead down toward content size.
+
+## Real-world editing trace (259,778 ops)
+
+Runner: `core/tests/b4_editing_trace.rs`. The trace is a real
+character-by-character editing session of a ~104,852-character LaTeX paper
+(182,315 single-character insertions, 77,463 deletions). It is applied the way
+a real client would submit it: one transaction per edit, position-based range
+ops, single writer, then the final document is extracted and verified
+character-for-character against the trace's known final text.
+
+Every edit carries the full integrity model described above — hashing,
+causal parents, per-character identity, and policy checks all execute inside
+the timed loop.
+
+| Metric | Result |
+|---|---:|
+| Apply all 259,778 edits + extract content | **882 ms** (~294,500 ops/sec) |
+| Convergence | exact final-text match |
+| Cold start: fresh peer applies the full history + extract | 947 ms |
+| Total update bytes (per-node wire encoding) | 46.5 MB (179.2 bytes/edit) |
+
+Note: cold start currently replays the op history; snapshot-based cold start
+is a planned follow-up and will be bounded by document size instead of
+history length.
+
+## Large-trace throughput and scaling (up to ~980k ops)
+
+Runner: `core/tests/text_throughput_and_convergence.rs`, replaying a ~980k-op
+real editing trace (`docs/rustcode.json`) both one-`apply_remote`-per-char
+("unbatched") and one-`apply_remote_batch`-per-editing-transaction
+("batched").
+
+| Trace ops replayed | Unbatched ops/sec | Batched ops/sec | Cold-start bulk apply |
+|---:|---:|---:|---:|
+| 50,000 | 213,897 | 204,556 | 119 ms |
+| 150,000 | 72,367 | 73,560 | 441 ms |
+| 979,844 (full) | 21,042 | 21,076 | 4,162 ms |
+
+Reading these safely:
+
+- The cold-start column is the purest engine signal: ~2.4 µs/op at 50k ops and
+  ~4.2 µs/op at 980k ops — near-flat in document size. The decay in the replay
+  columns is dominated by the test harness's own per-op position bookkeeping,
+  not the engine.
+- Batched and unbatched apply are equivalent at every size, so client SDKs can
+  batch for transport efficiency without an apply-path penalty.
+- The full ~980k-op replay converges to the exact expected final text, and a
+  fresh peer bulk-syncing the entire history converges in ~4.2 s.
+
+## State reads (map / list / blob)
+
+`StateGraph` map, list, and blob-reference reads are served from
+incrementally maintained views updated O(1) per op at apply time:
+
+- `resolve` / `resolve_canonical` / `resolve_with_meta`: O(live keys) per
+  call; per-key reads (`read_speculative` / `read_canonical`) are O(1).
+- `resolve_list`: O(items) per call.
+- Host ingest conflict surfacing is O(new ops in the batch).
+
+Measured floor of the improvement: the `resolve_1k` microbench (1,000 keys,
+one write each — the minimum possible history-to-key ratio) improved 66%
+(~350 µs → 118 µs). Rooms with realistic history-to-key ratios (long-lived
+rooms, frequent overwrites) see proportionally larger wins because read cost
+no longer scales with room history.
+
+## Correctness guarantees behind these numbers
+
+- Randomized projection-vs-replay parity tests (text) and cache-vs-replay
+  parity tests (map/list) run in the standard test suite.
+- Both editing-trace benchmarks assert exact final-document equality, and the
+  cold-start peer must converge to the same content.
+- Merge semantics, per-character op identity, public API, FFI, and wire
+  formats are unchanged by the engine work these numbers reflect.
+
+## Related pages
+
+- [benchmarks/performance-overview](/benchmarks/performance-overview)
+- [benchmarks/runtime-attribution](/benchmarks/runtime-attribution)

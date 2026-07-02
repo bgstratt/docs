@@ -1,70 +1,24 @@
 ---
 title: Quickstart
-description: Install the Control Tower VS Code extension, start the Studio host, and run your first goal.
+description: Install the Control Tower VS Code extension, configure an agent profile, and run your first goal.
 ---
 
 # Quickstart
 
 This guide gets you from zero to a running goal in the Control Tower.
 
-## Prerequisites
+## 1. Install the extension
 
-- [.NET SDK 10.0](https://dotnet.microsoft.com/download)
-- [Node.js 22+](https://nodejs.org/) (for the VS Code extension)
-- [VS Code 1.90+](https://code.visualstudio.com/)
-- A sibling checkout of [nodalmerge](/) — Studio embeds the
-  NodalMerge host and consumes it via local NuGet packages
+Install **NodalMerge Studio** from the VS Code Marketplace:
 
-## 1. Restore NodalMerge dependencies
+[Install from the VS Code Marketplace →](https://marketplace.visualstudio.com/items?itemName=nodalmerge-studio.nodalmerge-studio)
 
-From the `nodalmerge-studio` repo root, pack local NodalMerge NuGet artifacts from
-the sibling repo:
+Or search for `NodalMerge Studio` in VS Code's Extensions panel (<kbd>Ctrl+Shift+X</kbd> /
+<kbd>Cmd+Shift+X</kbd>). The extension bundles the Studio host — no separate install of
+the `nodalmerge` or `nodalmerge-studio` repos required; everything the host needs is
+pulled from NuGet automatically.
 
-```powershell
-pwsh -File .\scripts\restore-local-nodalmerge.ps1
-```
-
-## 2. Restore and build
-
-```powershell
-dotnet restore NodalMerge.Studio.slnx --configfile NuGet.config
-dotnet build NodalMerge.Studio.slnx
-```
-
-## 3. Build the VS Code extension
-
-```powershell
-cd clients\vscode-extension
-npm install
-npm run compile
-```
-
-## 4. Start the Studio host
-
-```powershell
-pwsh -File .\scripts\dev.ps1
-```
-
-Verify it's up:
-
-```bash
-curl http://127.0.0.1:5080/health
-curl http://127.0.0.1:5080/studio/health
-```
-
-{/* IMAGE: quickstart-host-running.png — terminal output showing scripts/dev.ps1
-    startup logs and both health endpoints returning 200. See IMAGE_LIST.md. */}
-
-## 5. Launch the extension
-
-Press <kbd>F5</kbd> from the `clients/vscode-extension` directory to launch the
-extension in a VS Code Extension Development Host.
-
-{/* IMAGE: quickstart-extension-launch.png — VS Code Extension Development Host
-    window with the NodalMerge Studio extension activated, command palette open
-    showing the "NodalMerge:" commands. See IMAGE_LIST.md. */}
-
-## 6. Run "NodalMerge: Open Studio"
+## 2. Open the Control Tower
 
 Open the command palette (<kbd>Ctrl+Shift+P</kbd> / <kbd>Cmd+Shift+P</kbd>) and run
 `NodalMerge: Open Studio`. This opens the Control Tower — a tabbed shell with Goal
@@ -75,7 +29,7 @@ Workspace, Activity Center, Model & Agent Studio, Decision Convergence, and Path
     Studio / Decision Convergence / Pathways) with an empty Goal Workspace.
     See IMAGE_LIST.md. */}
 
-## 7. Configure an agent profile
+## 3. Configure an agent profile
 
 Before you can run a goal, define at least one agent profile in VS Code settings —
 this maps agent roles to an LLM provider and model:
@@ -106,7 +60,7 @@ Model & Agent Studio panel's Profiles tab).
     Profiles tab, showing the "+ Add Profile" form filled in with an orchestrator
     profile. See IMAGE_LIST.md. */}
 
-## 8. Run your first goal
+## 4. Run your first goal
 
 In the Goal Workspace topbar:
 
@@ -122,7 +76,7 @@ any node to load its timeline into the Decision Lens.
     running: Decision Tree showing a plan node with child task nodes, Reasoning &
     Execution Timeline populated in the middle column. See IMAGE_LIST.md. */}
 
-## 9. Review and approve the proposal
+## 5. Review and approve the proposal
 
 When a worker finishes, it submits a merge proposal, which routes to Decision
 Convergence for review (or shows up under Activity Center's "Pending Decisions").
@@ -144,3 +98,5 @@ Decision**.
 - If you're integrating from CI or an external system rather than the extension, see
   [Guides → Extending goals](/studio/guides/extending-goals) and
   [Guides → Headless peer](/studio/guides/headless-peer)
+- If you want to build the extension and host from source instead of installing the
+  packaged release, see [Guides → Build from source](/studio/guides/build-from-source)

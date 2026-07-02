@@ -1,0 +1,67 @@
+---
+title: Build from source
+description: Build the Studio host and VS Code extension from source instead of installing the packaged release.
+---
+
+# Build from source
+
+Most people should just [install the packaged extension](/studio/quickstart) from the
+VS Code Marketplace — it bundles the Studio host, and everything it needs is pulled
+from NuGet automatically. Build from source only if you're contributing to
+`nodalmerge-studio` or need to run against unreleased changes.
+
+## Prerequisites
+
+- [.NET SDK 10.0](https://dotnet.microsoft.com/download)
+- [Node.js 22+](https://nodejs.org/) (for the VS Code extension)
+- [VS Code 1.90+](https://code.visualstudio.com/)
+- A sibling checkout of [nodalmerge](/) — Studio embeds the NodalMerge host and
+  consumes it via local NuGet packages when building from source
+
+## 1. Restore NodalMerge dependencies
+
+From the `nodalmerge-studio` repo root, pack local NodalMerge NuGet artifacts from
+the sibling repo:
+
+```powershell
+pwsh -File .\scripts\restore-local-nodalmerge.ps1
+```
+
+## 2. Restore and build
+
+```powershell
+dotnet restore NodalMerge.Studio.slnx --configfile NuGet.config
+dotnet build NodalMerge.Studio.slnx
+```
+
+## 3. Build the VS Code extension
+
+```powershell
+cd clients\vscode-extension
+npm install
+npm run compile
+```
+
+## 4. Start the Studio host
+
+```powershell
+pwsh -File .\scripts\dev.ps1
+```
+
+Verify it's up:
+
+```bash
+curl http://127.0.0.1:5080/health
+curl http://127.0.0.1:5080/studio/health
+```
+
+## 5. Launch the extension
+
+Press <kbd>F5</kbd> from the `clients/vscode-extension` directory to launch the
+extension in a VS Code Extension Development Host, then continue from
+[Quickstart step 2](/studio/quickstart#2-open-the-control-tower) (open the Control
+Tower, configure a profile, run a goal).
+
+## Source
+
+- [github.com/bgstratt/nodalmerge-studio](https://github.com/bgstratt/nodalmerge-studio)

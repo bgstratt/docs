@@ -70,18 +70,20 @@ Approved State     ← committed, traceable back to the goal
 ## Get started
 
 <CardGroup cols={2}>
+  <Card title="Install the extension" icon="puzzle-piece" href="https://marketplace.visualstudio.com/items?itemName=nodalmerge-studio.nodalmerge-studio">
+    Get NodalMerge Studio from the VS Code Marketplace — the extension bundles the
+    Studio host, no separate install required.
+  </Card>
   <Card title="Quickstart" icon="rocket" href="/studio/quickstart">
-    Install the Control Tower VS Code extension and run your first goal.
+    Configure an agent profile and run your first goal in the Control Tower.
   </Card>
   <Card title="How Studio works" icon="brain" href="/studio/concepts/overview">
     The three-layer architecture and how Studio relates to the NodalMerge core engine.
   </Card>
+  <Card title="Source on GitHub" icon="github" href="https://github.com/bgstratt/nodalmerge-studio">
+    Browse the `nodalmerge-studio` repo, or see [Build from source](/studio/guides/build-from-source)
+    if you want to run it from a local checkout.
+  </Card>
 </CardGroup>
 
-## Scope today
-
-Studio is v1. Deliberately out of scope for now: autonomous self-directed agents
-(agents cannot set their own goals), long-term memory databases or vector stores,
-cross-workspace reasoning, enterprise RBAC, and multi-tenant SaaS architecture. Agent-
-controlled merges are possible but only when a goal explicitly opts into agent or
-hybrid review — human approval remains the default.
+**New here? Start with the [Quickstart](/studio/quickstart) →**

@@ -42,7 +42,7 @@ export function useNodalMergeRoom(roomId: string) {
     () => ({
       wsUrl: "ws://127.0.0.1:7878/ws/runtime",
       roomId,
-      transport: { mode: "auto" },
+      transport: { mode: "auto" }, // SDK default is "ws-only"; "auto" adds WebRTC with WS fallback
       reconnect: { enabled: true, initialDelayMs: 500, maxDelayMs: 8000 }
     }),
     [roomId]

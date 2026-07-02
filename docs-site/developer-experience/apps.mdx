@@ -97,7 +97,7 @@ This provides a lightweight replay-oriented inspection surface aligned with prot
 
 ### Why this matters
 
-This is the first dedicated Phase C playground for learning websocket/runtime behavior through direct observation.
+This is the first dedicated playground for learning websocket/runtime behavior through direct observation.
 
 ## Collab maps
 
@@ -110,11 +110,14 @@ This is the first dedicated Phase C playground for learning websocket/runtime be
 
 ### Why this matters
 
-This is the second flagship demo path for Phase B and validates spatial shared-state interactions beyond document workflows.
+This is the second flagship demo path and validates spatial shared-state interactions beyond document workflows.
 
 ## Browser smoke checklist
 
-Use the detailed runbook in `plans/slice-8-browser-smoke-and-runbook.md` for package-mode smoke validation and troubleshooting.
+1. Install the app's built package output in a clean project and confirm it loads without console errors.
+2. Connect to a room and confirm sync/presence behavior matches the dev-server experience.
+3. Exercise the app's primary interaction (map pins, canvas nodes, text edits, etc.) and confirm state converges across two browser tabs.
+4. Reload one tab mid-session and confirm it catches up to the shared state.
 
 ## Related docs
 

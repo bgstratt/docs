@@ -67,7 +67,7 @@ import { createNodalMergeSdk } from "nodalmerge-sdk-js";
 const sdk = await createNodalMergeSdk({
   wsUrl: "ws://127.0.0.1:7878/ws/runtime",
   roomId: "demo-room",
-  transport: { mode: "auto" }
+  transport: { mode: "auto" } // SDK default is "ws-only"; "auto" adds WebRTC with WS fallback
 });
 
 await sdk.room.connect();

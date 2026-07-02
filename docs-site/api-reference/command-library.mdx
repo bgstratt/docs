@@ -7,8 +7,6 @@ description: "Reference starter for server CLI flags, replay commands, and contr
 
 This page centralizes command surfaces that operators and advanced integrators use most.
 
-It is seeded from `nodalmerge/docs/operations-inventory.md` and server runtime code.
-
 ## Scope
 
 - Server startup and lifecycle CLI flags
@@ -162,24 +160,6 @@ Operator-facing CLI/runtime commands currently documented:
 - `--policy-timeline-json '<json>'`
 
 For command payload schemas and success/reject envelopes, see `api-reference/websocket-commands`.
-
-## Planned expansion areas
-
-- Environment variable catalog (with defaults and precedence)
-- Capability and auth-related runtime toggles
-- Archive/query/topology operator workflows with example payloads
-- Deprecation and migration notes per command/flag
-
-## Command entry template
-
-For each command or flag, include:
-
-1. Status (`stable`, `experimental`, `deprecated`)
-2. Purpose
-3. Accepted values and defaults
-4. Side effects and safety notes
-5. Metrics/logs to observe
-6. Version-introduced and version-changed metadata
 
 ## Related pages
 

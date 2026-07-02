@@ -1,14 +1,14 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { playground } from "../../data/apps";
-import { GITHUB_URL as REPO_URL } from "../../data/nav";
+import { DOCS_REPO_URL } from "../../data/nav";
 
 export function getStaticPaths() {
   return playground.map((app) => ({ params: { slug: app.slug }, props: { app } }));
 }
 
 const { app } = Astro.props;
-const sourceHref = `${REPO_URL}/tree/main/${app.sourcePath}`;
+const sourceHref = `${DOCS_REPO_URL}/tree/main/${app.sourcePath}`;
 ---
 <BaseLayout title={app.name} description={app.description}>
   <div class="nm-shell">

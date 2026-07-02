@@ -23,7 +23,7 @@ import { createNodalMergeSdk } from "nodalmerge-sdk-js";
 const sdk = await createNodalMergeSdk({
   wsUrl: "ws://127.0.0.1:7878/ws/runtime",
   roomId: "demo-room",
-  transport: { mode: "auto" },
+  transport: { mode: "auto" }, // SDK default is "ws-only"; "auto" adds WebRTC with WS fallback
   reconnect: {
     enabled: true,
     initialDelayMs: 500,
@@ -288,10 +288,14 @@ const list = await sdk.query.listProjections({ querySpecId: "q.world", stateFilt
 
 `transport.mode` commonly uses:
 
-- `"auto"`: allow negotiated transport enhancements when available
+- `"auto"`: negotiate a WebRTC data channel alongside the WebSocket connection (`"ws+webrtc"`), falling back to WebSocket-only when WebRTC signaling isn't available
 - `"ws-only"`: force WebSocket-only behavior
 
-Start with `auto`, switch to `ws-only` only when environment constraints require strict transport control.
+**The SDK default is `"ws-only"`, not `"auto"`** — every example on this page sets
+`transport: { mode: "auto" }` explicitly rather than relying on the default, since
+`auto` is the better choice for most browser apps. Omit the option (or pass
+`"ws-only"` explicitly) only when environment constraints require strict
+WebSocket-only transport.
 
 ## Error and rejection handling
 
@@ -316,9 +320,9 @@ All options passed to `createNodalMergeSdk`:
 | `wasmModule` | `RequestInfo \| URL \| ...` | — | Custom WASM module source; defaults to bundled |
 | `tickIntervalMs` | `number` | server default | How often local tick loop fires (ms) |
 | `maxOpsPerTick` | `number` | server default | Max ops batched per tick flush |
-| `reconnect.enabled` | `boolean` | `false` | Enable automatic reconnect |
+| `reconnect.enabled` | `boolean` | `true` | Enable automatic reconnect |
 | `reconnect.initialDelayMs` | `number` | `500` | First reconnect delay (ms) |
-| `reconnect.maxDelayMs` | `number` | `8000` | Reconnect backoff ceiling (ms) |
+| `reconnect.maxDelayMs` | `number` | `15000` | Reconnect backoff ceiling (ms) |
 | `reconnect.factor` | `number` | `2` | Backoff multiplier |
 | `reconnect.maxAttempts` | `number` | unlimited | Stop reconnecting after N failures |
 | `offline.persistenceKey` | `string` | — | localStorage key for outbox persistence |

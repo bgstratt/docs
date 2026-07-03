@@ -11,6 +11,10 @@
     "build:apps": "powershell -ExecutionPolicy Bypass -File ./scripts/build-apps.ps1",
     "build:all": "npm run build:site && npm run build:apps"
   },
+  "dependencies": {
+    "nodalmerge-bridge": "file:../nodalmerge/artifacts/package-local/npm/nodalmerge-bridge-0.1.0.tgz",
+    "nodalmerge-sdk-js": "file:../nodalmerge/artifacts/package-local/npm/nodalmerge-sdk-js-0.1.1.tgz"
+  },
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

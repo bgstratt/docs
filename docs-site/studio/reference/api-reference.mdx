@@ -9,8 +9,10 @@ The current catalog of MCP tools and REST endpoints exposed by the Studio Host, 
 which surface (the VS Code extension, autonomous agents, or neither) actually reaches
 each one.
 
-Ground truth: **70 `nm_v1_*` MCP tools**, **46 of them** dispatched in-process to
-autonomous agents, **13 `nms_v1_*` external-caller tools**, and **112 REST routes**.
+Ground truth (verified directly against source, not the tables below — the tables
+illustrate shape/category, not an exhaustive per-tool listing): **117 `nm_v1_*` MCP
+tools**, **72 of them** dispatched in-process to autonomous agents, **14 `nms_v1_*`
+external-caller tools**, and **187 REST routes**.
 
 <Note>
 Frozen design principles, request/response schemas, and the error envelope format
@@ -20,7 +22,7 @@ catalog and supersedes tool counts anywhere they've drifted.
 
 ## External caller surface (`nms_v1_*`)
 
-These 13 tools are the recommended entry point for external MCP clients — Claude
+These 14 tools are the recommended entry point for external MCP clients — Claude
 Code, Cursor, scripts, CI agents. They cover the full human-in-the-loop lifecycle at
 a goal-centric level, without requiring knowledge of work units, branches, or the
 internal DAG.
@@ -36,10 +38,11 @@ host and the same error envelope format.
 |---|---|
 | `nms_v1_goal_run` | Start a new goal — creates a work unit, execution session, and enqueues the orchestrator in one call. Returns `goalId` and `sessionId`. |
 | `nms_v1_goal_list` | List all goals with current status. |
-| `nms_v1_goal_status` | Detailed status for one goal, including pending clarifications and session state. |
+| `nms_v1_goal_status` | Detailed status for one goal, including pending clarifications, an unresolved failure if the goal is dead-lettered (with which recovery actions currently apply), and session state. |
 | `nms_v1_goal_cancel` | Cancel a goal and its entire subtree. Completed or merged work units are left untouched. |
 | `nms_v1_goal_pause` | Pause a goal and all its active agents. |
 | `nms_v1_goal_resume` | Resume a paused goal. Optionally inject a steering message. |
+| `nms_v1_goal_recover` | Recover a dead-lettered goal — `action` is one of `retry`, `retry_with_context`, `continue` (`MaxIterationsExceeded` only), or `replan`. Resolves the goal's own latest dead-letter entry internally; no entry ID needed. |
 
 ### Clarifications
 | Tool | Purpose |
@@ -94,7 +97,7 @@ their own host's REST API; they call the tool dispatcher in-process. A REST endp
 with no frontend caller can still be heavily used — just by agents, via the MCP tool
 it shares a command service with.
 
-## MCP tool catalog (70 tools)
+## MCP tool catalog (117 tools — categories below are not exhaustive)
 
 ✅ = dispatched in-process to orchestrator/worker agents · — = MCP-client, REST, or
 extension only.
@@ -136,6 +139,28 @@ extension only.
 | `nm_v1_merge_validate` | ✅ | Validate a draft proposal, moves it to ReadyForReview |
 | `nm_v1_merge_review` | ✅ | Approve/reject (supports `automated=true` for the reviewer-agent path) |
 | `nm_v1_merge_apply` | ✅ | Apply an approved proposal — runs review-policy/promotion-branch gate logic |
+
+### Dead-letter
+| Tool | Dispatched | Purpose |
+|---|---|---|
+| `nm_v1_dead_letter_list` | — | List every dead-letter entry across all work units |
+| `nm_v1_dead_letter_get` | — | Get a single dead-letter entry by its own entry ID |
+| `nm_v1_dead_letter_by_work_unit` | — | Get the latest dead-letter entry for a work unit, if any |
+| `nm_v1_dead_letter_history` | — | Full failure history for a work unit, oldest first |
+| `nm_v1_dead_letter_retry` | — | Retry a dead-lettered work unit (optional credential override) |
+| `nm_v1_dead_letter_retry_with_context` | — | Retry with a human correction folded into the goal, bypassing the attempt cap |
+| `nm_v1_dead_letter_replan` | — | Re-plan a failed fan-out slice into fresh sub-slices; original marked `Cancelled` |
+| `nm_v1_dead_letter_continue` | — | Resume the same work unit with reconstructed prior context (`MaxIterationsExceeded` only) |
+
+<Note>
+Deliberately **not** dispatched to orchestrator/worker agents — these are
+human-initiated recovery actions on an already-failed, already-exited work unit, not
+something a running agent would ever call on itself. The recommended external-caller
+flow reaches the same capability through `nms_v1_goal_status` (surfaces an unresolved
+failure and which actions apply) and `nms_v1_goal_recover` (resolves the goal's own
+latest entry internally — no entry ID needed) instead of these detailed,
+entry-ID-based tools.
+</Note>
 
 ### Replay
 | Tool | Dispatched | Purpose |
@@ -229,6 +254,96 @@ None of these are dispatched to autonomous agents yet.
 | Review Policy on create | `reviewPolicy` field on `POST /studio/workunits` | `nm_v1_workunit_create` has no `reviewPolicy` parameter — MCP-created work units always default to `HumanRequired` |
 | Promotion branches | `usePromotionBranch`/`candidateBranchId` on `POST /studio/options`, `POST /studio/branches/candidate/promote` | No tool to toggle or promote |
 | Fork from Known Good | `POST /studio/state/{stateId}/fork` | An MCP client/agent can checkout (mutate) a known-good state via `nm_v1_state_checkoutKnownGood`, but can't fork a *new* work unit from one without writing its own `seedFromBranchId`-style call |
+
+## REST endpoint catalog (187 routes)
+
+Grouped by resource area; `StudioRestEndpoints.cs` is the single file that registers
+all of these.
+
+### Workspace files & execution
+`branchId` is a query parameter on every one of these, not a route segment — branch
+IDs like `merge/{workUnitId}` contain a literal `/`, which a `{branchId}` route
+segment can never match.
+- `POST /studio/workspace/build|test|exec|run?branchId=...` — trigger build / test /
+  build+test+lint / run on a branch
+- `POST /studio/workspace/run/stop?branchId=...` — stop one/all branch run processes
+- `GET /studio/workspace/exec/latest?branchId=...` — latest execution result
+- `GET /studio/workspace/exec/output?branchId=...&resultId=...` — cached stdout/stderr for a past result
+- `GET /studio/workspace/path?branchId=...` — branch working directory path
+- `GET /studio/workspace/profile?branchId=...` — detected workspace roots/stacks/commands
+- `POST /studio/workspace/profile/rescan?branchId=...` — refresh detected workspace profile
+- `POST /studio/workspace/switch` — force a repository resync against current disk content (see [Guides → Repository virtualization](/studio/guides/repository-virtualization))
+
+### Work units, tasks, agents, merges, branches
+- Work units: `GET/POST /studio/workunits`, `GET /studio/workunits/{id}`
+  (+`/children`, `/artifacts`, `/orchestration-events`, `/intents`,
+  `/conflict-report`, `/proposal-dag`), `POST /studio/workunits/{id}/cancel`,
+  `POST /studio/stop-all`
+- Tasks: `GET /studio/tasks`, `GET /studio/tasks/{id}`, `POST /studio/tasks`,
+  `PUT /studio/tasks/{id}`, `POST /studio/tasks/{id}/assign`
+- Agents: `GET /studio/agents` (`?all=true` for all), `POST /studio/agents/spawn`,
+  `GET /studio/agents/{id}/status`, `POST /studio/agents/{id}/pause|resume|stop`
+- Merges: `GET/POST /studio/merges`, `GET /studio/merges/{id}` (+`/constituents`,
+  `/file-changes`), `POST /studio/merges/{id}/validate|review|apply` (`review` body:
+  `{ decision: "Approved"|"Rejected" }` — there is no separate `/accept`/`/reject`
+  route), `GET /studio/merges/compare?ids=`, `POST /studio/merges/{id}/branch`,
+  `POST /studio/merges/{id}/restore-workspace`
+- Branches: `GET /studio/branches`, `POST /studio/branches`,
+  `POST /studio/branches/{id}/checkout`, `GET /studio/branches/{id}/status`,
+  `POST /studio/branches/candidate/promote`
+
+### Known-good states & cache management
+- `POST /studio/state/markKnownGood`, `GET /studio/state/knownGood/{branchId}`,
+  `POST /studio/state/checkoutKnownGood`, `POST /studio/state/{stateId}/fork` (fork a
+  new work unit seeded from a checkpoint's snapshot branch — the extension's "Fork
+  from Known Good")
+- Branch directory cache (`WorkspaceCacheManager`, REST-only — see
+  [Guides → Repository virtualization](/studio/guides/repository-virtualization)):
+  `POST /studio/cache/evict?workUnitId=...`,
+  `POST /studio/cache/materialize?workUnitId=...`,
+  `POST /studio/cache/evict/orphaned`, `POST /studio/cache/gc?dryRun=...`
+
+### Dead-letter queue
+- `GET /studio/dead-letter`, `GET /studio/dead-letter/{id}`,
+  `GET /studio/dead-letter/by-work-unit/{workUnitId}`,
+  `GET /studio/dead-letter/history/{workUnitId}` (full failure history, oldest first)
+- `POST /studio/dead-letter/{id}/retry`,
+  `POST /studio/dead-letter/{id}/retry-with-context` (folds a human correction into
+  the goal, bypasses the normal attempt cap),
+  `POST /studio/dead-letter/{id}/replan` (decompose the failed slice into fresh
+  sub-slices, mark original `Cancelled` — never gated on attempt count since it never
+  resumes the failed work unit),
+  `POST /studio/dead-letter/{id}/continue` (`MaxIterationsExceeded` only — resume the
+  SAME work unit with reconstructed prior context and a fresh iteration budget)
+
+### Everything else
+- Agent profiles: `GET /studio/agent-profiles`, `GET /studio/agent-profiles/{id}`,
+  `POST`/`PUT /studio/agent-profiles/{id}`
+- Scheduler: `GET /studio/scheduler/pending|awaiting-resume`,
+  `POST /studio/scheduler/{workUnitId}/resume`, `POST /studio/scheduler/resume-all`,
+  `POST /studio/scheduler/enqueue`
+- Clarifications: `GET /studio/clarifications/awaiting`,
+  `POST /studio/clarifications/request`,
+  `POST /studio/clarifications/{workUnitId}/respond`
+- Sessions & events: `GET/POST /studio/sessions`, `GET /studio/sessions/{id}`,
+  `POST /studio/sessions/{id}/pause|resume|abandon`,
+  `GET /studio/sessions/{id}/workunits|events|state`, `GET /studio/events/{id}`
+- Artifacts: `GET/POST /studio/artifacts`, `GET /studio/artifacts/{id}`
+  (+`/children`)
+- Options/policies/projections/snapshots: `GET/POST /studio/options`,
+  `GET /studio/policies`, `GET /studio/projections`, `GET /studio/projections/{type}`,
+  `GET /studio/snapshots/{agentId}` (+`/compare/{otherAgentId}`)
+- Replay: `GET /studio/replay/timeline` (+`/{branchId}`),
+  `GET /studio/replay/range/{branchId}`, `POST /studio/replay/rollback/{branchId}`,
+  `GET /studio/replay/inspect/{branchId}`
+- Goals/decisions/evidence/trajectory/hypotheses/reasoning/models:
+  `GET/POST /studio/goals`, `GET/POST /studio/decisions`,
+  `GET /studio/evidence` + `POST /studio/evidence/attach`,
+  `GET /studio/trajectory/replay` + `POST /studio/trajectory`,
+  `GET /studio/hypotheses` + `POST /studio/hypotheses/fork`,
+  `POST /studio/reasoning`, `GET /studio/models/compare|replay/{workUnitId}`
+- Phase 7: `GET/POST /studio/experiments`, `GET /studio/experiments/{id}`,
+  `POST /studio/steering/redirect|fork-from-node`, `POST /studio/counterfactuals`
 
 See [Concepts → Trust & autonomy](/studio/concepts/trust-and-autonomy) for the
 human-in-the-loop rationale behind these boundaries.

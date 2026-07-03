@@ -21,7 +21,7 @@ export const apps: AppEntry[] = [
     description:
       "An r/place-style shared board where every pixel is its own CRDT key. Paint together in real time, or flip yourself offline, keep painting, then reconnect and watch both sides merge — contested pixels resolve identically on every peer, and remote pixels flash in as they arrive.",
     category: "demos",
-    status: "coming-soon",
+    status: "live",
     icon: "🎨",
     sourcePath: "apps/demos/pixel-canvas",
   },
@@ -32,7 +32,7 @@ export const apps: AppEntry[] = [
     description:
       "The flagship demo of NodalMerge's DAG model: a spatial workspace (nodes, edges, annotations, assets) with branch-from-cursor, merge-into-head, a branch-lane DAG visualization showing divergence and merges, timeline scrubbing with a per-op inspector, and live presence including remote drag ghosts and peer replay cursors.",
     category: "demos",
-    status: "coming-soon",
+    status: "live",
     icon: "🧭",
     sourcePath: "apps/demos/infinite-room-workspace",
   },
@@ -43,7 +43,7 @@ export const apps: AppEntry[] = [
     description:
       "Runs the automerge-perf B4 editing trace (259,778 single-character edits producing a 104,852-character paper) through the NodalMerge WASM engine, fully client-side, with a live ops/sec meter — then proves convergence by SHA-256 hash against the expected final text.",
     category: "demos",
-    status: "coming-soon",
+    status: "live",
     icon: "⚡",
     sourcePath: "apps/demos/bench-trace",
   },
@@ -54,7 +54,7 @@ export const apps: AppEntry[] = [
     description:
       "Multiple peers drop pins on a shared board in real time. Every pin is its own replicated CRDT key, so concurrent adds and deletes converge without clobbering; a live presence roster shows who's in the room, and offline edits sync on reconnect.",
     category: "demos",
-    status: "coming-soon",
+    status: "live",
     icon: "🗺️",
     sourcePath: "apps/demos/collab-maps",
   },
@@ -65,7 +65,7 @@ export const apps: AppEntry[] = [
     description:
       "Type into a shared document and watch per-character RGA operations converge deterministically across peers — with per-peer colored attribution, a lamport-scrub preview that replays the document at any point in its history, and a local DAG replay timeline.",
     category: "playground",
-    status: "coming-soon",
+    status: "live",
     icon: "🧵",
     sourcePath: "apps/playground/collab-text",
   },
@@ -76,7 +76,7 @@ export const apps: AppEntry[] = [
     description:
       "A wire-protocol tool: connect a raw WebSocket to a room and capture the live event stream — filter by message type, inspect raw payloads, and export a trace for the replay lab.",
     category: "playground",
-    status: "coming-soon",
+    status: "live",
     icon: "🔍",
     sourcePath: "apps/playground/protocol-inspector",
   },
@@ -87,7 +87,7 @@ export const apps: AppEntry[] = [
     description:
       "A wire-protocol tool that pairs with the inspector: capture runtime event snapshots, scrub a replay cursor across protocol-linked checkpoints, and correlate an imported protocol-inspector trace with confidence-scored matching.",
     category: "playground",
-    status: "coming-soon",
+    status: "live",
     icon: "📼",
     sourcePath: "apps/playground/replay-lab",
   },

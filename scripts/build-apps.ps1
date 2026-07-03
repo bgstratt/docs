@@ -23,6 +23,7 @@ if (-not (Test-Path $siteDist)) {
 # Visitors can still type a different room name in-app to test multi-peer sync.
 $apps = @(
   @{ Slug = "collab-maps"; Category = "demos"; Path = "apps/demos/collab-maps" },
+  @{ Slug = "pixel-canvas"; Category = "demos"; Path = "apps/demos/pixel-canvas" },
   @{ Slug = "infinite-room-workspace"; Category = "demos"; Path = "apps/demos/infinite-room-workspace" },
   @{ Slug = "collab-text"; Category = "playground"; Path = "apps/playground/collab-text" },
   @{ Slug = "protocol-inspector"; Category = "playground"; Path = "apps/playground/protocol-inspector" },

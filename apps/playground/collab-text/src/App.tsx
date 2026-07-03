@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { loadRuntimeConfig } from "../../../../shared/runtime/config";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
 import { connectWithRoomFallback } from "../../../../shared/runtime/roomFallback";
@@ -19,9 +19,12 @@ import {
   parseTimelineItems,
   type ReplayTimelineItem
 } from "./lib/localReplayTimeline";
+import { transformCaret } from "./lib/caretTransform";
 
 const config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
-const DEFAULT_ROOM_ID = (import.meta.env.VITE_DEFAULT_ROOM_ID as string | undefined)?.trim() || "collab-text";
+const SHARED_ROOM_ID = new URLSearchParams(window.location.search).get("room")?.trim() || "";
+const DEFAULT_ROOM_ID =
+  SHARED_ROOM_ID || (import.meta.env.VITE_DEFAULT_ROOM_ID as string | undefined)?.trim() || "collab-text";
 const TEXT_KEY = "notes/demo/body";
 const TEXT_KEY_PREFIX = "notes/demo/";
 
@@ -72,6 +75,8 @@ export default function App() {
 
   const syncedTextRef = useRef("");
   const applyingRemoteRef = useRef(false);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const pendingCaretRef = useRef<{ start: number; end: number } | null>(null);
   const pushTimerRef = useRef<number | null>(null);
   const localAuthorRef = useRef<string | null>(null);
   const connectGenerationRef = useRef(0);
@@ -80,6 +85,16 @@ export default function App() {
 
   const isConnected = diagnostics.connectionState === "open";
   const canEdit = isConnected && activeRoomId !== null;
+
+  // Restore the transformed caret after a remote-driven editorText replace.
+  useLayoutEffect(() => {
+    const pending = pendingCaretRef.current;
+    const editor = editorRef.current;
+    if (pending && editor) {
+      pendingCaretRef.current = null;
+      editor.setSelectionRange(pending.start, pending.end);
+    }
+  }, [editorText]);
 
   const syncFromRuntimeGraph = useCallback(() => {
     if (!activeRoomId) {
@@ -95,6 +110,15 @@ export default function App() {
     setTextGlyphs(glyphs);
     setAttributionSpans(spans);
     if (next !== syncedTextRef.current) {
+      // Remote (or reconciled) update replaces the textarea value wholesale;
+      // transform the local caret through the change so typing doesn't jump.
+      const editor = editorRef.current;
+      if (editor && document.activeElement === editor) {
+        pendingCaretRef.current = {
+          start: transformCaret(editor.value, next, editor.selectionStart ?? 0),
+          end: transformCaret(editor.value, next, editor.selectionEnd ?? 0)
+        };
+      }
       applyingRemoteRef.current = true;
       syncedTextRef.current = next;
       setEditorText(next);
@@ -405,6 +429,21 @@ export default function App() {
         >
           {isTryingAnotherRoom ? "Trying rooms..." : "Try another room"}
         </button>
+        <button
+          type="button"
+          className="nm-btn"
+          disabled={!activeRoomId}
+          onClick={() => {
+            const url = new URL(window.location.href);
+            url.searchParams.set("room", activeRoomId ?? roomId);
+            void navigator.clipboard.writeText(url.toString()).then(
+              () => setStatus("Share link copied — anyone opening it lands in this room."),
+              () => setStatus("Could not copy share link (clipboard blocked).")
+            );
+          }}
+        >
+          Copy share link
+        </button>
         <span className="nm-p-muted" style={{ marginBottom: 0 }}>{status}</span>
         <p className="nm-controls-hint">
           Room busy or unreachable? Type a different room name above, or click "Try another
@@ -416,6 +455,7 @@ export default function App() {
         <article className="nm-card">
           <h2 className="nm-card-title">Editor</h2>
           <textarea
+            ref={editorRef}
             className="nm-textarea"
             value={editorText}
             onChange={(event) => handleEditorChange(event.target.value)}

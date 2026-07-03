@@ -1,0 +1,27 @@
+# nodalmerge-demo-host — production compose for the demo EC2 box (t3a.small, 2 GB).
+#
+# Mirrors the guardrails from plans/demo-host-public-deploy-guardrails.md:
+#   - hard memory cap + restart-on-failure (self-heal instead of taking the box down)
+#   - port published on host loopback only; nginx terminates TLS and proxies in
+#   - nightly recycle handled by the systemd timer in ../systemd/ (docker variant)
+#
+# Usage on the box (from /opt/nodalmerge-demo-host):
+#   docker compose up -d
+
+services:
+  demo-host:
+    image: nodalmerge-demo-host:0.1.4
+    container_name: nodalmerge-demo-host
+    restart: on-failure
+    ports:
+      # Loopback only — nginx is the public face.
+      - "127.0.0.1:5074:5074"
+    # t3a.small (2 GB) budget: ~1.5 GB available after OS/dockerd/nginx.
+    # Hard cap 1200 MB (OOM-kill + restart), soft reservation 900 MB.
+    mem_limit: 1200m
+    mem_reservation: 900m
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"

@@ -21,10 +21,17 @@ copy over.
 - [x] systemd unit + nightly restart timer written to
       `apps/hosts/nodalmerge-demo-host/deploy/systemd/`
       — **not yet installed on the box**
-- [ ] `MemoryMax`/`MemoryHigh` tuned to the real EC2 instance size (placeholder values
-      in the systemd unit until an instance is picked)
-- [ ] `NODALMERGE_DEMO_HOST_URL=https://api.nodalmerge.com` set when actually running
-      `build:apps` for a real deploy
+- [x] `MemoryMax`/`MemoryHigh` tuned to the chosen instance (t3a.small, 2 GB):
+      1200M hard / 900M soft, mirrored in the Docker compose file
+- [x] `NODALMERGE_DEMO_HOST_URL=https://api.nodalmerge.com` build done — app bundles in
+      `site/dist` are baked against the real host and ready for S3 sync
+- [x] Docker packaging: `deploy/docker/Dockerfile` (multi-stage, restores NodalMerge
+      0.1.4 from nuget.org, non-root, healthcheck) + `deploy/docker/docker-compose.yml`
+      (memory caps, loopback-only port, capped logs) + docker-variant nightly restart
+      timer in `deploy/systemd/`. Image built and convergence-spike-verified locally.
+- [x] Copy-paste EC2 runbook: `apps/hosts/nodalmerge-demo-host/deploy/EC2-SETUP.md`
+      (swapfile, Docker/nginx/certbot install, image ship, compose up, nginx zones +
+      certbot, nightly timer, smoke test) — box steps remain to be executed
 
 ## Goal
 

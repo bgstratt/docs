@@ -1,0 +1,8 @@
+[Unit]
+Description=Recycle nodalmerge-demo-host container to reclaim in-memory demo state
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker restart nodalmerge-demo-host

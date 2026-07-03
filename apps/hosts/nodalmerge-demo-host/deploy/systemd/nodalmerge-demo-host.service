@@ -15,9 +15,10 @@ Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
 
 # Hard memory backstop: OOM-kill and self-heal instead of taking the box down.
-# Tune to the actual instance size before deploying.
-MemoryHigh=640M
-MemoryMax=768M
+# Sized for t3a.small (2 GB): ~1.5 GB free after OS/nginx(/dockerd); soft
+# pressure at 900M, hard cap 1200M. Retune if the instance type changes.
+MemoryHigh=900M
+MemoryMax=1200M
 
 NoNewPrivileges=true
 ProtectSystem=full

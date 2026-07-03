@@ -24,6 +24,7 @@ if (-not (Test-Path $siteDist)) {
 $apps = @(
   @{ Slug = "collab-maps"; Category = "demos"; Path = "apps/demos/collab-maps" },
   @{ Slug = "pixel-canvas"; Category = "demos"; Path = "apps/demos/pixel-canvas" },
+  @{ Slug = "bench-trace"; Category = "demos"; Path = "apps/demos/bench-trace" },
   @{ Slug = "infinite-room-workspace"; Category = "demos"; Path = "apps/demos/infinite-room-workspace" },
   @{ Slug = "collab-text"; Category = "playground"; Path = "apps/playground/collab-text" },
   @{ Slug = "protocol-inspector"; Category = "playground"; Path = "apps/playground/protocol-inspector" },

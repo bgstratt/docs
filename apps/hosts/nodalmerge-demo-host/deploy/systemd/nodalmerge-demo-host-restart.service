@@ -1,0 +1,6 @@
+[Unit]
+Description=Recycle nodalmerge-demo-host to reclaim in-memory demo state
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart nodalmerge-demo-host.service

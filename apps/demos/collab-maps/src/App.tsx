@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
+import { connectWithRoomFallback } from "../../../../shared/runtime/roomFallback";
 import { CollabMapsRuntimeClient, type MapPin } from "./lib/collabMapsRuntimeClient";
 
 const client = new CollabMapsRuntimeClient();
@@ -39,6 +40,7 @@ export default function App() {
   const [peerCount, setPeerCount] = useState(0);
   const [lastRuntimeMessage, setLastRuntimeMessage] = useState("none");
   const [activeNotice, setActiveNotice] = useState("Click the board to add pins. Connecting to server...");
+  const [isTryingAnotherRoom, setIsTryingAnotherRoom] = useState(false);
 
   useEffect(() => {
     const unsubscribe = client.subscribe((next) => {
@@ -110,6 +112,30 @@ export default function App() {
     });
   }
 
+  async function tryAnotherRoom() {
+    const baseRoomId = roomIdInput.trim() || config.defaultRoomId;
+    setIsTryingAnotherRoom(true);
+    const result = await connectWithRoomFallback(
+      baseRoomId,
+      (candidate) => client.connect(candidate),
+      () => client.getDiagnostics().connectionState === "open",
+      (candidate) => {
+        setRoomIdInput(candidate);
+        setActiveNotice(`Room busy — trying ${candidate}...`);
+      }
+    );
+    setIsTryingAnotherRoom(false);
+    setPins(client.getPins());
+    setActiveRoomId(result.roomId);
+    if (result.connected) {
+      setLastAction(`Connected to ${result.roomId}.`);
+      setActiveNotice(`Connected to ${result.roomId}. Click board to add pins.`);
+    } else {
+      setLastAction(`Tried ${result.attempts} room(s) starting from ${baseRoomId} — still unavailable.`);
+      setActiveNotice("Server unavailable — pins saved locally, will sync when connected.");
+    }
+  }
+
   function addPinFromClick(event: React.MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.round(event.clientX - rect.left);
@@ -164,6 +190,18 @@ export default function App() {
         <button type="button" className="nm-btn" onClick={() => client.disconnect()}>
           Disconnect
         </button>
+        <button
+          type="button"
+          className="nm-btn"
+          onClick={() => void tryAnotherRoom()}
+          disabled={isTryingAnotherRoom}
+        >
+          {isTryingAnotherRoom ? "Trying rooms..." : "Try another room"}
+        </button>
+        <p className="nm-controls-hint">
+          Room busy or unreachable? Type a different room name above, or click "Try another
+          room" to attempt a couple of nearby room ids automatically.
+        </p>
         <label className="nm-label" htmlFor="authorName">Author</label>
         <input
           id="authorName"

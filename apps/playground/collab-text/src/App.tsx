@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadRuntimeConfig } from "../../../../shared/runtime/config";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
+import { connectWithRoomFallback } from "../../../../shared/runtime/roomFallback";
 import { SdkRuntimeClient } from "../../../demos/infinite-room-workspace/src/lib/sdkRuntimeClient";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
 import { diffTextEdits } from "./lib/textDiff";
@@ -23,6 +24,11 @@ const config = loadRuntimeConfig(import.meta.env as Record<string, string | unde
 const DEFAULT_ROOM_ID = (import.meta.env.VITE_DEFAULT_ROOM_ID as string | undefined)?.trim() || "collab-text";
 const TEXT_KEY = "notes/demo/body";
 const TEXT_KEY_PREFIX = "notes/demo/";
+
+// Demo-only guardrail, not a protocol limit: keeps edits comfortably under the host's
+// 64 KiB max WebSocket message size (which has no chunking on the SDK side) while
+// giving room users a predictable, small-scale editing surface.
+const MAX_DOC_LENGTH = 8000;
 
 const client = new SdkRuntimeClient(config);
 
@@ -62,6 +68,7 @@ export default function App() {
   const [status, setStatus] = useState(`Connecting to ${DEFAULT_ROOM_ID}...`);
   const [roomPeers, setRoomPeers] = useState<RoomPeer[]>([]);
   const [localPeerId, setLocalPeerId] = useState<string | null>(null);
+  const [isTryingAnotherRoom, setIsTryingAnotherRoom] = useState(false);
 
   const syncedTextRef = useRef("");
   const applyingRemoteRef = useRef(false);
@@ -132,6 +139,12 @@ export default function App() {
       void refreshTimeline();
     }, 200);
   }, [refreshTimeline]);
+
+  useEffect(() => {
+    if (diagnostics.lastError?.toLowerCase().includes("message too large")) {
+      setStatus("Demo limit reached: that edit was too large for this demo host and was not applied. Try a smaller edit.");
+    }
+  }, [diagnostics.lastError]);
 
   useEffect(() => {
     return client.subscribeRuntimeMessages((message) => {
@@ -253,6 +266,24 @@ export default function App() {
     [roomId, refreshTimeline, syncFromRuntimeGraph]
   );
 
+  const tryAnotherRoom = useCallback(async () => {
+    const baseRoomId = roomId.trim() || DEFAULT_ROOM_ID;
+    setIsTryingAnotherRoom(true);
+    const result = await connectWithRoomFallback(
+      baseRoomId,
+      (candidate) => connectRoom(candidate),
+      () => client.getDiagnostics().connectionState === "open",
+      (candidate) => {
+        setRoomId(candidate);
+        setStatus(`Room busy — trying ${candidate}...`);
+      }
+    );
+    setIsTryingAnotherRoom(false);
+    if (!result.connected) {
+      setStatus(`Tried ${result.attempts} room(s) starting from ${baseRoomId} — still unavailable.`);
+    }
+  }, [roomId, connectRoom]);
+
   const disconnectRoom = useCallback(() => {
     connectGenerationRef.current += 1;
     client.disconnect();
@@ -315,8 +346,13 @@ export default function App() {
     }, 80);
   }
 
-  function handleEditorChange(nextText: string) {
+  function handleEditorChange(rawNextText: string) {
+    const wasTruncated = rawNextText.length > MAX_DOC_LENGTH;
+    const nextText = wasTruncated ? rawNextText.slice(0, MAX_DOC_LENGTH) : rawNextText;
     setEditorText(nextText);
+    if (wasTruncated) {
+      setStatus(`Demo limit: text capped at ${MAX_DOC_LENGTH.toLocaleString()} characters.`);
+    }
     if (applyingRemoteRef.current || !canEdit) {
       return;
     }
@@ -361,7 +397,19 @@ export default function App() {
         <button type="button" className="nm-btn" onClick={() => void refreshTimeline()} disabled={!canEdit}>
           Refresh timeline
         </button>
+        <button
+          type="button"
+          className="nm-btn"
+          onClick={() => void tryAnotherRoom()}
+          disabled={isTryingAnotherRoom}
+        >
+          {isTryingAnotherRoom ? "Trying rooms..." : "Try another room"}
+        </button>
         <span className="nm-p-muted" style={{ marginBottom: 0 }}>{status}</span>
+        <p className="nm-controls-hint">
+          Room busy or unreachable? Type a different room name above, or click "Try another
+          room" to attempt a couple of nearby room ids automatically.
+        </p>
       </section>
 
       <section className="nm-layout-2col-wide">
@@ -374,7 +422,11 @@ export default function App() {
             disabled={!canEdit}
             rows={12}
             spellCheck={false}
+            maxLength={MAX_DOC_LENGTH}
           />
+          <p className="nm-p-muted">
+            Demo limit: {editorText.length.toLocaleString()}/{MAX_DOC_LENGTH.toLocaleString()} characters.
+          </p>
           <h3 style={{ marginBottom: 6, marginTop: 14 }}>Live peer-colored preview</h3>
           <pre className="nm-pre">
             {renderAttributedText(editorText, attributionSpans)}

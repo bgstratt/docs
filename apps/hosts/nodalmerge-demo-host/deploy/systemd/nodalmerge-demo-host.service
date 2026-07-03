@@ -1,0 +1,27 @@
+[Unit]
+Description=NodalMerge demo host (public demos/playground backend)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/nodalmerge-demo-host
+ExecStart=/usr/bin/dotnet /opt/nodalmerge-demo-host/NodalMerge.DemoHost.dll
+Restart=on-failure
+RestartSec=5
+User=nodalmerge
+Group=nodalmerge
+
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+# Hard memory backstop: OOM-kill and self-heal instead of taking the box down.
+# Tune to the actual instance size before deploying.
+MemoryHigh=640M
+MemoryMax=768M
+
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

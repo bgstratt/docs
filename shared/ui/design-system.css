@@ -639,6 +639,13 @@ input[type="range"] {
   color: var(--nm-text-3);
 }
 
+.nm-controls-hint {
+  flex-basis: 100%;
+  margin: var(--nm-sp-1) 0 0;
+  font-size: var(--nm-text-sm);
+  color: var(--nm-text-3);
+}
+
 .nm-last-action {
   margin-bottom: 6px;
   font-size: var(--nm-text-sm);

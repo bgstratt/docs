@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { loadRuntimeConfig } from "../../../../shared/runtime/config";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
 import { RuntimeClient } from "../../../../shared/runtime/runtimeClient";
+import { connectWithRoomFallback } from "../../../../shared/runtime/roomFallback";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
 import { SdkRuntimeClient, type SharedWriteResult } from "./lib/sdkRuntimeClient";
 import {
@@ -45,6 +46,23 @@ const config = loadRuntimeConfig(import.meta.env as Record<string, string | unde
 const wsClient = new RuntimeClient(config, { pubkeyPrefix: "workspace", maxEvents: 40 });
 const sdkClient = new SdkRuntimeClient(config);
 type RuntimeBackend = "ws" | "sdk";
+
+async function waitForConnectionSettle(
+  client: { getDiagnostics: () => RuntimeDiagnostics },
+  timeoutMs = 1500,
+  intervalMs = 150
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = client.getDiagnostics().connectionState;
+    if (state === "open" || state === "error" || state === "closed") {
+      return;
+    }
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, intervalMs);
+    });
+  }
+}
 const WORKSPACE_WIDTH = 860;
 const WORKSPACE_HEIGHT = 360;
 
@@ -168,6 +186,7 @@ export default function App() {
   const [backend, setBackend] = useState<RuntimeBackend>("sdk");
   const [roomIdInput, setRoomIdInput] = useState(config.defaultRoomId);
   const [activeRoomId, setActiveRoomId] = useState<string>(config.defaultRoomId);
+  const [isTryingAnotherRoom, setIsTryingAnotherRoom] = useState(false);
   const [diagnostics, setDiagnostics] = useState<RuntimeDiagnostics>(sdkClient.getDiagnostics());
   const [lastAction, setLastAction] = useState<string>("Ready.");
   const [presenceName, setPresenceName] = useState("operator-1");
@@ -2150,6 +2169,31 @@ export default function App() {
     setLastAction(`Switching room to ${nextRoomId}...`);
   }
 
+  async function tryAnotherRoom() {
+    const baseRoomId = roomIdInput.trim() || config.defaultRoomId;
+    const activeClient = backend === "sdk" ? sdkClient : wsClient;
+    setIsTryingAnotherRoom(true);
+    const result = await connectWithRoomFallback(
+      baseRoomId,
+      async (candidate) => {
+        // Room changes are effect-driven (see the useEffect keyed on
+        // activeRoomId) rather than an awaitable connect call, so trigger
+        // the switch and poll diagnostics until it settles.
+        setRoomIdInput(candidate);
+        setActiveRoomId(candidate);
+        await waitForConnectionSettle(activeClient);
+      },
+      () => activeClient.getDiagnostics().connectionState === "open",
+      (candidate) => {
+        setActiveNotice(`Room busy — trying ${candidate}...`);
+      }
+    );
+    setIsTryingAnotherRoom(false);
+    if (!result.connected) {
+      setLastAction(`Tried ${result.attempts} room(s) starting from ${baseRoomId} — still unavailable.`);
+    }
+  }
+
   function addWorkspaceNode() {
     const writeTarget = ensureWritableBranchForEdit("workspace.add-node", { applySeedSnapshot: true });
     if (!writeTarget) {
@@ -2776,6 +2820,13 @@ export default function App() {
         >
           Disconnect
         </button>
+        <button type="button" onClick={() => void tryAnotherRoom()} disabled={isTryingAnotherRoom}>
+          {isTryingAnotherRoom ? "Trying rooms..." : "Try another room"}
+        </button>
+        <p className="nm-controls-hint">
+          Room busy or unreachable? Type a different room name above, or click "Try another
+          room" to attempt a couple of nearby room ids automatically.
+        </p>
         <label htmlFor="backendMode">Runtime mode</label>
         <select
           id="backendMode"

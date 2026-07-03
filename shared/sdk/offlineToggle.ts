@@ -52,10 +52,17 @@ export function createOfflineToggle(doc: Doc): OfflineToggle {
     goOffline() {
       manuallyOffline = true;
       doc.disconnect();
+      // The SDK only emits onDisconnect for *unexpected* socket closes (a
+      // manual disconnect() clears its connected flag before onclose runs),
+      // so flip our state directly instead of waiting for an event that
+      // never comes.
+      online = false;
+      emit();
     },
     goOnline() {
       manuallyOffline = false;
       doc.connect();
+      // online flips back via doc.onConnect once the handshake completes.
     },
     pendingWrites: () => pending,
     subscribe(listener) {

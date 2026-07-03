@@ -23,7 +23,10 @@ export function createDocDiagnostics(doc: Doc, config: RuntimeConfig): DocDiagno
   const listeners = new Set<(diagnostics: RuntimeDiagnostics) => void>();
 
   const snapshot = (): RuntimeDiagnostics => ({
-    connectionState,
+    // The SDK doesn't emit onDisconnect for a manual disconnect(), so an
+    // "open" state from the last event can go stale — cross-check the live
+    // flag rather than trusting event history alone.
+    connectionState: connectionState === "open" && !doc.isConnected ? "closed" : connectionState,
     transportMode: config.transportMode,
     lastError,
     lastCloseCode: null,

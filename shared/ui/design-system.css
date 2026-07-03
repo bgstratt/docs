@@ -385,6 +385,22 @@ hr {
   flex-shrink: 0;
 }
 
+/* ── Field group (label + input + action) ─────────────── */
+
+.nm-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--nm-sp-2);
+  margin-bottom: var(--nm-sp-3);
+}
+
+.nm-field .nm-input,
+.nm-field .nm-textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* ── Section label ────────────────────────────────────── */
 
 .nm-section-label {

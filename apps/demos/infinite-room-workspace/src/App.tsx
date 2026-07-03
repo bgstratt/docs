@@ -69,6 +69,8 @@ import {
   hasWorkspaceSnapshotContent
 } from "./state/snapshot";
 import { ReplayLanes } from "./features/replay/ReplayLanes";
+import { PresencePanel } from "./panels/PresencePanel";
+import { WorkspaceCanvas } from "./features/canvas/WorkspaceCanvas";
 
 const config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
 const wsClient = new RuntimeClient(config, { pubkeyPrefix: "workspace", maxEvents: 40 });
@@ -2360,7 +2362,7 @@ export default function App() {
     setActiveNotice("Workspace cleared.");
   }
 
-  function handleWorkspaceNodeMouseDown(event: React.MouseEvent<HTMLDivElement>, nodeId: string) {
+  function handleWorkspaceNodeMouseDown(event: React.PointerEvent<HTMLDivElement>, nodeId: string) {
     if (!canUseSdkActions) {
       setLastAction("Connect in npm sdk + wasm mode before moving workspace nodes.");
       return;
@@ -2423,7 +2425,7 @@ export default function App() {
     isDraggingRef.current = true;
   }
 
-  function handleWorkspaceSurfaceMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+  function handleWorkspaceSurfaceMouseDown(event: React.PointerEvent<HTMLDivElement>) {
     if (workspaceTool !== "annotate") {
       return;
     }
@@ -2601,11 +2603,15 @@ export default function App() {
       setActiveNotice("Workspace move persisted.");
     }
 
-    window.addEventListener("mousemove", onPointerMove);
-    window.addEventListener("mouseup", onPointerUp);
+    // Pointer events instead of mouse events so touch/pen drags work too
+    // (the canvas surface sets touch-action: none to suppress scrolling).
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     return () => {
-      window.removeEventListener("mousemove", onPointerMove);
-      window.removeEventListener("mouseup", onPointerUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
     };
   }, [backend, canUseSdkActions, replayState, branchBaselineById, activeRoomId]);
 
@@ -2862,196 +2868,22 @@ export default function App() {
               notes: <code>{workspaceAnnotations.length}</code>
             </span>
           </div>
-          <div
-            ref={workspaceSurfaceRef}
-            onMouseDown={handleWorkspaceSurfaceMouseDown}
-            style={{
-              width: "100%",
-              maxWidth: WORKSPACE_WIDTH,
-              height: WORKSPACE_HEIGHT,
-              border: "1px solid #cbd5e1",
-              borderRadius: 8,
-              background: "linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
-              position: "relative",
-              overflow: "hidden",
-              marginBottom: 12
-            }}
-          >
-            <svg
-              width={WORKSPACE_WIDTH}
-              height={WORKSPACE_HEIGHT}
-              style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-            >
-              {workspaceEdges.map((edge) => {
-                const from = workspaceNodes.find((node) => node.id === edge.fromNodeId);
-                const to = workspaceNodes.find((node) => node.id === edge.toNodeId);
-                if (!from || !to) {
-                  return null;
-                }
-                return (
-                  <line
-                    key={edge.id}
-                    x1={from.x + 52}
-                    y1={from.y + 18}
-                    x2={to.x + 52}
-                    y2={to.y + 18}
-                    stroke="#1e293b"
-                    strokeOpacity={0.55}
-                    strokeWidth={2.2}
-                  />
-                );
-              })}
-            </svg>
-            {workspaceNodes.map((node) => {
-              const remoteDrag = remoteDragByNodeId[node.id];
-              const renderX = remoteDrag ? remoteDrag.x : node.x;
-              const renderY = remoteDrag ? remoteDrag.y : node.y;
-              return (
-                <div
-                  key={node.id}
-                  role="button"
-                  tabIndex={0}
-                  onMouseDown={(event) => handleWorkspaceNodeMouseDown(event, node.id)}
-                  style={{
-                    position: "absolute",
-                    left: renderX,
-                    top: renderY,
-                    width: 104,
-                    minHeight: 36,
-                    borderRadius: 8,
-                    border: remoteDrag ? "1px solid #0f766e" : "1px solid #2563eb",
-                    background: "white",
-                    padding: "6px 8px",
-                    cursor: canUseSdkActions ? "grab" : "not-allowed",
-                    boxShadow: remoteDrag ? "0 0 0 2px rgba(20, 184, 166, 0.18)" : "0 1px 3px rgba(15, 23, 42, 0.25)"
-                  }}
-                >
-                  <strong style={{ display: "block", fontSize: 12 }}>{node.label}</strong>
-                  <small style={{ color: "#475569" }}>{new Date(node.updatedAtIso).toLocaleTimeString()}</small>
-                </div>
-              );
-            })}
-            {workspaceAssets.map((asset) => (
-              <div
-                key={asset.id}
-                style={{
-                  position: "absolute",
-                  left: asset.x,
-                  top: asset.y,
-                  minWidth: 120,
-                  borderRadius: 8,
-                  border: "1px solid #7c3aed",
-                  background: "#faf5ff",
-                  padding: "6px 8px",
-                  boxShadow: "0 1px 3px rgba(15, 23, 42, 0.20)"
-                }}
-              >
-                <strong style={{ display: "block", fontSize: 12 }}>{asset.name}</strong>
-                <small style={{ color: "#5b21b6" }}>shared asset</small>
-              </div>
-            ))}
-            {Object.entries(remoteDragByPeer).map(([peerId, drag]) => (
-              <div
-                key={`${peerId}-${drag.nodeId}`}
-                style={{
-                  position: "absolute",
-                  left: drag.x + 106,
-                  top: drag.y - 10,
-                  borderRadius: 999,
-                  border: "1px solid #0f766e",
-                  background: "#ecfeff",
-                  color: "#155e75",
-                  fontSize: 11,
-                  padding: "2px 8px"
-                }}
-              >
-                {peerId} dragging {drag.nodeId}
-              </div>
-            ))}
-            {workspaceAnnotations.map((note) => (
-              <div
-                key={note.id}
-                style={{
-                  position: "absolute",
-                  left: note.x,
-                  top: note.y,
-                  minWidth: 130,
-                  maxWidth: 220,
-                  borderRadius: 8,
-                  border: "1px solid #f59e0b",
-                  background: "#fffbeb",
-                  padding: "6px 8px",
-                  boxShadow: "0 1px 3px rgba(15, 23, 42, 0.20)"
-                }}
-              >
-                <strong style={{ display: "block", fontSize: 12 }}>{note.text}</strong>
-                <small style={{ color: "#92400e" }}>{new Date(note.updatedAtIso).toLocaleTimeString()}</small>
-              </div>
-            ))}
-            {edgeSourceNodeIdRef.current ? (
-              <div style={{ position: "absolute", right: 10, top: 10, color: "#1e3a8a", fontSize: 12 }}>
-                Edge source: <code>{edgeSourceNodeIdRef.current}</code> (shift-click target)
-              </div>
-            ) : null}
-            <div
-              style={{
-                position: "absolute",
-                right: 10,
-                top: 10,
-                borderRadius: 999,
-                border: "1px solid #334155",
-                background: replayState.cursor.mode === "live" ? "#ecfeff" : "#fef3c7",
-                color: "#0f172a",
-                padding: "2px 10px",
-                fontSize: 12,
-                fontWeight: 600
-              }}
-            >
-              {canvasReplayBadge}
-            </div>
-            {replayState.cursor.mode === "playback" ? (
-              <div
-                style={{
-                  position: "absolute",
-                  right: 10,
-                  top: 36,
-                  borderRadius: 6,
-                  border: "1px solid #d97706",
-                  background: "#fffbeb",
-                  color: "#92400e",
-                  padding: "2px 8px",
-                  fontSize: 11,
-                  fontWeight: 600
-                }}
-              >
-                PLAYBACK VIEW (writes may branch)
-              </div>
-            ) : (
-              <div
-                style={{
-                  position: "absolute",
-                  right: 10,
-                  top: 36,
-                  borderRadius: 6,
-                  border: "1px solid #0f766e",
-                  background: "#ecfeff",
-                  color: "#155e75",
-                  padding: "2px 8px",
-                  fontSize: 11,
-                  fontWeight: 600
-                }}
-              >
-                LIVE VIEW (writes append to active head)
-              </div>
-            )}
-            {workspaceNodes.length === 0 ? (
-              <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#475569" }}>
-                {workspaceTool === "annotate"
-                  ? "Annotate mode: click canvas to place a note."
-                  : "Select mode: add nodes, shift-click node to start edge connect."}
-              </div>
-            ) : null}
-          </div>
+          <WorkspaceCanvas
+            surfaceRef={workspaceSurfaceRef}
+            workspaceNodes={workspaceNodes}
+            workspaceEdges={workspaceEdges}
+            workspaceAssets={workspaceAssets}
+            workspaceAnnotations={workspaceAnnotations}
+            remoteDragByNodeId={remoteDragByNodeId}
+            remoteDragByPeer={remoteDragByPeer}
+            canUseSdkActions={canUseSdkActions}
+            workspaceTool={workspaceTool}
+            replayMode={replayState.cursor.mode}
+            canvasReplayBadge={canvasReplayBadge}
+            edgeSourceNodeId={edgeSourceNodeIdRef.current}
+            onSurfacePointerDown={handleWorkspaceSurfaceMouseDown}
+            onNodePointerDown={handleWorkspaceNodeMouseDown}
+          />
           <div
             style={{
               position: "sticky",
@@ -3310,91 +3142,23 @@ export default function App() {
           </div>
         </article>
 
-        <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, padding: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Presence and peer signal</h2>
-          <p style={{ marginTop: 0, marginBottom: 10 }}>
-            Collaborative text (RGA ops, replay timeline, peer-colored inserts) lives in the{" "}
-            <strong>collab-text</strong> playground on port <code>4177</code>.
-          </p>
-          <div style={{ marginBottom: 10 }}>
-            <label htmlFor="presenceName" style={{ display: "block", marginBottom: 6 }}>
-              Presence name
-            </label>
-            <input
-              id="presenceName"
-              value={presenceName}
-              onChange={(event) => setPresenceName(event.target.value)}
-              placeholder="display name"
-              style={{ width: "100%", padding: 6, boxSizing: "border-box" }}
-            />
-            <button type="button" onClick={publishPresence} style={{ marginTop: 8 }} disabled={!canUseSdkActions}>
-              Publish presence
-            </button>
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <strong>Online peers:</strong>{" "}
-            {onlinePeers.length === 0 ? (
-              <span>(none)</span>
-            ) : (
-              <span>{onlinePeers.map((peer) => `${peer}${presenceByPeer[peer] ? ` (${presenceByPeer[peer]})` : ""}`).join(", ")}</span>
-            )}
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <label htmlFor="peerTarget" style={{ display: "block", marginBottom: 6 }}>
-              Peer signal target
-            </label>
-            <input
-              id="peerTarget"
-              value={peerTarget}
-              onChange={(event) => setPeerTarget(event.target.value)}
-              placeholder="peer id"
-              style={{ width: "100%", padding: 6, boxSizing: "border-box" }}
-            />
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <label htmlFor="signalPayload" style={{ display: "block", marginBottom: 6 }}>
-              Signal payload JSON
-            </label>
-            <textarea
-              id="signalPayload"
-              rows={4}
-              value={signalPayload}
-              onChange={(event) => setSignalPayload(event.target.value)}
-              style={{ width: "100%", resize: "vertical", padding: 8, boxSizing: "border-box" }}
-            />
-            <button type="button" onClick={sendPeerSignal} style={{ marginTop: 8 }} disabled={!canUseSdkActions}>
-              Send peer signal
-            </button>
-          </div>
-          <p style={{ marginBottom: 0 }}>
-            <strong>Last signal:</strong> {lastSignalStatus}
-          </p>
-          <h4 style={{ marginBottom: 6 }}>Incoming signals</h4>
-          <ul style={{ marginTop: 0, paddingLeft: 18 }}>
-            {incomingSignals.map((entry, index) => (
-              <li key={`${entry}-${index}`}>
-                <code>{entry}</code>
-              </li>
-            ))}
-            {incomingSignals.length === 0 ? <li>No incoming signals yet.</li> : null}
-          </ul>
-          <h4 style={{ marginBottom: 6 }}>Workspace persistence feed</h4>
-          <ul style={{ marginTop: 0, paddingLeft: 18, maxHeight: 130, overflow: "auto" }}>
-            {persistenceFeed.map((item, index) => (
-              <li key={`${item.atIso}-${item.key}-${index}`}>
-                <code>{new Date(item.atIso).toLocaleTimeString()}</code> <strong>{item.key}</strong> [{item.action}] {item.detail}
-              </li>
-            ))}
-            {persistenceFeed.length === 0 ? <li>No shared workspace writes yet.</li> : null}
-          </ul>
-          {!canUseSdkActions ? (
-            <p style={{ marginBottom: 0, color: "#9a3412" }}>
-              SDK actions are disabled until runtime mode is <code>npm sdk + wasm</code> and connection state is open.
-            </p>
-          ) : null}
-          <hr style={{ margin: "14px 0" }} />
-          <DiagnosticsPanel diagnostics={diagnostics} />
-        </article>
+        <PresencePanel
+          presenceName={presenceName}
+          onPresenceNameChange={setPresenceName}
+          onPublishPresence={publishPresence}
+          onlinePeers={onlinePeers}
+          presenceByPeer={presenceByPeer}
+          peerTarget={peerTarget}
+          onPeerTargetChange={setPeerTarget}
+          signalPayload={signalPayload}
+          onSignalPayloadChange={setSignalPayload}
+          onSendPeerSignal={sendPeerSignal}
+          lastSignalStatus={lastSignalStatus}
+          incomingSignals={incomingSignals}
+          persistenceFeed={persistenceFeed}
+          canUseSdkActions={canUseSdkActions}
+          diagnostics={diagnostics}
+        />
       </section>
       </div>
     </main>

@@ -5,7 +5,7 @@
 // renders and forwards pointer events. Pointer events (not mouse events)
 // are used throughout so touch and pen input drag nodes too.
 
-import type { RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type {
   DragPresence,
   WorkspaceAnnotation,
@@ -86,21 +86,50 @@ export function WorkspaceCanvas({
   onSurfacePointerDown,
   onNodePointerDown
 }: WorkspaceCanvasProps) {
+  // The surface is a fixed 860×360 logical plane, CSS-scaled down to fit
+  // narrow screens. Pointer handlers recover the scale from
+  // getBoundingClientRect (see coords.ts), so surfaceRef must stay on the
+  // scaled element, not this wrapper.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) {
+      return;
+    }
+    const measure = () => {
+      setScale(Math.min(1, wrapper.clientWidth / WORKSPACE_WIDTH));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, []);
   return (
+    <div
+      ref={wrapperRef}
+      style={{
+        width: "100%",
+        maxWidth: WORKSPACE_WIDTH,
+        height: Math.round(WORKSPACE_HEIGHT * scale),
+        overflow: "hidden",
+        marginBottom: 12
+      }}
+    >
     <div
       ref={surfaceRef}
       onPointerDown={onSurfacePointerDown}
       style={{
-        width: "100%",
-        maxWidth: WORKSPACE_WIDTH,
+        width: WORKSPACE_WIDTH,
         height: WORKSPACE_HEIGHT,
         border: "1px solid #cbd5e1",
         borderRadius: 8,
         background: "linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
         position: "relative",
         overflow: "hidden",
-        marginBottom: 12,
-        touchAction: "none"
+        touchAction: "none",
+        transform: `scale(${scale})`,
+        transformOrigin: "top left"
       }}
     >
       <svg
@@ -362,6 +391,7 @@ export function WorkspaceCanvas({
             : "Select mode: add nodes, shift-click node to start edge connect."}
         </div>
       ) : null}
+    </div>
     </div>
   );
 }

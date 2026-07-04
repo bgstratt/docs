@@ -74,6 +74,7 @@ import {
 import { ReplayControls } from "./features/replay/ReplayControls";
 import { PresencePanel } from "./panels/PresencePanel";
 import { WorkspaceCanvas } from "./features/canvas/WorkspaceCanvas";
+import { clientPointToWorkspace } from "./features/canvas/coords";
 
 const config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
 const wsClient = new RuntimeClient(config, { pubkeyPrefix: "workspace", maxEvents: 40 });
@@ -120,7 +121,20 @@ async function waitForConnectionSettle(
   }
 }
 
+/** Matches the design system's 800px single-column breakpoint. */
+function useIsWideViewport(): boolean {
+  const [isWide, setIsWide] = useState(() => window.matchMedia("(min-width: 801px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 801px)");
+    const onChange = (event: MediaQueryListEvent) => setIsWide(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return isWide;
+}
+
 export default function App() {
+  const isWideViewport = useIsWideViewport();
   const [backend, setBackend] = useState<RuntimeBackend>("sdk");
   const [roomIdInput, setRoomIdInput] = useState(config.defaultRoomId);
   const [activeRoomId, setActiveRoomId] = useState<string>(config.defaultRoomId);
@@ -2410,9 +2424,9 @@ export default function App() {
     if (!surface) {
       return;
     }
-    const rect = surface.getBoundingClientRect();
-    const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 180, event.clientX - rect.left));
-    const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 90, event.clientY - rect.top));
+    const point = clientPointToWorkspace(event.clientX, event.clientY, surface);
+    const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 180, point.x));
+    const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 90, point.y));
     const text = annotationDraft.trim() || "Untitled note";
     const next: WorkspaceAnnotation = {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -2503,9 +2517,9 @@ export default function App() {
       if (!drag || !surface) {
         return;
       }
-      const rect = surface.getBoundingClientRect();
-      const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 120, event.clientX - rect.left));
-      const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, event.clientY - rect.top));
+      const point = clientPointToWorkspace(event.clientX, event.clientY, surface);
+      const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 120, point.x));
+      const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, point.y));
       publishDragPresence(drag.nodeId, x, y, false);
       setWorkspaceNodes((previous) => {
         const next = previous.map((node) =>
@@ -2748,7 +2762,7 @@ export default function App() {
         </span>
       </section>
 
-      <section style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
+      <section className="nm-layout-2col">
         <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, minWidth: 0, padding: 12 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
             <h2 style={{ marginTop: 0 }}>Workspace objects (persistent)</h2>
@@ -2936,6 +2950,7 @@ export default function App() {
         </article>
 
         <PresencePanel
+          defaultOpen={isWideViewport}
           backend={backend}
           onBackendChange={setBackend}
           activeNotice={activeNotice}

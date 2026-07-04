@@ -29,6 +29,8 @@ interface PresencePanelProps {
   persistenceFeed: PersistenceEvent[];
   canUseSdkActions: boolean;
   diagnostics: RuntimeDiagnostics;
+  /** Expanded on desktop, collapsed by default on narrow screens. */
+  defaultOpen: boolean;
 }
 
 export function PresencePanel({
@@ -51,11 +53,18 @@ export function PresencePanel({
   incomingSignals,
   persistenceFeed,
   canUseSdkActions,
-  diagnostics
+  diagnostics,
+  defaultOpen
 }: PresencePanelProps) {
+  // <details> so the sidebar collapses out of the way on phones — the canvas,
+  // scrubber, and branch lanes are the demo's hero content. Users can still
+  // toggle it; React only re-asserts `open` when the viewport crosses the
+  // breakpoint.
   return (
-    <article className="nm-card">
-      <h2 className="nm-card-title">Config and Diagnostics</h2>
+    <details className="nm-card" open={defaultOpen}>
+      <summary className="nm-card-title" style={{ cursor: "pointer" }}>
+        Config and Diagnostics
+      </summary>
       <div className="nm-field">
         <label className="nm-label" htmlFor="backendMode">
           Runtime mode
@@ -190,6 +199,6 @@ export function PresencePanel({
         <p className="nm-last-action">No room state at cursor yet. Generate runtime events first.</p>
       )}
       <DiagnosticsPanel diagnostics={diagnostics} />
-    </article>
+    </details>
   );
 }

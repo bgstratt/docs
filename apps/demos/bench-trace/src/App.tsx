@@ -188,12 +188,13 @@ export default function App() {
               </ul>
 
               <p className="nm-section-label">Same engine, two environments</p>
+              <p className="nm-card-desc nm-benchbar-caption">Throughput — longer is faster:</p>
               <div className="nm-benchbars">
                 <div className="nm-benchbar-row">
                   <span>{NATIVE_REFERENCE.label}</span>
                   <div className="nm-benchbar-track">
                     <div className="nm-benchbar-fill nm-benchbar-fill-native" style={{ width: "100%" }} />
-                    <span className="nm-benchbar-value" style={{ color: "#ffffff" }}>
+                    <span className="nm-benchbar-value nm-benchbar-value-onfill">
                       {NATIVE_REFERENCE.opsPerSec.toLocaleString()} ops/sec · {(1_000_000 / NATIVE_REFERENCE.opsPerSec).toFixed(1)} µs/op
                     </span>
                   </div>
@@ -210,6 +211,36 @@ export default function App() {
                     </span>
                   </div>
                 </div>
+              </div>
+              <p className="nm-card-desc nm-benchbar-caption">
+                Time to apply {result.opsApplied.toLocaleString()} ops — shorter is faster:
+              </p>
+              <div className="nm-benchbars">
+                {(() => {
+                  const nativeMs = (result.opsApplied / NATIVE_REFERENCE.opsPerSec) * 1000;
+                  const fmt = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`);
+                  return (
+                    <>
+                      <div className="nm-benchbar-row">
+                        <span>{NATIVE_REFERENCE.label}</span>
+                        <div className="nm-benchbar-track">
+                          <div
+                            className="nm-benchbar-fill nm-benchbar-fill-native"
+                            style={{ width: `${Math.max(1, Math.min(100, (nativeMs / result.elapsedMs) * 100))}%` }}
+                          />
+                          <span className="nm-benchbar-value">{fmt(nativeMs)}</span>
+                        </div>
+                      </div>
+                      <div className="nm-benchbar-row">
+                        <span>This browser (WASM)</span>
+                        <div className="nm-benchbar-track">
+                          <div className="nm-benchbar-fill nm-benchbar-fill-browser" style={{ width: "100%" }} />
+                          <span className="nm-benchbar-value nm-benchbar-value-onfill">{fmt(result.elapsedMs)}</span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
               <p className="nm-card-desc">
                 Identical engine code and identical per-edit DAG transactions — the gap is the

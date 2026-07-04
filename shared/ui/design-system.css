@@ -734,6 +734,10 @@ input[type="range"] {
   white-space: nowrap;
 }
 
+.nm-benchbar-value-onfill { color: #ffffff; }
+
+.nm-benchbar-caption { margin-bottom: 4px; }
+
 /* ── Pixel board (pixel-canvas) ───────────────────────── */
 
 .nm-pixel-board {

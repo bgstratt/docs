@@ -98,6 +98,12 @@ export function PixelBoard({ store, onPaint, replayBuffer = null, replayTooltip 
 
   useEffect(() => {
     repaintAll();
+    // This effect re-runs on every scrub tick (replayBuffer) and room switch,
+    // and its cleanup cancels the rAF mid-fade — without this, in-flight
+    // rings freeze on the overlay with nothing scheduled to clear them.
+    if (flashesRef.current.length > 0) {
+      runOverlayLoop();
+    }
     const unsubscribe = store.subscribe((changes: PixelChange[], fullRefresh: boolean) => {
       if (replayBuffer) {
         // Frozen on a replay frame: live paints keep landing in the store and

@@ -31,6 +31,7 @@ import {
 import { createInitialReplayState, replayReducer } from "./lib/branchReplay";
 import { computeBranchOffsets, computeMaxBranchColumn } from "./lib/replayLayout";
 import { decideWriteRouting } from "./lib/writeRouting";
+import { applyWorkspaceOpPayload } from "./lib/workspaceProjection";
 import {
   WORKSPACE_BRANCHES_KEY,
   buildForkReplayOp,
@@ -44,6 +45,7 @@ import {
 
 import type {
   DragPresence,
+  NodeShape,
   PersistenceEvent,
   RemoteReplayCursor,
   RuntimeBackend,
@@ -1409,126 +1411,7 @@ export default function App() {
       } catch {
         continue;
       }
-      if (!payload || typeof payload !== "object") {
-        continue;
-      }
-      const typed = payload as {
-        type?: unknown;
-        node?: unknown;
-        nodeId?: unknown;
-        asset?: unknown;
-        edge?: unknown;
-        annotation?: unknown;
-        move?: unknown;
-        text?: unknown;
-      };
-      if (typed.type === "workspace.add-node") {
-        let raw: WorkspaceNode | null = null;
-        if (typed.node && typeof typed.node === "object") {
-          raw = typed.node as WorkspaceNode;
-        } else if (typeof typed.nodeId === "string") {
-          raw = resolveNodeRecordForBranch(branchId, typed.nodeId);
-        }
-        if (
-          raw &&
-          typeof raw.id === "string" &&
-          typeof raw.label === "string" &&
-          typeof raw.x === "number" &&
-          typeof raw.y === "number" &&
-          typeof raw.updatedAtIso === "string"
-        ) {
-          const exists = projected.nodes.some((entry) => entry.id === raw.id);
-          if (!exists) {
-            projected.nodes.unshift({
-              ...raw,
-              x: Math.max(16, Math.min(WORKSPACE_WIDTH - 120, raw.x)),
-              y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, raw.y))
-            });
-          }
-        }
-      }
-      if (typed.type === "workspace.add-asset" && typed.asset && typeof typed.asset === "object") {
-        const raw = typed.asset as WorkspaceAsset;
-        if (
-          typeof raw.id === "string" &&
-          typeof raw.name === "string" &&
-          typeof raw.x === "number" &&
-          typeof raw.y === "number" &&
-          typeof raw.updatedAtIso === "string"
-        ) {
-          const exists = projected.assets.some((entry) => entry.id === raw.id);
-          if (!exists) {
-            projected.assets.unshift({
-              ...raw,
-              x: Math.max(16, Math.min(WORKSPACE_WIDTH - 160, raw.x)),
-              y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 62, raw.y))
-            });
-          }
-        }
-      }
-      if (typed.type === "workspace.add-edge" && typed.edge && typeof typed.edge === "object") {
-        const edge = typed.edge as WorkspaceEdge;
-        if (
-          typeof edge.id === "string" &&
-          typeof edge.fromNodeId === "string" &&
-          typeof edge.toNodeId === "string" &&
-          typeof edge.updatedAtIso === "string"
-        ) {
-          const exists = projected.edges.some((entry) => entry.id === edge.id);
-          if (!exists) {
-            projected.edges.unshift({ ...edge });
-          }
-        }
-      }
-      if (typed.type === "workspace.move-node" && typed.move && typeof typed.move === "object") {
-        const move = typed.move as { nodeId?: unknown; x?: unknown; y?: unknown; updatedAtIso?: unknown };
-        if (typeof move.nodeId === "string" && typeof move.x === "number" && typeof move.y === "number") {
-          const nextX = move.x;
-          const nextY = move.y;
-          projected.nodes = projected.nodes.map((entry) =>
-            entry.id === move.nodeId
-              ? {
-                  ...entry,
-                  x: Math.max(16, Math.min(WORKSPACE_WIDTH - 120, nextX)),
-                  y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, nextY)),
-                  updatedAtIso: typeof move.updatedAtIso === "string" ? move.updatedAtIso : entry.updatedAtIso
-                }
-              : entry
-          );
-        }
-      }
-      if (typed.type === "workspace.add-annotation" && typed.annotation && typeof typed.annotation === "object") {
-        const note = typed.annotation as WorkspaceAnnotation;
-        if (
-          typeof note.id === "string" &&
-          typeof note.text === "string" &&
-          typeof note.x === "number" &&
-          typeof note.y === "number" &&
-          typeof note.updatedAtIso === "string"
-        ) {
-          const exists = projected.annotations.some((entry) => entry.id === note.id);
-          if (!exists) {
-            projected.annotations.unshift({
-              ...note,
-              x: Math.max(16, Math.min(WORKSPACE_WIDTH - 180, note.x)),
-              y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 90, note.y))
-            });
-          }
-        }
-      }
-      if (typed.type === "workspace.clear-assets") {
-        projected.assets = [];
-      }
-      if (typed.type === "workspace.clear-annotations") {
-        projected.annotations = [];
-      }
-      if (typed.type === "workspace.clear-edges") {
-        projected.edges = [];
-      }
-      if (typed.type === "workspace.clear-nodes") {
-        projected.nodes = [];
-        projected.edges = [];
-      }
+      applyWorkspaceOpPayload(projected, payload, (opNodeId) => resolveNodeRecordForBranch(branchId, opNodeId));
     }
     return projected;
   }
@@ -2134,7 +2017,7 @@ export default function App() {
     }
   }
 
-  function addWorkspaceNode() {
+  function addWorkspaceNode(shape: NodeShape) {
     const writeTarget = ensureWritableBranchForEdit("workspace.add-node", { applySeedSnapshot: true });
     if (!writeTarget) {
       return;
@@ -2152,11 +2035,14 @@ export default function App() {
       x: 40 + (baseNodes.length % 7) * 112,
       y: 40 + Math.floor(baseNodes.length / 7) * 70,
       label: `Node ${baseNodes.length + 1}`,
+      shape,
       updatedAtIso: new Date().toISOString()
     };
     const replayOp = createReplayOp(
       `add-node ${next.label}`,
-      { type: "workspace.add-node", nodeId: next.id },
+      // Embed the full node so playback frames render it as it was created,
+      // instead of falling back to the LWW-latest record.
+      { type: "workspace.add-node", nodeId: next.id, node: next },
       "workspace.add-node",
       next.updatedAtIso,
       branchForAppend
@@ -2843,14 +2729,38 @@ export default function App() {
             <span style={{ width: 1, alignSelf: "stretch", background: "#94a3b8", margin: "2px 4px" }} />
             <button
               type="button"
-              title="Add node"
-              aria-label="Add node"
-              onClick={addWorkspaceNode}
+              title="Add rectangle node"
+              aria-label="Add rectangle node"
+              onClick={() => addWorkspaceNode("rect")}
               disabled={!canUseSdkActions}
               style={{ ...toolButtonStyle(false), color: "#16a34a" }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                <rect x="2" y="4" width="12" height="8" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Add circle node"
+              aria-label="Add circle node"
+              onClick={() => addWorkspaceNode("circle")}
+              disabled={!canUseSdkActions}
+              style={{ ...toolButtonStyle(false), color: "#16a34a" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Add diamond node"
+              aria-label="Add diamond node"
+              onClick={() => addWorkspaceNode("diamond")}
+              disabled={!canUseSdkActions}
+              style={{ ...toolButtonStyle(false), color: "#16a34a" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 1.5 14.5 8 8 14.5 1.5 8z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
               </svg>
             </button>
             <button

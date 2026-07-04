@@ -1,12 +1,14 @@
 import { getWorkspaceLiveKey } from "./workspaceBaselines";
 import type { SharedReplayOp } from "./workspaceBaselines";
 import { readReplayOpsFromShared } from "./workspaceReplayStorage";
+import { NODE_SHAPES, type NodeShape } from "../state/workspaceTypes";
 
 export type WorkspaceNodeRecord = {
   id: string;
   x: number;
   y: number;
   label: string;
+  shape?: NodeShape;
   updatedAtIso: string;
 };
 
@@ -70,7 +72,13 @@ export function parseNodeRecord(raw: string | null): WorkspaceNodeRecord | null 
     ) {
       return null;
     }
-    return parsed as WorkspaceNodeRecord;
+    const record = parsed as WorkspaceNodeRecord;
+    // Records written before shapes existed have no shape field; anything
+    // unrecognized (hand-edited shared state) is dropped so it renders as rect.
+    if (record.shape !== undefined && !NODE_SHAPES.includes(record.shape)) {
+      delete record.shape;
+    }
+    return record;
   } catch {
     return null;
   }

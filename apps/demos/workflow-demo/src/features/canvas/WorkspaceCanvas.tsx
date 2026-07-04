@@ -53,6 +53,12 @@ interface WorkspaceCanvasProps {
   replayMode: "live" | "playback";
   canvasReplayBadge: string;
   edgeSourceNodeId: string | null;
+  editingNodeId: string | null;
+  editingLabelDraft: string;
+  onEditLabelDraftChange: (value: string) => void;
+  onStartEditNode: (nodeId: string) => void;
+  onCommitRename: (nodeId: string, label: string) => void;
+  onCancelRename: () => void;
   onSurfacePointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   onNodePointerDown: (event: React.PointerEvent<HTMLDivElement>, nodeId: string) => void;
 }
@@ -71,6 +77,12 @@ export function WorkspaceCanvas({
   replayMode,
   canvasReplayBadge,
   edgeSourceNodeId,
+  editingNodeId,
+  editingLabelDraft,
+  onEditLabelDraftChange,
+  onStartEditNode,
+  onCommitRename,
+  onCancelRename,
   onSurfacePointerDown,
   onNodePointerDown
 }: WorkspaceCanvasProps) {
@@ -125,7 +137,37 @@ export function WorkspaceCanvas({
         const visual = nodeVisual(node.shape);
         const border = remoteDrag ? "1px solid #0f766e" : "1px solid #2563eb";
         const boxShadow = remoteDrag ? "0 0 0 2px rgba(20, 184, 166, 0.18)" : "0 1px 3px rgba(15, 23, 42, 0.25)";
-        const label = (
+        const isEditing = editingNodeId === node.id;
+        const label = isEditing ? (
+          <input
+            aria-label="Node name"
+            value={editingLabelDraft}
+            autoFocus
+            maxLength={40}
+            onChange={(event) => onEditLabelDraftChange(event.target.value)}
+            // Typing must not start a node drag.
+            onPointerDown={(event) => event.stopPropagation()}
+            onBlur={() => onCommitRename(node.id, editingLabelDraft)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                onCommitRename(node.id, editingLabelDraft);
+              } else if (event.key === "Escape") {
+                onCancelRename();
+              }
+            }}
+            style={{
+              width: "100%",
+              maxWidth: visual.width - 14,
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "1px 3px",
+              border: "1px solid #2563eb",
+              borderRadius: 4,
+              background: "white",
+              color: "#0f172a"
+            }}
+          />
+        ) : (
           <>
             <strong style={{ display: "block", fontSize: node.shape === "rect" || !node.shape ? 12 : 11 }}>
               {node.label}
@@ -142,6 +184,7 @@ export function WorkspaceCanvas({
               role="button"
               tabIndex={0}
               onPointerDown={(event) => onNodePointerDown(event, node.id)}
+              onDoubleClick={() => onStartEditNode(node.id)}
               style={{
                 position: "absolute",
                 left: renderX,
@@ -174,6 +217,7 @@ export function WorkspaceCanvas({
             role="button"
             tabIndex={0}
             onPointerDown={(event) => onNodePointerDown(event, node.id)}
+            onDoubleClick={() => onStartEditNode(node.id)}
             style={{
               position: "absolute",
               left: renderX,

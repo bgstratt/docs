@@ -149,6 +149,8 @@ export default function App() {
   const frozenBaselineBranchIdsRef = useRef(new Set<string>());
   const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");
   const [annotationDraft, setAnnotationDraft] = useState("Decision note");
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editingLabelDraft, setEditingLabelDraft] = useState("");
   const [mergeSourceBranchId, setMergeSourceBranchId] = useState("main");
   const [mergeSourceNodeId, setMergeSourceNodeId] = useState<string>("");
   const [replayState, dispatchReplay] = useReducer(
@@ -2066,6 +2068,66 @@ export default function App() {
     setActiveNotice(`Workspace node ${next.label} added.`);
   }
 
+  function startEditingNode(nodeId: string) {
+    if (!canUseSdkActions) {
+      setLastAction("Connect in npm sdk + wasm mode before renaming workspace nodes.");
+      return;
+    }
+    const current = workspaceNodesRef.current.find((entry) => entry.id === nodeId);
+    if (!current) {
+      return;
+    }
+    setEditingNodeId(nodeId);
+    setEditingLabelDraft(current.label);
+  }
+
+  function cancelEditingNode() {
+    setEditingNodeId(null);
+    setEditingLabelDraft("");
+  }
+
+  function commitNodeRename(nodeId: string, rawLabel: string) {
+    setEditingNodeId(null);
+    setEditingLabelDraft("");
+    const label = rawLabel.trim();
+    const current = workspaceNodesRef.current.find((entry) => entry.id === nodeId);
+    if (!current || label.length === 0 || label === current.label) {
+      return;
+    }
+    const writeTarget = ensureWritableBranchForEdit("workspace.rename-node", { applySeedSnapshot: false });
+    if (!writeTarget) {
+      return;
+    }
+    const branchId = writeTarget.branchId;
+    const updatedAtIso = new Date().toISOString();
+    const seedNodes = writeTarget.seededSnapshot?.nodes ?? null;
+    const baseNodes = seedNodes ?? workspaceNodesRef.current;
+    const snapshot = baseNodes.map((entry) => (entry.id === nodeId ? { ...entry, label, updatedAtIso } : entry));
+    const renamed = snapshot.find((entry) => entry.id === nodeId);
+    workspaceNodesRef.current = snapshot;
+    setWorkspaceNodes(snapshot);
+    if (!renamed) {
+      return;
+    }
+    const renameOp = createReplayOp(
+      `rename-node ${label}`,
+      { type: "workspace.rename-node", rename: { nodeId, label, updatedAtIso } },
+      "workspace.rename-node",
+      updatedAtIso,
+      branchId
+    );
+    const nextOps = [...readReplayOpsForBranch(branchId), renameOp].sort((left, right) =>
+      left.atIso.localeCompare(right.atIso)
+    );
+    // Same persistence shape as a move: rewrite the node record + append the op.
+    const didPersist = persistMovedNodeWithReplayOps(renamed, renameOp, nextOps, branchId);
+    if (!didPersist) {
+      setLastAction("Workspace rename failed to apply locally; reconnect in npm sdk + wasm mode.");
+      return;
+    }
+    setActiveNotice(`Renamed node to ${label}.`);
+  }
+
   function createReplayOp(
     opSummary: string,
     payload: Record<string, unknown>,
@@ -2271,6 +2333,11 @@ export default function App() {
   function handleWorkspaceNodeMouseDown(event: React.PointerEvent<HTMLDivElement>, nodeId: string) {
     if (!canUseSdkActions) {
       setLastAction("Connect in npm sdk + wasm mode before moving workspace nodes.");
+      return;
+    }
+    if (editingNodeId === nodeId) {
+      // Typing in the inline rename input must not start a drag.
+      event.stopPropagation();
       return;
     }
     event.stopPropagation();
@@ -2796,6 +2863,12 @@ export default function App() {
           </div>
           <WorkspaceCanvas
             surfaceRef={workspaceSurfaceRef}
+            editingNodeId={editingNodeId}
+            editingLabelDraft={editingLabelDraft}
+            onEditLabelDraftChange={setEditingLabelDraft}
+            onStartEditNode={startEditingNode}
+            onCommitRename={commitNodeRename}
+            onCancelRename={cancelEditingNode}
             workspaceNodes={workspaceNodes}
             workspaceEdges={workspaceEdges}
             workspaceAssets={workspaceAssets}

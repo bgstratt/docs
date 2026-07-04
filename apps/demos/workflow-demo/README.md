@@ -63,6 +63,16 @@ Features (all live):
    - `npm run dev`
 3. Open the printed Vite URL in two tabs and connect both to the same room.
 
+## Notes and future work
+
+- Replay is driven by shared replay-op records (`workspace/replay-op/...`),
+  not the SDK's DAG-backed `doc.history()` API (which the pixel-canvas demo
+  uses). Migrating is possible but the raw DAG is noisier than the curated
+  op stream; deliberately deferred.
+- Rooms created before add-node ops embedded the full node replay the
+  LWW-latest node record for adds, so scrubbing to a frame before a rename
+  shows the post-rename label there. New rooms replay labels faithfully.
+
 ## Verification checklist
 
 - Two tabs: concurrent node drags converge; remote drags render as ghosts.

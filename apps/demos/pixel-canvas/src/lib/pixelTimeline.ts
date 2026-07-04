@@ -13,6 +13,11 @@ export interface PixelTimelineEvent {
   y: number;
   /** EMPTY_PIXEL for erases (map-key deletes). */
   paletteIndex: number;
+  /** DAG metadata (from MapHistoryItem); used by branch lanes + fork anchors. */
+  lamport?: number;
+  nodeId?: string;
+  author?: string;
+  wallMs?: number;
 }
 
 /** Subset of the SDK's MapHistoryItem that the timeline consumes. */
@@ -20,6 +25,10 @@ export interface PixelHistoryItem {
   op: "set" | "delete";
   key: string;
   value: unknown;
+  lamport?: number;
+  nodeId?: string;
+  author?: string;
+  wallMs?: number;
 }
 
 const KEY_PREFIX = `${PIXEL_NAMESPACE}/`;
@@ -33,13 +42,14 @@ export function timelineFromHistory(items: PixelHistoryItem[]): PixelTimelineEve
     if (!coords) {
       continue;
     }
+    const meta = { lamport: item.lamport, nodeId: item.nodeId, author: item.author, wallMs: item.wallMs };
     if (item.op === "delete") {
-      events.push({ x: coords.x, y: coords.y, paletteIndex: EMPTY_PIXEL });
+      events.push({ x: coords.x, y: coords.y, paletteIndex: EMPTY_PIXEL, ...meta });
       continue;
     }
     const decoded = decodePixelValue(item.value);
     if (decoded) {
-      events.push({ x: coords.x, y: coords.y, paletteIndex: decoded.paletteIndex });
+      events.push({ x: coords.x, y: coords.y, paletteIndex: decoded.paletteIndex, ...meta });
     }
   }
   return events;
@@ -50,6 +60,11 @@ export class PixelTimeline {
 
   get length(): number {
     return this.events.length;
+  }
+
+  /** Read-only view of the causal event list (for lanes/fork anchors). */
+  get allEvents(): readonly PixelTimelineEvent[] {
+    return this.events;
   }
 
   /** Swap in a freshly rebuilt event list (from timelineFromHistory). */

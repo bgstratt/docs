@@ -58,6 +58,7 @@ export function ReplayLanes({
           borderRadius: 8,
           padding: "8px 10px",
           background: "#f8fafc",
+          color: "#334155",
           overflowX: "auto"
         }}
       >

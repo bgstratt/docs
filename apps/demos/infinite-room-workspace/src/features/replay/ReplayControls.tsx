@@ -1,10 +1,10 @@
-// ReplayControls — the replay canvas section: active-branch/mode selectors,
-// play/pause + jump controls, branch-from-cursor, the merge workflow, the
-// branch-lane DAG viz (ReplayLanes), timeline scrubber, prev/next stepping,
-// and the room-at-cursor op inspector. Extracted verbatim from App.tsx during
-// the module split; behavior unchanged.
+// ReplayControls — the replay section under the workspace canvas: the single
+// timeline scrubber, the active-branch line (branch/mode selectors plus
+// play/start/prev/next/end stepping and branch-from-cursor), the branch-lane
+// DAG viz (ReplayLanes), and the merge workflow. The room-at-cursor inspector
+// lives in the Config and Diagnostics sidebar panel.
 
-import type { ReplayNode, ReplayState } from "../../lib/branchReplay";
+import type { ReplayState } from "../../lib/branchReplay";
 import type { RemoteReplayCursor } from "../../state/workspaceTypes";
 import { ReplayLanes, type LaneLayout, type MergeConnector } from "./ReplayLanes";
 
@@ -32,7 +32,6 @@ interface ReplayControlsProps {
   mergeConnectors: MergeConnector[];
   remoteReplayCursorByPeer: Record<string, RemoteReplayCursor>;
   laneXForRemoteReplayCursor: (remoteCursor: RemoteReplayCursor) => number | undefined;
-  currentReplayNode: ReplayNode | null;
 }
 
 export function ReplayControls({
@@ -58,15 +57,29 @@ export function ReplayControls({
   branchOffsetById,
   mergeConnectors,
   remoteReplayCursorByPeer,
-  laneXForRemoteReplayCursor,
-  currentReplayNode
+  laneXForRemoteReplayCursor
 }: ReplayControlsProps) {
+  const maxNodeIndex = Math.max(0, replayNodeCount - 1);
   return (
     <>
-      <h3 style={{ marginTop: 0 }}>Replay canvas</h3>
-      <p style={{ marginTop: 0 }}>
-        Visual lane + timeline + room-at-cursor preview. Use the quick scrubber above the canvas for side-by-side replay viewing.
-      </p>
+      <div style={{ marginBottom: 10 }}>
+        <label htmlFor="replayCursorSlider" style={{ display: "block", marginBottom: 6 }}>
+          Timeline scrubber{" "}
+          <code>
+            {replayState.cursor.branchId} [{Math.min(replayState.cursor.nodeIndex, maxNodeIndex)}/{maxNodeIndex}]
+          </code>
+        </label>
+        <input
+          id="replayCursorSlider"
+          type="range"
+          min={0}
+          max={maxNodeIndex}
+          value={Math.min(replayState.cursor.nodeIndex, maxNodeIndex)}
+          onChange={(event) => onSelectNode(replayState.cursor.branchId, Number(event.target.value) || 0)}
+          style={{ width: "100%" }}
+          disabled={!replayCanStep}
+        />
+      </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
         <label htmlFor="activeBranch">Active branch</label>
         <select
@@ -99,26 +112,46 @@ export function ReplayControls({
           onClick={() => onSelectNode(replayState.cursor.branchId, 0)}
           disabled={!replayCanStep}
         >
-          Jump start
+          Start
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectNode(replayState.cursor.branchId, replayState.cursor.nodeIndex - 1)}
+          disabled={!replayCanStep}
+        >
+          Prev
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectNode(replayState.cursor.branchId, replayState.cursor.nodeIndex + 1)}
+          disabled={!replayCanStep}
+        >
+          Next
         </button>
         <button
           type="button"
           onClick={() => onSelectNode(replayState.cursor.branchId, replayNodeCount - 1)}
           disabled={!replayCanStep}
         >
-          Jump head
+          End
         </button>
-        <span>
-          branch <code>{replayState.cursor.branchId}</code>
-        </span>
-        <span>
-          nodes <code>{replayNodeCount}</code>
-        </span>
         <button type="button" onClick={onCreateBranchFromCursor} disabled={!replayState.cursor.nodeId}>
           Branch from cursor
         </button>
       </div>
-      <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 8, marginBottom: 10, background: "#f8fafc" }}>
+      <ReplayLanes
+        replayState={replayState}
+        laneLayout={laneLayout}
+        sortedBranchIds={sortedBranchIds}
+        branchOffsetById={branchOffsetById}
+        mergeConnectors={mergeConnectors}
+        remoteReplayCursorByPeer={remoteReplayCursorByPeer}
+        laneXForRemoteReplayCursor={laneXForRemoteReplayCursor}
+        onSelectNode={onSelectNode}
+      />
+      {/* Explicit text color: the light panel background is fixed, but the page
+          text color flips white in dark theme and would vanish here. */}
+      <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 8, background: "#f8fafc", color: "#0f172a" }}>
         <strong>Merge workflow</strong>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
           <label htmlFor="mergeSourceBranch">Source branch</label>
@@ -156,89 +189,6 @@ export function ReplayControls({
           </button>
           <span style={{ color: "#334155", fontSize: 12 }}>{mergeEligibilityMessage}</span>
         </div>
-      </div>
-      <ReplayLanes
-        replayState={replayState}
-        laneLayout={laneLayout}
-        sortedBranchIds={sortedBranchIds}
-        branchOffsetById={branchOffsetById}
-        mergeConnectors={mergeConnectors}
-        remoteReplayCursorByPeer={remoteReplayCursorByPeer}
-        laneXForRemoteReplayCursor={laneXForRemoteReplayCursor}
-        onSelectNode={onSelectNode}
-      />
-      <div style={{ marginBottom: 10 }}>
-        <label htmlFor="replayCursorSlider" style={{ display: "block", marginBottom: 6 }}>
-          Timeline scrubber
-        </label>
-        <input
-          id="replayCursorSlider"
-          type="range"
-          min={0}
-          max={Math.max(0, replayNodeCount - 1)}
-          value={Math.min(replayState.cursor.nodeIndex, Math.max(0, replayNodeCount - 1))}
-          onChange={(event) => onSelectNode(replayState.cursor.branchId, Number(event.target.value) || 0)}
-          style={{ width: "100%" }}
-          disabled={!replayCanStep}
-        />
-      </div>
-      <div style={{ marginBottom: 8 }}>
-        <strong>Cursor:</strong>{" "}
-        <code>
-          index={replayState.cursor.nodeIndex}, node={replayState.cursor.nodeId ?? "(none)"}
-        </code>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <button
-          type="button"
-          onClick={() => onSelectNode(replayState.cursor.branchId, replayState.cursor.nodeIndex - 1)}
-          disabled={!replayCanStep}
-        >
-          Prev node
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelectNode(replayState.cursor.branchId, replayState.cursor.nodeIndex + 1)}
-          disabled={!replayCanStep}
-        >
-          Next node
-        </button>
-      </div>
-      <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 10, background: "#f8fafc" }}>
-        <strong>Room at cursor</strong>
-        {currentReplayNode ? (
-          <div>
-            <p style={{ marginTop: 8, marginBottom: 4 }}>
-              <strong>Node:</strong> <code>{currentReplayNode.nodeId}</code>
-            </p>
-            <p style={{ marginTop: 0, marginBottom: 4 }}>
-              <strong>Summary:</strong> <code>{currentReplayNode.opSummary}</code>
-            </p>
-            <p style={{ marginTop: 0, marginBottom: 4 }}>
-              <strong>Lamport:</strong> <code>{currentReplayNode.lamport ?? "(none)"}</code>, <strong>Author:</strong>{" "}
-              <code>{currentReplayNode.author ?? "(unknown)"}</code>
-            </p>
-            <p style={{ marginTop: 0, marginBottom: 6 }}>
-              <strong>Time:</strong> <code>{new Date(currentReplayNode.atIso).toLocaleTimeString()}</code>
-            </p>
-            <pre
-              style={{
-                marginTop: 0,
-                marginBottom: 0,
-                maxHeight: 110,
-                overflow: "auto",
-                background: "white",
-                border: "1px solid #e2e8f0",
-                borderRadius: 6,
-                padding: 8
-              }}
-            >
-              {currentReplayNode.payloadJson}
-            </pre>
-          </div>
-        ) : (
-          <p style={{ marginBottom: 0 }}>No room state at cursor yet. Generate runtime events first.</p>
-        )}
       </div>
     </>
   );

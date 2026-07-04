@@ -13,6 +13,10 @@ const RENDER_SCALE = 8; // canvas backing pixels per grid cell
 interface PixelBoardProps {
   store: PixelStore;
   onPaint: (x: number, y: number) => void;
+  /** When set, render this snapshot instead of the live buffer and lock painting. */
+  replayBuffer?: Uint8Array | null;
+  /** Tooltip shown on the board while painting is locked by replay. */
+  replayTooltip?: string;
 }
 
 interface Flash {
@@ -21,7 +25,7 @@ interface Flash {
   at: number;
 }
 
-export function PixelBoard({ store, onPaint }: PixelBoardProps) {
+export function PixelBoard({ store, onPaint, replayBuffer = null, replayTooltip }: PixelBoardProps) {
   const baseRef = useRef<HTMLCanvasElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
   const flashesRef = useRef<Flash[]>([]);
@@ -34,11 +38,12 @@ export function PixelBoard({ store, onPaint }: PixelBoardProps) {
     if (!canvas || !ctx) {
       return;
     }
+    const source = replayBuffer ?? store.buffer;
     ctx.fillStyle = "#0d1117";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     for (let y = 0; y < GRID_SIZE; y++) {
       for (let x = 0; x < GRID_SIZE; x++) {
-        const v = store.buffer[y * GRID_SIZE + x];
+        const v = source[y * GRID_SIZE + x];
         if (v === EMPTY_PIXEL) {
           continue;
         }
@@ -46,14 +51,15 @@ export function PixelBoard({ store, onPaint }: PixelBoardProps) {
         ctx.fillRect(x * RENDER_SCALE, y * RENDER_SCALE, RENDER_SCALE, RENDER_SCALE);
       }
     }
-  }, [store]);
+  }, [store, replayBuffer]);
 
   const drawCell = useCallback((x: number, y: number, paletteIndex: number) => {
     const ctx = baseRef.current?.getContext("2d");
     if (!ctx) {
       return;
     }
-    ctx.fillStyle = PALETTE[paletteIndex] ?? "#000000";
+    // EMPTY_PIXEL = erased — paint the board background back in.
+    ctx.fillStyle = paletteIndex === EMPTY_PIXEL ? "#0d1117" : PALETTE[paletteIndex] ?? "#000000";
     ctx.fillRect(x * RENDER_SCALE, y * RENDER_SCALE, RENDER_SCALE, RENDER_SCALE);
   }, []);
 
@@ -93,6 +99,11 @@ export function PixelBoard({ store, onPaint }: PixelBoardProps) {
   useEffect(() => {
     repaintAll();
     const unsubscribe = store.subscribe((changes: PixelChange[], fullRefresh: boolean) => {
+      if (replayBuffer) {
+        // Frozen on a replay frame: live paints keep landing in the store and
+        // are picked up by the next repaint, but don't disturb the snapshot.
+        return;
+      }
       if (fullRefresh) {
         repaintAll();
       } else {
@@ -119,7 +130,7 @@ export function PixelBoard({ store, onPaint }: PixelBoardProps) {
         rafRef.current = null;
       }
     };
-  }, [store, repaintAll, drawCell, runOverlayLoop]);
+  }, [store, replayBuffer, repaintAll, drawCell, runOverlayLoop]);
 
   function cellFromEvent(event: React.PointerEvent<HTMLCanvasElement>): { x: number; y: number } | null {
     const canvas = overlayRef.current;
@@ -136,6 +147,9 @@ export function PixelBoard({ store, onPaint }: PixelBoardProps) {
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (replayBuffer) {
+      return;
+    }
     paintingRef.current = true;
     event.currentTarget.setPointerCapture(event.pointerId);
     const cell = cellFromEvent(event);
@@ -167,6 +181,8 @@ export function PixelBoard({ store, onPaint }: PixelBoardProps) {
         width={size}
         height={size}
         className="nm-pixel-layer nm-pixel-overlay"
+        title={replayBuffer ? replayTooltip : undefined}
+        style={replayBuffer ? { cursor: "not-allowed" } : undefined}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

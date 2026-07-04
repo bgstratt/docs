@@ -44,12 +44,14 @@ export class PixelStore {
         if (!coords) {
           return;
         }
+        // A missing/undecodable value means the key was deleted (eraser).
         const decoded = decodePixelValue(this.doc.map(PIXEL_NAMESPACE).get(ev.key));
-        if (!decoded) {
+        const paletteIndex = decoded ? decoded.paletteIndex : EMPTY_PIXEL;
+        if (this.buffer[coords.y * GRID_SIZE + coords.x] === paletteIndex) {
           return;
         }
-        this.buffer[coords.y * GRID_SIZE + coords.x] = decoded.paletteIndex;
-        this.emit([{ x: coords.x, y: coords.y, paletteIndex: decoded.paletteIndex, source }], false);
+        this.buffer[coords.y * GRID_SIZE + coords.x] = paletteIndex;
+        this.emit([{ x: coords.x, y: coords.y, paletteIndex, source }], false);
         return;
       }
       // Bulk merge (remote pack / undo) — rescan and report changed cells so
@@ -67,6 +69,17 @@ export class PixelStore {
       return;
     }
     this.doc.map(PIXEL_NAMESPACE).set(pixelKey(x, y), encodePixelValue(paletteIndex, this.authorShort));
+  }
+
+  /** Delete the pixel's key entirely — back to background, and less room state. */
+  erase(x: number, y: number): void {
+    if (x < 0 || y < 0 || x >= GRID_SIZE || y >= GRID_SIZE) {
+      return;
+    }
+    if (this.buffer[y * GRID_SIZE + x] === EMPTY_PIXEL) {
+      return;
+    }
+    this.doc.map(PIXEL_NAMESPACE).delete(pixelKey(x, y));
   }
 
   paintedCount(): number {
@@ -89,17 +102,24 @@ export class PixelStore {
 
   private reloadAll(source: "local" | "remote" = "remote"): PixelChange[] {
     const all = this.doc.map(PIXEL_NAMESPACE).all();
-    const changes: PixelChange[] = [];
+    // Rebuild from scratch so keys deleted in a bulk merge fall back to empty.
+    const next = new Uint8Array(GRID_SIZE * GRID_SIZE).fill(EMPTY_PIXEL);
     for (const [key, value] of Object.entries(all)) {
       const coords = parsePixelKey(key);
       const decoded = decodePixelValue(value);
       if (!coords || !decoded) {
         continue;
       }
-      const idx = coords.y * GRID_SIZE + coords.x;
-      if (this.buffer[idx] !== decoded.paletteIndex) {
-        this.buffer[idx] = decoded.paletteIndex;
-        changes.push({ x: coords.x, y: coords.y, paletteIndex: decoded.paletteIndex, source });
+      next[coords.y * GRID_SIZE + coords.x] = decoded.paletteIndex;
+    }
+    const changes: PixelChange[] = [];
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        const idx = y * GRID_SIZE + x;
+        if (this.buffer[idx] !== next[idx]) {
+          this.buffer[idx] = next[idx];
+          changes.push({ x, y, paletteIndex: next[idx], source });
+        }
       }
     }
     return changes;

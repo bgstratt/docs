@@ -7,6 +7,19 @@ import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
 const config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
 const client = new RuntimeClient(config, { pubkeyPrefix: "protocol-inspector", maxEvents: 120 });
 
+// Default rooms of the other demo/playground apps, so the inspector can drop
+// straight into whichever page is being observed. Free-form ids still work.
+const KNOWN_ROOMS = [
+  "collab-text",
+  "collab-maps",
+  "infinite-room-workspace",
+  "pixel-canvas",
+  "demo-room"
+];
+
+// Sentinel for the "type your own room id" choice in the room dropdown.
+const CUSTOM_ROOM = "__custom__";
+
 interface InspectorEvent {
   id: string;
   atIso: string;
@@ -25,6 +38,9 @@ function parseType(raw: string): string {
 
 export default function App() {
   const [roomIdInput, setRoomIdInput] = useState(config.defaultRoomId);
+  const [roomChoice, setRoomChoice] = useState(
+    KNOWN_ROOMS.includes(config.defaultRoomId) ? config.defaultRoomId : CUSTOM_ROOM
+  );
   const [activeRoomId, setActiveRoomId] = useState(config.defaultRoomId);
   const [diagnostics, setDiagnostics] = useState<RuntimeDiagnostics>(client.getDiagnostics());
   const [events, setEvents] = useState<InspectorEvent[]>([]);
@@ -95,6 +111,17 @@ export default function App() {
     client.connect(roomId);
   }
 
+  function chooseRoom(choice: string) {
+    setRoomChoice(choice);
+    if (choice === CUSTOM_ROOM) {
+      setRoomIdInput("");
+      return;
+    }
+    setRoomIdInput(choice);
+    setActiveRoomId(choice);
+    client.connect(choice);
+  }
+
   function clearEvents() {
     setEvents([]);
     setSelectedEventId(null);
@@ -132,17 +159,30 @@ export default function App() {
 
       <div className="nm-content">
       <section className="nm-controls">
-        <label className="nm-label" htmlFor="roomId">Room</label>
-        <input
-          id="roomId"
-          className="nm-input nm-input-xl"
-          value={roomIdInput}
-          onChange={(event) => setRoomIdInput(event.target.value)}
-          placeholder="Enter room id"
-        />
-        <button type="button" className="nm-btn nm-btn-primary" onClick={connectRoom} disabled={!canConnect}>
-          Connect
-        </button>
+        <label className="nm-label" htmlFor="roomChoice">Room</label>
+        <select
+          id="roomChoice"
+          className="nm-input nm-input-lg"
+          value={roomChoice}
+          onChange={(event) => chooseRoom(event.target.value)}
+        >
+          {KNOWN_ROOMS.map((room) => <option key={room} value={room}>{room}</option>)}
+          <option value={CUSTOM_ROOM}>Custom room…</option>
+        </select>
+        {roomChoice === CUSTOM_ROOM && (
+          <>
+            <input
+              id="roomId"
+              className="nm-input nm-input-lg"
+              value={roomIdInput}
+              onChange={(event) => setRoomIdInput(event.target.value)}
+              placeholder="Enter room id"
+            />
+            <button type="button" className="nm-btn nm-btn-primary" onClick={connectRoom} disabled={!canConnect}>
+              Connect
+            </button>
+          </>
+        )}
         <button type="button" className="nm-btn" onClick={() => client.disconnect()}>
           Disconnect
         </button>

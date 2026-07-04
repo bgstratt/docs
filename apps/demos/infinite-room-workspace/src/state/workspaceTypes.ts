@@ -97,3 +97,8 @@ export type WriteBranchResolution = {
 export const WORKSPACE_WIDTH = 860;
 export const WORKSPACE_HEIGHT = 360;
 export const BRANCH_WRITE_PROTECT_MS = 8000;
+
+/** Display-only truncation for pubkey-style peer ids; never use for lookups. */
+export function shortPeerId(peerId: string): string {
+  return peerId.length > 20 ? `${peerId.slice(0, 16)}…` : peerId;
+}

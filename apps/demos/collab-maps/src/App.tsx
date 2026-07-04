@@ -30,6 +30,15 @@ function authorColor(author: string): { bg: string; border: string } {
 
 const REMOTE_HIGHLIGHT_MS = 900;
 
+function defaultMapperName(): string {
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  let suffix = "";
+  for (let i = 0; i < 4; i++) {
+    suffix += letters[Math.floor(Math.random() * letters.length)];
+  }
+  return `mapper-${suffix}`;
+}
+
 interface Session {
   doc: Doc;
   store: MapsStore;
@@ -56,7 +65,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [roomIdInput, setRoomIdInput] = useState("");
   const [diagnostics, setDiagnostics] = useState<RuntimeDiagnostics>(EMPTY_DIAGNOSTICS);
-  const [authorName, setAuthorName] = useState("mapper-1");
+  const [authorName, setAuthorName] = useState(defaultMapperName);
   const [pinLabel, setPinLabel] = useState("New marker");
   const [pins, setPins] = useState<MapPin[]>([]);
   const [remotePinIds, setRemotePinIds] = useState<Set<string>>(new Set());

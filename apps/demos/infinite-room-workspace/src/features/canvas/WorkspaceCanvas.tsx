@@ -14,7 +14,7 @@ import type {
   WorkspaceNode,
   WorkspaceTool
 } from "../../state/workspaceTypes";
-import { WORKSPACE_HEIGHT, WORKSPACE_WIDTH } from "../../state/workspaceTypes";
+import { shortPeerId, WORKSPACE_HEIGHT, WORKSPACE_WIDTH } from "../../state/workspaceTypes";
 
 export type RemoteNodeDrag = {
   x: number;
@@ -31,6 +31,7 @@ interface WorkspaceCanvasProps {
   workspaceAnnotations: WorkspaceAnnotation[];
   remoteDragByNodeId: Record<string, RemoteNodeDrag>;
   remoteDragByPeer: Record<string, DragPresence>;
+  presenceByPeer: Record<string, string>;
   canUseSdkActions: boolean;
   workspaceTool: WorkspaceTool;
   replayMode: "live" | "playback";
@@ -48,6 +49,7 @@ export function WorkspaceCanvas({
   workspaceAnnotations,
   remoteDragByNodeId,
   remoteDragByPeer,
+  presenceByPeer,
   canUseSdkActions,
   workspaceTool,
   replayMode,
@@ -117,6 +119,9 @@ export function WorkspaceCanvas({
               borderRadius: 8,
               border: remoteDrag ? "1px solid #0f766e" : "1px solid #2563eb",
               background: "white",
+              // Fixed light background, so pin the text color too — the page
+              // text color flips white in dark theme and vanished here.
+              color: "#0f172a",
               padding: "6px 8px",
               cursor: canUseSdkActions ? "grab" : "not-allowed",
               boxShadow: remoteDrag ? "0 0 0 2px rgba(20, 184, 166, 0.18)" : "0 1px 3px rgba(15, 23, 42, 0.25)"
@@ -138,6 +143,7 @@ export function WorkspaceCanvas({
             borderRadius: 8,
             border: "1px solid #7c3aed",
             background: "#faf5ff",
+            color: "#3b0764",
             padding: "6px 8px",
             boxShadow: "0 1px 3px rgba(15, 23, 42, 0.20)"
           }}
@@ -161,7 +167,7 @@ export function WorkspaceCanvas({
             padding: "2px 8px"
           }}
         >
-          {peerId} dragging {drag.nodeId}
+          {presenceByPeer[peerId] ?? shortPeerId(peerId)} dragging
         </div>
       ))}
       {workspaceAnnotations.map((note) => (
@@ -176,6 +182,7 @@ export function WorkspaceCanvas({
             borderRadius: 8,
             border: "1px solid #f59e0b",
             background: "#fffbeb",
+            color: "#78350f",
             padding: "6px 8px",
             boxShadow: "0 1px 3px rgba(15, 23, 42, 0.20)"
           }}

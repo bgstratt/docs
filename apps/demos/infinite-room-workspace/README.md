@@ -48,7 +48,7 @@ Features (all live):
 
 - `VITE_HOST_BASE_URL` (default `http://localhost:5074`)
 - `VITE_WS_BASE_URL` (derived from host base URL if unset)
-- `VITE_DEFAULT_ROOM_ID` (default `demo-room`)
+- `VITE_DEFAULT_ROOM_ID` (set to `infinite-room-workspace` in `.env`; falls back to `demo-room`)
 - `VITE_TOKEN_MODE` (`none` | `static` | `provider`)
 - `VITE_TRANSPORT_MODE` (`ws-only` | `auto`)
 

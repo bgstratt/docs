@@ -2730,9 +2730,9 @@ export default function App() {
   return (
     <main className="nm-app">
       <header className="nm-page-header">
-        <h1 className="nm-page-title">Infinite room workspace</h1>
+        <h1 className="nm-page-title">Workflow demo</h1>
         <p className="nm-page-desc">
-          Spatial shared-state demo: SDK-backed workspace nodes, branches, and replay lanes across peers.
+          Branch, replay, and merge a shared workflow: scrub the timeline, diverge from any node, and converge back to the live head — with peers visible in real time.
         </p>
       </header>
 

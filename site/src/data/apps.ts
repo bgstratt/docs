@@ -26,15 +26,15 @@ export const apps: AppEntry[] = [
     sourcePath: "apps/demos/pixel-canvas",
   },
   {
-    slug: "infinite-room-workspace",
-    name: "Infinite room workspace",
-    tagline: "Branch, merge, and time-travel a live multiplayer workspace",
+    slug: "workflow-demo",
+    name: "Workflow demo",
+    tagline: "Branch, merge, and time-travel a live multiplayer workflow",
     description:
-      "The flagship demo of NodalMerge's DAG model: a spatial workspace (nodes, edges, annotations, assets) with branch-from-cursor, merge-into-head, a branch-lane DAG visualization showing divergence and merges, timeline scrubbing with a per-op inspector, and live presence including remote drag ghosts and peer replay cursors.",
+      "The flagship demo of NodalMerge's DAG model: a shared workflow canvas (nodes, edges, annotations, assets) with branch-from-cursor, merge-into-head, a branch-lane DAG visualization showing divergence and merges, timeline scrubbing with a per-op inspector, and live presence including remote drag ghosts and peer replay cursors.",
     category: "demos",
     status: "live",
     icon: "🧭",
-    sourcePath: "apps/demos/infinite-room-workspace",
+    sourcePath: "apps/demos/workflow-demo",
   },
   {
     slug: "bench-trace",

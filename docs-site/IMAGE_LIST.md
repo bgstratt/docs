@@ -12,7 +12,7 @@ root — see `developer-experience/apps.mdx`), then work through each tutorial/g
 | Page | Suggested filename | Capture description |
 |---|---|---|
 | `guides/replay-debugging.mdx` | `replay-debugging-cli-output.png` | Terminal output of `nodalmerge-server replay` showing resolved state and canonical hash for a captured pack, with a highlighted mismatch example if available. |
-| `tutorials/trace-a-room-session.mdx` | `trace-room-session-setup.png` | Two `infinite-room-workspace` browser windows plus `protocol-inspector` and `replay-lab` windows, all set to the same room id, arranged for the tutorial setup step. |
+| `tutorials/trace-a-room-session.mdx` | `trace-room-session-setup.png` | Two `workflow-demo` browser windows plus `protocol-inspector` and `replay-lab` windows, all set to the same room id, arranged for the tutorial setup step. |
 | `tutorials/incident-debug-sprint.mdx` | `incident-debug-protocol-inspector-trace.png` | `protocol-inspector` with Peer lifecycle / Presence / Replay-query presets applied, showing an exported trace snippet for the reproduction window. |
 
 **Studio pages** — none of these exist yet; `nodalmerge-studio` has no screenshots

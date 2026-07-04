@@ -562,6 +562,7 @@ a.nm-card:hover::before { opacity: 1; }
 }
 .nm-badge-soon { background: rgba(245,158,11,0.1); color: var(--nm-amber-600); border: 1px solid rgba(245,158,11,0.25); }
 .dark .nm-badge-soon { color: var(--nm-amber-400); }
+.nm-badge-live { background: rgba(16,185,129,0.1); color: var(--nm-text-brand); border: 1px solid rgba(16,185,129,0.25); }
 
 /* --- RESPONSIVE ------------------------------------------------------------ */
 

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { loadRuntimeConfig } from "../../../../shared/runtime/config";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
 import { RuntimeClient } from "../../../../shared/runtime/runtimeClient";
+import { connectWithRoomFallback } from "../../../../shared/runtime/roomFallback";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
 import { SdkRuntimeClient, type SharedWriteResult } from "./lib/sdkRuntimeClient";
 import {
@@ -41,136 +42,90 @@ import {
   snapshotLiveKeysForBranch
 } from "./lib/workspaceBaselines";
 
+import type {
+  DragPresence,
+  PersistenceEvent,
+  RemoteReplayCursor,
+  RuntimeBackend,
+  SharedBranchRecord,
+  SharedReplayOp,
+  WorkspaceAnnotation,
+  WorkspaceAsset,
+  WorkspaceDataKind,
+  WorkspaceEdge,
+  WorkspaceNode,
+  WorkspaceSnapshot,
+  WorkspaceTool,
+  WriteBranchResolution
+} from "./state/workspaceTypes";
+import {
+  BRANCH_WRITE_PROTECT_MS,
+  shortPeerId,
+  WORKSPACE_HEIGHT,
+  WORKSPACE_WIDTH
+} from "./state/workspaceTypes";
+import {
+  cloneWorkspaceSnapshot,
+  emptyWorkspaceSnapshot,
+  hasWorkspaceSnapshotContent
+} from "./state/snapshot";
+import { ReplayControls } from "./features/replay/ReplayControls";
+import { PresencePanel } from "./panels/PresencePanel";
+import { WorkspaceCanvas } from "./features/canvas/WorkspaceCanvas";
+
 const config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
 const wsClient = new RuntimeClient(config, { pubkeyPrefix: "workspace", maxEvents: 40 });
 const sdkClient = new SdkRuntimeClient(config);
-type RuntimeBackend = "ws" | "sdk";
-const WORKSPACE_WIDTH = 860;
-const WORKSPACE_HEIGHT = 360;
 
-type WorkspaceNode = {
-  id: string;
-  x: number;
-  y: number;
-  label: string;
-  updatedAtIso: string;
-};
-
-type WorkspaceEdge = {
-  id: string;
-  fromNodeId: string;
-  toNodeId: string;
-  updatedAtIso: string;
-};
-
-type WorkspaceAsset = {
-  id: string;
-  x: number;
-  y: number;
-  name: string;
-  updatedAtIso: string;
-};
-
-type WorkspaceAnnotation = {
-  id: string;
-  x: number;
-  y: number;
-  text: string;
-  updatedAtIso: string;
-};
-
-type WorkspaceTool = "select" | "annotate";
-
-type DragPresence = {
-  nodeId: string;
-  x: number;
-  y: number;
-  branchId: string;
-  mode: "live" | "playback";
-  atIso: string;
-};
-
-type RemoteReplayCursor = {
-  branchId: string;
-  nodeIndex: number;
-  replayNodeId: string | null;
-  mode: "live" | "playback";
-  name: string;
-  atIso: string;
-};
-
-type PersistenceEvent = {
-  atIso: string;
-  key: string;
-  action: string;
-  detail: string;
-};
-
-type WorkspaceSnapshot = {
-  doc: string;
-  nodes: WorkspaceNode[];
-  edges: WorkspaceEdge[];
-  assets: WorkspaceAsset[];
-  annotations: WorkspaceAnnotation[];
-};
-
-type SharedReplayOp = {
-  id: string;
-  branchId: string;
-  opSummary: string;
-  payload: Record<string, unknown>;
-  payloadRef: string;
-  atIso: string;
-};
-
-type SharedBranchRecord = {
-  branchId: string;
-  roomId: string;
-  label: string;
-  basedOnBranchId: string | null;
-  basedOnNodeId: string | null;
-  createdAtIso: string;
-};
-
-type WorkspaceDataKind = "doc" | "nodes" | "edges" | "assets" | "annotations";
-type WriteBranchResolution = {
-  branchId: string;
-  seededSnapshot: WorkspaceSnapshot | null;
-};
-
-const BRANCH_WRITE_PROTECT_MS = 8000;
-
-function emptyWorkspaceSnapshot(): WorkspaceSnapshot {
-  return { doc: "", nodes: [], edges: [], assets: [], annotations: [] };
+function defaultOperatorName(): string {
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  let suffix = "";
+  for (let i = 0; i < 4; i++) {
+    suffix += letters[Math.floor(Math.random() * letters.length)];
+  }
+  return `operator-${suffix}`;
 }
 
-function cloneWorkspaceSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
+function toolButtonStyle(active: boolean): CSSProperties {
   return {
-    doc: snapshot.doc,
-    nodes: snapshot.nodes.map((entry) => ({ ...entry })),
-    edges: snapshot.edges.map((entry) => ({ ...entry })),
-    assets: snapshot.assets.map((entry) => ({ ...entry })),
-    annotations: snapshot.annotations.map((entry) => ({ ...entry }))
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 30,
+    height: 30,
+    padding: 0,
+    borderRadius: 6,
+    border: active ? "1px solid #2563eb" : "1px solid #94a3b8",
+    background: active ? "#dbeafe" : "#ffffff",
+    color: active ? "#1d4ed8" : "#334155"
   };
 }
 
-function hasWorkspaceSnapshotContent(snapshot: WorkspaceSnapshot): boolean {
-  return (
-    snapshot.doc.trim().length > 0 ||
-    snapshot.nodes.length > 0 ||
-    snapshot.edges.length > 0 ||
-    snapshot.assets.length > 0 ||
-    snapshot.annotations.length > 0
-  );
+async function waitForConnectionSettle(
+  client: { getDiagnostics: () => RuntimeDiagnostics },
+  timeoutMs = 1500,
+  intervalMs = 150
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = client.getDiagnostics().connectionState;
+    if (state === "open" || state === "error" || state === "closed") {
+      return;
+    }
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, intervalMs);
+    });
+  }
 }
 
 export default function App() {
   const [backend, setBackend] = useState<RuntimeBackend>("sdk");
   const [roomIdInput, setRoomIdInput] = useState(config.defaultRoomId);
   const [activeRoomId, setActiveRoomId] = useState<string>(config.defaultRoomId);
+  const [isTryingAnotherRoom, setIsTryingAnotherRoom] = useState(false);
   const [diagnostics, setDiagnostics] = useState<RuntimeDiagnostics>(sdkClient.getDiagnostics());
   const [lastAction, setLastAction] = useState<string>("Ready.");
-  const [presenceName, setPresenceName] = useState("operator-1");
+  const [presenceName, setPresenceName] = useState(defaultOperatorName);
   const [peerTarget, setPeerTarget] = useState("");
   const [signalPayload, setSignalPayload] = useState('{"intent":"ping"}');
   const [onlinePeers, setOnlinePeers] = useState<string[]>([]);
@@ -192,7 +147,6 @@ export default function App() {
   const frozenBaselineBranchIdsRef = useRef(new Set<string>());
   const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");
   const [annotationDraft, setAnnotationDraft] = useState("Decision note");
-  const [assetDraftName, setAssetDraftName] = useState("diagram.png");
   const [mergeSourceBranchId, setMergeSourceBranchId] = useState("main");
   const [mergeSourceNodeId, setMergeSourceNodeId] = useState<string>("");
   const [replayState, dispatchReplay] = useReducer(
@@ -358,8 +312,8 @@ export default function App() {
         if (!peerTarget) {
           setPeerTarget(peerId);
         }
-        setLastSignalStatus(`Peer ${peerId} joined.`);
-        setActiveNotice(`Peer ${peerId} joined ${activeRoomId}.`);
+        setLastSignalStatus(`Peer ${shortPeerId(peerId)} joined.`);
+        setActiveNotice(`Peer ${shortPeerId(peerId)} joined ${activeRoomId}.`);
         return;
       }
 
@@ -382,8 +336,8 @@ export default function App() {
           delete next[peerId];
           return next;
         });
-        setLastSignalStatus(`Peer ${peerId} left.`);
-        setActiveNotice(`Peer ${peerId} left ${activeRoomId}.`);
+        setLastSignalStatus(`Peer ${shortPeerId(peerId)} left.`);
+        setActiveNotice(`Peer ${shortPeerId(peerId)} left ${activeRoomId}.`);
         return;
       }
 
@@ -461,7 +415,7 @@ export default function App() {
           });
           scheduleRemoteDragEndRefresh(peerId);
         }
-        setActiveNotice(`Presence updated from ${peerId}.`);
+        setActiveNotice(`Presence updated from ${name}.`);
         return;
       }
       if (type === "presence-update" || type === "presence-updated") {
@@ -661,7 +615,12 @@ export default function App() {
     return computeMaxBranchColumn(sortedBranchIds, branchOffsetById, replayState.branchNodeIds);
   }, [sortedBranchIds, branchOffsetById, replayState.branchNodeIds]);
   const laneLayout = useMemo(() => {
-    const slotWidth = 64;
+    // Fixed 64px slots up to 10 columns; past that, compress the spacing so
+    // the lane SVG stops growing rightward instead of stretching the page.
+    const baseSlotWidth = 64;
+    const maxTimelineSpan = baseSlotWidth * 10;
+    const columns = maxBranchColumn + 1;
+    const slotWidth = columns > 10 ? Math.max(20, Math.floor(maxTimelineSpan / columns)) : baseSlotWidth;
     const laneHeight = 54;
     const leftGutter = 190;
     const topGutter = 16;
@@ -2150,6 +2109,31 @@ export default function App() {
     setLastAction(`Switching room to ${nextRoomId}...`);
   }
 
+  async function tryAnotherRoom() {
+    const baseRoomId = roomIdInput.trim() || config.defaultRoomId;
+    const activeClient = backend === "sdk" ? sdkClient : wsClient;
+    setIsTryingAnotherRoom(true);
+    const result = await connectWithRoomFallback(
+      baseRoomId,
+      async (candidate) => {
+        // Room changes are effect-driven (see the useEffect keyed on
+        // activeRoomId) rather than an awaitable connect call, so trigger
+        // the switch and poll diagnostics until it settles.
+        setRoomIdInput(candidate);
+        setActiveRoomId(candidate);
+        await waitForConnectionSettle(activeClient);
+      },
+      () => activeClient.getDiagnostics().connectionState === "open",
+      (candidate) => {
+        setActiveNotice(`Room busy — trying ${candidate}...`);
+      }
+    );
+    setIsTryingAnotherRoom(false);
+    if (!result.connected) {
+      setLastAction(`Tried ${result.attempts} room(s) starting from ${baseRoomId} — still unavailable.`);
+    }
+  }
+
   function addWorkspaceNode() {
     const writeTarget = ensureWritableBranchForEdit("workspace.add-node", { applySeedSnapshot: true });
     if (!writeTarget) {
@@ -2164,8 +2148,9 @@ export default function App() {
     const baseNodes = branchSeedSnapshot ? branchSeedSnapshot.nodes : workspaceNodesRef.current;
     const next: WorkspaceNode = {
       id: `node-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      x: 40 + (baseNodes.length % 8) * 96,
-      y: 40 + Math.floor(baseNodes.length / 8) * 70,
+      // 112px columns keep 104px-wide nodes from overlapping at spawn.
+      x: 40 + (baseNodes.length % 7) * 112,
+      y: 40 + Math.floor(baseNodes.length / 7) * 70,
       label: `Node ${baseNodes.length + 1}`,
       updatedAtIso: new Date().toISOString()
     };
@@ -2193,29 +2178,6 @@ export default function App() {
     }
     activeBranchIdRef.current = branchForAppend;
     setActiveNotice(`Workspace node ${next.label} added.`);
-  }
-
-  function addWorkspaceAsset() {
-    const writeTarget = ensureWritableBranchForEdit("workspace.add-asset", { applySeedSnapshot: true });
-    if (!writeTarget) {
-      return;
-    }
-    const branchId = writeTarget.branchId;
-    const baseAssets = writeTarget.seededSnapshot ? writeTarget.seededSnapshot.assets : workspaceAssets;
-    const name = assetDraftName.trim() || "asset.bin";
-    const next: WorkspaceAsset = {
-      id: `asset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      name,
-      x: 50 + (baseAssets.length % 6) * 132,
-      y: 40 + Math.floor(baseAssets.length / 6) * 64,
-      updatedAtIso: new Date().toISOString()
-    };
-    const didPersist = persistWorkspaceAssets([next, ...baseAssets], `Added asset ${next.name}.`, branchId);
-    if (!didPersist) {
-      return;
-    }
-    appendReplayWorkspaceEvent(`add-asset ${next.name}`, { type: "workspace.add-asset", asset: next }, "workspace.add-asset", next.updatedAtIso, branchId);
-    setActiveNotice(`Asset ${next.name} added.`);
   }
 
   function createReplayOp(
@@ -2370,6 +2332,19 @@ export default function App() {
     setActiveNotice("Workspace annotations cleared.");
   }
 
+  // One-click board reset: nodes (which also clears edges), assets, notes.
+  function clearWorkspaceAll() {
+    if (workspaceNodesRef.current.length > 0 || workspaceEdges.length > 0) {
+      clearWorkspaceNodes();
+    }
+    if (workspaceAssets.length > 0) {
+      clearWorkspaceAssets();
+    }
+    if (workspaceAnnotations.length > 0) {
+      clearWorkspaceAnnotations();
+    }
+  }
+
   function clearWorkspaceNodes() {
     const writeTarget = ensureWritableBranchForEdit("workspace.clear-nodes", { applySeedSnapshot: true });
     if (!writeTarget) {
@@ -2407,7 +2382,7 @@ export default function App() {
     setActiveNotice("Workspace cleared.");
   }
 
-  function handleWorkspaceNodeMouseDown(event: React.MouseEvent<HTMLDivElement>, nodeId: string) {
+  function handleWorkspaceNodeMouseDown(event: React.PointerEvent<HTMLDivElement>, nodeId: string) {
     if (!canUseSdkActions) {
       setLastAction("Connect in npm sdk + wasm mode before moving workspace nodes.");
       return;
@@ -2470,7 +2445,7 @@ export default function App() {
     isDraggingRef.current = true;
   }
 
-  function handleWorkspaceSurfaceMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+  function handleWorkspaceSurfaceMouseDown(event: React.PointerEvent<HTMLDivElement>) {
     if (workspaceTool !== "annotate") {
       return;
     }
@@ -2648,11 +2623,15 @@ export default function App() {
       setActiveNotice("Workspace move persisted.");
     }
 
-    window.addEventListener("mousemove", onPointerMove);
-    window.addEventListener("mouseup", onPointerUp);
+    // Pointer events instead of mouse events so touch/pen drags work too
+    // (the canvas surface sets touch-action: none to suppress scrolling).
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     return () => {
-      window.removeEventListener("mousemove", onPointerMove);
-      window.removeEventListener("mouseup", onPointerUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
     };
   }, [backend, canUseSdkActions, replayState, branchBaselineById, activeRoomId]);
 
@@ -2742,6 +2721,12 @@ export default function App() {
     setActiveNotice(`Merge applied to ${targetBranchId} head.`);
   }
 
+  const hasWorkspaceObjects =
+    workspaceNodes.length > 0 ||
+    workspaceEdges.length > 0 ||
+    workspaceAssets.length > 0 ||
+    workspaceAnnotations.length > 0;
+
   return (
     <main className="nm-app">
       <header className="nm-page-header">
@@ -2751,7 +2736,8 @@ export default function App() {
         </p>
       </header>
 
-      <div className="nm-content">
+      {/* +100px over the shared 1180px shell so the workspace panel breathes. */}
+      <div className="nm-content" style={{ maxWidth: 1280 }}>
       <section className="nm-controls">
         <label className="nm-label" htmlFor="roomId">Room</label>
         <input
@@ -2776,16 +2762,13 @@ export default function App() {
         >
           Disconnect
         </button>
-        <label htmlFor="backendMode">Runtime mode</label>
-        <select
-          id="backendMode"
-          value={backend}
-          onChange={(event) => setBackend(event.target.value as RuntimeBackend)}
-          style={{ padding: 6 }}
-        >
-          <option value="ws">direct websocket</option>
-          <option value="sdk">npm sdk + wasm</option>
-        </select>
+        <button type="button" onClick={() => void tryAnotherRoom()} disabled={isTryingAnotherRoom}>
+          {isTryingAnotherRoom ? "Trying rooms..." : "Try another room"}
+        </button>
+        <p className="nm-controls-hint">
+          Room busy or unreachable? Type a different room name above, or click "Try another
+          room" to attempt a couple of nearby room ids automatically.
+        </p>
       </section>
 
       <section style={{ marginBottom: 16 }}>
@@ -2813,789 +2796,184 @@ export default function App() {
       </section>
 
       <section style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
-        <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, padding: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Workspace objects (persistent)</h2>
+        <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, minWidth: 0, padding: 12 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+            <h2 style={{ marginTop: 0 }}>Workspace objects (persistent)</h2>
+            <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>Peers: {onlinePeers.length}</span>
+          </div>
           <p style={{ marginTop: 0 }}>
-            Add and drag nodes, connect edges with shift-click, place annotations in annotate mode, and attach shared assets.
+            Add and drag nodes, connect edges with shift-click, place annotations in annotate mode.
           </p>
-          <p
-            style={{
-              marginTop: 0,
-              padding: "8px 10px",
-              borderRadius: 6,
-              background: canUseSdkActions ? "#ecfdf5" : "#fff7ed",
-              color: canUseSdkActions ? "#065f46" : "#9a3412"
-            }}
-          >
-            <strong>Status:</strong> {activeNotice}
-            <br />
-            <strong>Last action:</strong> {lastAction}
-          </p>
-          <p style={{ marginTop: 0 }}>
-            <strong>Peer activity:</strong> {onlinePeers.length > 0 ? `${onlinePeers.length} peer(s) online` : "No peers connected yet."}
-          </p>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <label htmlFor="workspaceTool">Tool</label>
-            <select
-              id="workspaceTool"
-              value={workspaceTool}
-              onChange={(event) => setWorkspaceTool(event.target.value === "annotate" ? "annotate" : "select")}
-              style={{ padding: 6 }}
-            >
-              <option value="select">select + drag + edge connect</option>
-              <option value="annotate">annotate on canvas click</option>
-            </select>
-            <label htmlFor="annotationDraft">Annotation</label>
-            <input
-              id="annotationDraft"
-              value={annotationDraft}
-              onChange={(event) => setAnnotationDraft(event.target.value)}
-              maxLength={64}
-              style={{ minWidth: 180, padding: 6 }}
-            />
-            <label htmlFor="assetDraftName">Asset name</label>
-            <input
-              id="assetDraftName"
-              value={assetDraftName}
-              onChange={(event) => setAssetDraftName(event.target.value)}
-              maxLength={72}
-              style={{ minWidth: 180, padding: 6 }}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
-            <button type="button" onClick={addWorkspaceNode} disabled={!canUseSdkActions}>
-              Add node
-            </button>
-            <button type="button" onClick={addWorkspaceAsset} disabled={!canUseSdkActions}>
-              Add asset
-            </button>
-            <button type="button" onClick={clearWorkspaceNodes} disabled={!canUseSdkActions || workspaceNodes.length === 0}>
-              Clear nodes
-            </button>
-            <button type="button" onClick={clearWorkspaceEdges} disabled={!canUseSdkActions || workspaceEdges.length === 0}>
-              Clear edges
-            </button>
-            <button
-              type="button"
-              onClick={clearWorkspaceAssets}
-              disabled={!canUseSdkActions || workspaceAssets.length === 0}
-            >
-              Clear assets
-            </button>
-            <button
-              type="button"
-              onClick={clearWorkspaceAnnotations}
-              disabled={!canUseSdkActions || workspaceAnnotations.length === 0}
-            >
-              Clear notes
-            </button>
-            <span>
-              nodes: <code>{workspaceNodes.length}</code>
-            </span>
-            <span>
-              edges: <code>{workspaceEdges.length}</code>
-            </span>
-            <span>
-              assets: <code>{workspaceAssets.length}</code>
-            </span>
-            <span>
-              notes: <code>{workspaceAnnotations.length}</code>
-            </span>
-          </div>
-          <div
-            ref={workspaceSurfaceRef}
-            onMouseDown={handleWorkspaceSurfaceMouseDown}
-            style={{
-              width: "100%",
-              maxWidth: WORKSPACE_WIDTH,
-              height: WORKSPACE_HEIGHT,
-              border: "1px solid #cbd5e1",
-              borderRadius: 8,
-              background: "linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
-              position: "relative",
-              overflow: "hidden",
-              marginBottom: 12
-            }}
-          >
-            <svg
-              width={WORKSPACE_WIDTH}
-              height={WORKSPACE_HEIGHT}
-              style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-            >
-              {workspaceEdges.map((edge) => {
-                const from = workspaceNodes.find((node) => node.id === edge.fromNodeId);
-                const to = workspaceNodes.find((node) => node.id === edge.toNodeId);
-                if (!from || !to) {
-                  return null;
-                }
-                return (
-                  <line
-                    key={edge.id}
-                    x1={from.x + 52}
-                    y1={from.y + 18}
-                    x2={to.x + 52}
-                    y2={to.y + 18}
-                    stroke="#1e293b"
-                    strokeOpacity={0.55}
-                    strokeWidth={2.2}
-                  />
-                );
-              })}
-            </svg>
-            {workspaceNodes.map((node) => {
-              const remoteDrag = remoteDragByNodeId[node.id];
-              const renderX = remoteDrag ? remoteDrag.x : node.x;
-              const renderY = remoteDrag ? remoteDrag.y : node.y;
-              return (
-                <div
-                  key={node.id}
-                  role="button"
-                  tabIndex={0}
-                  onMouseDown={(event) => handleWorkspaceNodeMouseDown(event, node.id)}
-                  style={{
-                    position: "absolute",
-                    left: renderX,
-                    top: renderY,
-                    width: 104,
-                    minHeight: 36,
-                    borderRadius: 8,
-                    border: remoteDrag ? "1px solid #0f766e" : "1px solid #2563eb",
-                    background: "white",
-                    padding: "6px 8px",
-                    cursor: canUseSdkActions ? "grab" : "not-allowed",
-                    boxShadow: remoteDrag ? "0 0 0 2px rgba(20, 184, 166, 0.18)" : "0 1px 3px rgba(15, 23, 42, 0.25)"
-                  }}
-                >
-                  <strong style={{ display: "block", fontSize: 12 }}>{node.label}</strong>
-                  <small style={{ color: "#475569" }}>{new Date(node.updatedAtIso).toLocaleTimeString()}</small>
-                </div>
-              );
-            })}
-            {workspaceAssets.map((asset) => (
-              <div
-                key={asset.id}
-                style={{
-                  position: "absolute",
-                  left: asset.x,
-                  top: asset.y,
-                  minWidth: 120,
-                  borderRadius: 8,
-                  border: "1px solid #7c3aed",
-                  background: "#faf5ff",
-                  padding: "6px 8px",
-                  boxShadow: "0 1px 3px rgba(15, 23, 42, 0.20)"
-                }}
-              >
-                <strong style={{ display: "block", fontSize: 12 }}>{asset.name}</strong>
-                <small style={{ color: "#5b21b6" }}>shared asset</small>
-              </div>
-            ))}
-            {Object.entries(remoteDragByPeer).map(([peerId, drag]) => (
-              <div
-                key={`${peerId}-${drag.nodeId}`}
-                style={{
-                  position: "absolute",
-                  left: drag.x + 106,
-                  top: drag.y - 10,
-                  borderRadius: 999,
-                  border: "1px solid #0f766e",
-                  background: "#ecfeff",
-                  color: "#155e75",
-                  fontSize: 11,
-                  padding: "2px 8px"
-                }}
-              >
-                {peerId} dragging {drag.nodeId}
-              </div>
-            ))}
-            {workspaceAnnotations.map((note) => (
-              <div
-                key={note.id}
-                style={{
-                  position: "absolute",
-                  left: note.x,
-                  top: note.y,
-                  minWidth: 130,
-                  maxWidth: 220,
-                  borderRadius: 8,
-                  border: "1px solid #f59e0b",
-                  background: "#fffbeb",
-                  padding: "6px 8px",
-                  boxShadow: "0 1px 3px rgba(15, 23, 42, 0.20)"
-                }}
-              >
-                <strong style={{ display: "block", fontSize: 12 }}>{note.text}</strong>
-                <small style={{ color: "#92400e" }}>{new Date(note.updatedAtIso).toLocaleTimeString()}</small>
-              </div>
-            ))}
-            {edgeSourceNodeIdRef.current ? (
-              <div style={{ position: "absolute", right: 10, top: 10, color: "#1e3a8a", fontSize: 12 }}>
-                Edge source: <code>{edgeSourceNodeIdRef.current}</code> (shift-click target)
-              </div>
-            ) : null}
-            <div
-              style={{
-                position: "absolute",
-                right: 10,
-                top: 10,
-                borderRadius: 999,
-                border: "1px solid #334155",
-                background: replayState.cursor.mode === "live" ? "#ecfeff" : "#fef3c7",
-                color: "#0f172a",
-                padding: "2px 10px",
-                fontSize: 12,
-                fontWeight: 600
-              }}
-            >
-              {canvasReplayBadge}
-            </div>
-            {replayState.cursor.mode === "playback" ? (
-              <div
-                style={{
-                  position: "absolute",
-                  right: 10,
-                  top: 36,
-                  borderRadius: 6,
-                  border: "1px solid #d97706",
-                  background: "#fffbeb",
-                  color: "#92400e",
-                  padding: "2px 8px",
-                  fontSize: 11,
-                  fontWeight: 600
-                }}
-              >
-                PLAYBACK VIEW (writes may branch)
-              </div>
-            ) : (
-              <div
-                style={{
-                  position: "absolute",
-                  right: 10,
-                  top: 36,
-                  borderRadius: 6,
-                  border: "1px solid #0f766e",
-                  background: "#ecfeff",
-                  color: "#155e75",
-                  padding: "2px 8px",
-                  fontSize: 11,
-                  fontWeight: 600
-                }}
-              >
-                LIVE VIEW (writes append to active head)
-              </div>
-            )}
-            {workspaceNodes.length === 0 ? (
-              <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#475569" }}>
-                {workspaceTool === "annotate"
-                  ? "Annotate mode: click canvas to place a note."
-                  : "Select mode: add nodes, shift-click node to start edge connect."}
-              </div>
-            ) : null}
-          </div>
-          <div
-            style={{
-              position: "sticky",
-              top: 8,
-              zIndex: 2,
-              border: "1px solid #cbd5e1",
-              borderRadius: 8,
-              padding: "8px 10px",
-              marginBottom: 10,
-              background: "#f8fafc"
-            }}
-          >
-            <strong style={{ display: "block", marginBottom: 6 }}>Replay quick scrub</strong>
-            <input
-              type="range"
-              aria-label="Replay quick scrub cursor"
-              min={0}
-              max={Math.max(0, replayNodeCount - 1)}
-              value={Math.min(replayState.cursor.nodeIndex, Math.max(0, replayNodeCount - 1))}
-              onChange={(event) => selectReplayBranchNode(replayState.cursor.branchId, Number(event.target.value) || 0)}
-              style={{ width: "100%", marginBottom: 6 }}
-              disabled={!replayCanStep}
-            />
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <span>
-                <code>
-                  {replayState.cursor.branchId} [{replayState.cursor.nodeIndex}/{Math.max(0, replayNodeCount - 1)}]
-                </code>
-              </span>
-              <button
-                type="button"
-                onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayState.cursor.nodeIndex - 1)}
-                disabled={!replayCanStep}
-              >
-                Prev
-              </button>
-              <button
-                type="button"
-                onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayState.cursor.nodeIndex + 1)}
-                disabled={!replayCanStep}
-              >
-                Next
-              </button>
-              <span style={{ color: "#475569", fontSize: 12 }}>Scrub here while watching workspace objects above.</span>
-            </div>
-          </div>
-          <hr style={{ margin: "14px 0" }} />
-          <h3 style={{ marginTop: 0 }}>Replay canvas</h3>
-          <p style={{ marginTop: 0 }}>
-            Visual lane + timeline + room-at-cursor preview. Use the quick scrubber above the canvas for side-by-side replay viewing.
-          </p>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-            <label htmlFor="activeBranch">Active branch</label>
-            <select
-              id="activeBranch"
-              value={replayState.activeBranchId}
-              onChange={(event) => {
-                const branchId = event.target.value;
-                activeBranchIdRef.current = branchId;
-                dispatchReplay({
-                  type: "set-active-branch",
-                  branchId
-                });
-                if (replayModeRef.current === "live") {
-                  queueMicrotask(() => loadLiveWorkspaceForBranch(branchId));
-                }
-              }}
-              style={{ padding: 6 }}
-            >
-              {availableBranchIds.map((branchId) => (
-                <option key={branchId} value={branchId}>
-                  {branchId}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="replayMode">Replay mode</label>
-            <select
-              id="replayMode"
-              value={replayState.cursor.mode}
-              onChange={(event) => {
-                dispatchReplay({
-                  type: "set-mode",
-                  mode: event.target.value === "playback" ? "playback" : "live"
-                });
-                scheduleReplayCursorPresencePublish({ force: true });
-              }}
-              style={{ padding: 6 }}
-            >
-              <option value="live">live</option>
-              <option value="playback">playback</option>
-            </select>
-            <button
-              type="button"
-              onClick={() => {
-                if (isReplayPlaying) {
-                  setIsReplayPlaying(false);
-                  return;
-                }
-                if (replayNodeCount > 1 && replayState.cursor.nodeIndex >= replayNodeCount - 1) {
-                  selectReplayBranchNode(replayState.cursor.branchId, 0);
-                }
-                setIsReplayPlaying(true);
-              }}
-              disabled={replayNodeCount <= 1}
-            >
-              {isReplayPlaying ? "Pause" : "Play"}
-            </button>
-            <button
-              type="button"
-              onClick={() => selectReplayBranchNode(replayState.cursor.branchId, 0)}
-              disabled={!replayCanStep}
-            >
-              Jump start
-            </button>
-            <button
-              type="button"
-              onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayNodeCount - 1)}
-              disabled={!replayCanStep}
-            >
-              Jump head
-            </button>
-            <span>
-              branch <code>{replayState.cursor.branchId}</code>
-            </span>
-            <span>
-              nodes <code>{replayNodeCount}</code>
-            </span>
-            <button type="button" onClick={createBranchFromCursor} disabled={!replayState.cursor.nodeId}>
-              Branch from cursor
-            </button>
-          </div>
-          <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 8, marginBottom: 10, background: "#f8fafc" }}>
-            <strong>Merge workflow</strong>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
-              <label htmlFor="mergeSourceBranch">Source branch</label>
-              <select
-                id="mergeSourceBranch"
-                value={mergeSourceBranchId}
-                onChange={(event) => {
-                  setMergeSourceBranchId(event.target.value);
-                  setMergeSourceNodeId("");
-                }}
-                style={{ padding: 6 }}
-              >
-                {availableBranchIds.map((branchId) => (
-                  <option key={branchId} value={branchId}>
-                    {branchId}
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="mergeSourceNode">Source node</label>
-              <select
-                id="mergeSourceNode"
-                value={mergeSourceNodeId}
-                onChange={(event) => setMergeSourceNodeId(event.target.value)}
-                style={{ minWidth: 220, padding: 6 }}
-              >
-                <option value="">select node</option>
-                {mergeSourceBranchNodeIds.map((nodeId) => (
-                  <option key={nodeId} value={nodeId}>
-                    {nodeId}
-                  </option>
-                ))}
-              </select>
-              <span>
-                target head: <code>{replayState.activeBranchId}</code>
-              </span>
-              <button type="button" onClick={mergeSelectedSourceIntoActiveHead} disabled={!mergeSourceNodeId}>
-                Merge into active head
-              </button>
-              <span style={{ color: "#334155", fontSize: 12 }}>{mergeEligibilityMessage}</span>
-            </div>
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <strong>Branch lanes:</strong>
-            <div
-              style={{
-                marginTop: 6,
-                border: "1px solid #cbd5e1",
-                borderRadius: 8,
-                padding: "8px 10px",
-                background: "#f8fafc",
-                overflowX: "auto"
-              }}
-            >
-              {sortedBranchIds.length === 0 ? (
-                <span>No branch streams yet.</span>
-              ) : (
-                <svg width={laneLayout.width} height={laneLayout.height} role="img" aria-label="Replay branch lanes">
-                  {sortedBranchIds.map((branchId) => {
-                    const branch = replayState.branches[branchId];
-                    const laneY = laneLayout.laneY[branchId] ?? 0;
-                    const nodeIds = replayState.branchNodeIds[branchId] ?? [];
-                    const isActiveLane = branchId === replayState.activeBranchId;
-                    const branchSource = branch?.basedOnBranchId && branch?.basedOnNodeId
-                      ? `${branch.basedOnBranchId}:${branch.basedOnNodeId}`
-                      : "root";
-                    return (
-                      <g key={`lane-${branchId}`}>
-                        <line
-                          x1={laneLayout.leftGutter - 10}
-                          y1={laneY}
-                          x2={Math.max(
-                            laneLayout.leftGutter + 16,
-                            ...nodeIds.map((nodeId) => laneLayout.nodeXByBranch[branchId]?.[nodeId] ?? laneLayout.leftGutter)
-                          )}
-                          y2={laneY}
-                          stroke={isActiveLane ? "#2563eb" : "#94a3b8"}
-                          strokeWidth={isActiveLane ? 2.5 : 1.5}
-                          strokeDasharray={isActiveLane ? "0" : "4 4"}
-                        />
-                        <text x={8} y={laneY - 6} fill={isActiveLane ? "#1d4ed8" : "#334155"} fontSize={12} fontWeight={isActiveLane ? 700 : 500}>
-                          {branch?.label ?? branchId}
-                          {branch?.isMain ? " (main)" : ""}
-                        </text>
-                        <text x={8} y={laneY + 12} fill="#64748b" fontSize={10}>
-                          from {branchSource}
-                        </text>
-                        {nodeIds.map((nodeId, index) => {
-                          const isCursor = replayState.cursor.nodeId === nodeId;
-                          const node = replayState.nodesById[nodeId];
-                          const isHead = branch?.headNodeId === nodeId;
-                          const x = laneLayout.nodeXByBranch[branchId]?.[nodeId] ?? laneLayout.leftGutter;
-                          const previousNodeId = index > 0 ? nodeIds[index - 1] : null;
-                          const previousX = previousNodeId ? laneLayout.nodeXByBranch[branchId]?.[previousNodeId] : undefined;
-                          return (
-                            <g
-                              key={nodeId}
-                              onClick={() => selectReplayBranchNode(branchId, index)}
-                              style={{ cursor: "pointer" }}
-                            >
-                              {typeof previousX === "number" ? (
-                                <line
-                                  x1={previousX}
-                                  y1={laneY}
-                                  x2={x}
-                                  y2={laneY}
-                                  stroke={isActiveLane ? "#2563eb" : "#64748b"}
-                                  strokeWidth={isActiveLane ? 2 : 1.4}
-                                />
-                              ) : null}
-                              <circle
-                                cx={x}
-                                cy={laneY}
-                                r={isCursor ? 11 : 8}
-                                fill={isCursor ? "#dbeafe" : "#ffffff"}
-                                stroke={isCursor ? "#2563eb" : isHead ? "#0f766e" : "#64748b"}
-                                strokeWidth={isCursor ? 2.5 : isHead ? 2 : 1.4}
-                              />
-                              <text x={x} y={laneY + 3.5} textAnchor="middle" fill="#0f172a" fontSize={9} fontWeight={600}>
-                                {index + (branchOffsetById[branchId] ?? 0)}
-                              </text>
-                              {isHead ? (
-                                <text x={x} y={laneY - 14} textAnchor="middle" fill="#0f766e" fontSize={9} fontWeight={700}>
-                                  HEAD
-                                </text>
-                              ) : null}
-                              {node?.payloadRef === "merge" ? (
-                                <text x={x} y={laneY + 20} textAnchor="middle" fill="#7c3aed" fontSize={8} fontWeight={700}>
-                                  MERGE
-                                </text>
-                              ) : null}
-                            </g>
-                          );
-                        })}
-                      </g>
-                    );
-                  })}
-
-                  {sortedBranchIds.map((branchId) => {
-                    const branch = replayState.branches[branchId];
-                    if (!branch?.basedOnBranchId || !branch.basedOnNodeId) {
-                      return null;
-                    }
-                    const fromX = laneLayout.nodeXByBranch[branch.basedOnBranchId]?.[branch.basedOnNodeId];
-                    const fromY = laneLayout.laneY[branch.basedOnBranchId];
-                    const toY = laneLayout.laneY[branchId];
-                    const firstNodeId = (replayState.branchNodeIds[branchId] ?? [])[0];
-                    const toX = firstNodeId ? laneLayout.nodeXByBranch[branchId]?.[firstNodeId] : undefined;
-                    if (typeof fromX !== "number" || typeof fromY !== "number" || typeof toX !== "number" || typeof toY !== "number") {
-                      return null;
-                    }
-                    const branchMidX = fromX + 16;
-                    return (
-                      <path
-                        key={`diverge-${branchId}`}
-                        d={`M ${fromX} ${fromY} C ${branchMidX} ${fromY}, ${branchMidX} ${toY}, ${toX} ${toY}`}
-                        fill="none"
-                        stroke="#a855f7"
-                        strokeWidth={1.8}
-                        strokeDasharray="3 3"
-                      />
-                    );
-                  })}
-
-                  {Object.entries(remoteReplayCursorByPeer).map(([peerId, remoteCursor]) => {
-                    const laneY = laneLayout.laneY[remoteCursor.branchId];
-                    const x = laneXForRemoteReplayCursor(remoteCursor);
-                    if (typeof laneY !== "number" || typeof x !== "number") {
-                      return null;
-                    }
-                    return (
-                      <g key={`remote-replay-cursor-${peerId}`}>
-                        <circle
-                          cx={x}
-                          cy={laneY}
-                          r={12}
-                          fill="none"
-                          stroke="#ea580c"
-                          strokeWidth={2}
-                          strokeDasharray="4 3"
-                        />
-                        <text x={x} y={laneY - 16} textAnchor="middle" fill="#ea580c" fontSize={9} fontWeight={700}>
-                          {remoteCursor.name}
-                        </text>
-                      </g>
-                    );
-                  })}
-
-                  {mergeConnectors.map((merge) => (
-                    <g key={`merge-${merge.id}`}>
-                      <path d={merge.path} fill="none" stroke="#f97316" strokeWidth={2.1} />
-                      <circle cx={merge.sourceX} cy={merge.sourceY} r={2.5} fill="#f97316" />
-                      <circle cx={merge.targetX} cy={merge.targetY} r={2.5} fill="#f97316" />
-                    </g>
-                  ))}
-                </svg>
-              )}
-            </div>
-            <div style={{ marginTop: 6, fontSize: 12, color: "#475569", display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <span>
-                <strong style={{ color: "#a855f7" }}>Divergence</strong>: dashed purple connector
-              </span>
-              <span>
-                <strong style={{ color: "#f97316" }}>Merge</strong>: orange connector
-              </span>
-              <span>
-                <strong style={{ color: "#ea580c" }}>Peer cursor</strong>: dashed orange ring
-              </span>
-              <span>
-                <strong>Click any node</strong> to move replay cursor
-              </span>
-            </div>
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <label htmlFor="replayCursorSlider" style={{ display: "block", marginBottom: 6 }}>
-              Timeline scrubber
-            </label>
-            <input
-              id="replayCursorSlider"
-              type="range"
-              min={0}
-              max={Math.max(0, replayNodeCount - 1)}
-              value={Math.min(replayState.cursor.nodeIndex, Math.max(0, replayNodeCount - 1))}
-              onChange={(event) => selectReplayBranchNode(replayState.cursor.branchId, Number(event.target.value) || 0)}
-              style={{ width: "100%" }}
-              disabled={!replayCanStep}
-            />
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <strong>Cursor:</strong>{" "}
-            <code>
-              index={replayState.cursor.nodeIndex}, node={replayState.cursor.nodeId ?? "(none)"}
-            </code>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayState.cursor.nodeIndex - 1)}
-              disabled={!replayCanStep}
-            >
-              Prev node
-            </button>
-            <button
-              type="button"
-              onClick={() => selectReplayBranchNode(replayState.cursor.branchId, replayState.cursor.nodeIndex + 1)}
-              disabled={!replayCanStep}
-            >
-              Next node
-            </button>
-          </div>
-          <div style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: 10, background: "#f8fafc" }}>
-            <strong>Room at cursor</strong>
-            {currentReplayNode ? (
-              <div>
-                <p style={{ marginTop: 8, marginBottom: 4 }}>
-                  <strong>Node:</strong> <code>{currentReplayNode.nodeId}</code>
-                </p>
-                <p style={{ marginTop: 0, marginBottom: 4 }}>
-                  <strong>Summary:</strong> <code>{currentReplayNode.opSummary}</code>
-                </p>
-                <p style={{ marginTop: 0, marginBottom: 4 }}>
-                  <strong>Lamport:</strong> <code>{currentReplayNode.lamport ?? "(none)"}</code>, <strong>Author:</strong>{" "}
-                  <code>{currentReplayNode.author ?? "(unknown)"}</code>
-                </p>
-                <p style={{ marginTop: 0, marginBottom: 6 }}>
-                  <strong>Time:</strong> <code>{new Date(currentReplayNode.atIso).toLocaleTimeString()}</code>
-                </p>
-                <pre
-                  style={{
-                    marginTop: 0,
-                    marginBottom: 0,
-                    maxHeight: 110,
-                    overflow: "auto",
-                    background: "white",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 6,
-                    padding: 8
-                  }}
-                >
-                  {currentReplayNode.payloadJson}
-                </pre>
-              </div>
-            ) : (
-              <p style={{ marginBottom: 0 }}>No room state at cursor yet. Generate runtime events first.</p>
-            )}
-          </div>
-        </article>
-
-        <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, padding: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Presence and peer signal</h2>
-          <p style={{ marginTop: 0, marginBottom: 10 }}>
-            Collaborative text (RGA ops, replay timeline, peer-colored inserts) lives in the{" "}
-            <strong>collab-text</strong> playground on port <code>4177</code>.
-          </p>
-          <div style={{ marginBottom: 10 }}>
-            <label htmlFor="presenceName" style={{ display: "block", marginBottom: 6 }}>
-              Presence name
-            </label>
-            <input
-              id="presenceName"
-              value={presenceName}
-              onChange={(event) => setPresenceName(event.target.value)}
-              placeholder="display name"
-              style={{ width: "100%", padding: 6, boxSizing: "border-box" }}
-            />
-            <button type="button" onClick={publishPresence} style={{ marginTop: 8 }} disabled={!canUseSdkActions}>
-              Publish presence
-            </button>
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <strong>Online peers:</strong>{" "}
-            {onlinePeers.length === 0 ? (
-              <span>(none)</span>
-            ) : (
-              <span>{onlinePeers.map((peer) => `${peer}${presenceByPeer[peer] ? ` (${presenceByPeer[peer]})` : ""}`).join(", ")}</span>
-            )}
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <label htmlFor="peerTarget" style={{ display: "block", marginBottom: 6 }}>
-              Peer signal target
-            </label>
-            <input
-              id="peerTarget"
-              value={peerTarget}
-              onChange={(event) => setPeerTarget(event.target.value)}
-              placeholder="peer id"
-              style={{ width: "100%", padding: 6, boxSizing: "border-box" }}
-            />
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <label htmlFor="signalPayload" style={{ display: "block", marginBottom: 6 }}>
-              Signal payload JSON
-            </label>
-            <textarea
-              id="signalPayload"
-              rows={4}
-              value={signalPayload}
-              onChange={(event) => setSignalPayload(event.target.value)}
-              style={{ width: "100%", resize: "vertical", padding: 8, boxSizing: "border-box" }}
-            />
-            <button type="button" onClick={sendPeerSignal} style={{ marginTop: 8 }} disabled={!canUseSdkActions}>
-              Send peer signal
-            </button>
-          </div>
-          <p style={{ marginBottom: 0 }}>
-            <strong>Last signal:</strong> {lastSignalStatus}
-          </p>
-          <h4 style={{ marginBottom: 6 }}>Incoming signals</h4>
-          <ul style={{ marginTop: 0, paddingLeft: 18 }}>
-            {incomingSignals.map((entry, index) => (
-              <li key={`${entry}-${index}`}>
-                <code>{entry}</code>
-              </li>
-            ))}
-            {incomingSignals.length === 0 ? <li>No incoming signals yet.</li> : null}
-          </ul>
-          <h4 style={{ marginBottom: 6 }}>Workspace persistence feed</h4>
-          <ul style={{ marginTop: 0, paddingLeft: 18, maxHeight: 130, overflow: "auto" }}>
-            {persistenceFeed.map((item, index) => (
-              <li key={`${item.atIso}-${item.key}-${index}`}>
-                <code>{new Date(item.atIso).toLocaleTimeString()}</code> <strong>{item.key}</strong> [{item.action}] {item.detail}
-              </li>
-            ))}
-            {persistenceFeed.length === 0 ? <li>No shared workspace writes yet.</li> : null}
-          </ul>
           {!canUseSdkActions ? (
-            <p style={{ marginBottom: 0, color: "#9a3412" }}>
-              SDK actions are disabled until runtime mode is <code>npm sdk + wasm</code> and connection state is open.
+            <p className="nm-notice nm-notice-offline">
+              <strong>Editing disabled.</strong>{" "}
+              {backend !== "sdk"
+                ? <>Switch <em>Runtime mode</em> to <code>npm sdk + wasm</code> and click Connect to enable nodes, branches, and replay writes. Direct-websocket mode is diagnostics-only.</>
+                : <>Waiting for an open connection to the demo host — click Connect, or check that the host is running.</>}
             </p>
           ) : null}
-          <hr style={{ margin: "14px 0" }} />
-          <DiagnosticsPanel diagnostics={diagnostics} />
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              title="Select / drag / shift-click to connect edges"
+              aria-label="Select tool"
+              aria-pressed={workspaceTool === "select"}
+              onClick={() => setWorkspaceTool("select")}
+              style={toolButtonStyle(workspaceTool === "select")}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M4 1l9 7.4-4.7.7 2.5 4.6-1.9 1-2.4-4.7L4 13V1z" fill="currentColor" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Annotate: click canvas to place a note"
+              aria-label="Annotate tool"
+              aria-pressed={workspaceTool === "annotate"}
+              onClick={() => setWorkspaceTool("annotate")}
+              style={toolButtonStyle(workspaceTool === "annotate")}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M2 3.5A2.5 2.5 0 0 1 4.5 1h7A2.5 2.5 0 0 1 14 3.5v5A2.5 2.5 0 0 1 11.5 11H7.2L3.5 14v-3A2.5 2.5 0 0 1 2 8.5v-5z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+            <span style={{ width: 1, alignSelf: "stretch", background: "#94a3b8", margin: "2px 4px" }} />
+            <button
+              type="button"
+              title="Add node"
+              aria-label="Add node"
+              onClick={addWorkspaceNode}
+              disabled={!canUseSdkActions}
+              style={{ ...toolButtonStyle(false), color: "#16a34a" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Clear all (nodes, edges, assets, notes)"
+              aria-label="Clear all workspace objects"
+              onClick={clearWorkspaceAll}
+              disabled={!canUseSdkActions || !hasWorkspaceObjects}
+              style={{ ...toolButtonStyle(false), color: "#b91c1c" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M6 1.5h4l.8 1.7H14v1.9H2V3.2h3.2L6 1.5zM3.3 6.4h9.4l-.7 7.4a1.6 1.6 0 0 1-1.6 1.4H5.6A1.6 1.6 0 0 1 4 13.8L3.3 6.4z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+            {workspaceTool === "annotate" ? (
+              <input
+                aria-label="Annotation text"
+                value={annotationDraft}
+                onChange={(event) => setAnnotationDraft(event.target.value)}
+                maxLength={64}
+                style={{ minWidth: 160, padding: 6 }}
+              />
+            ) : null}
+            <span style={{ marginLeft: "auto", display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <span>nodes: <code>{workspaceNodes.length}</code></span>
+              <span>edges: <code>{workspaceEdges.length}</code></span>
+              <span>assets: <code>{workspaceAssets.length}</code></span>
+              <span>notes: <code>{workspaceAnnotations.length}</code></span>
+            </span>
+          </div>
+          <WorkspaceCanvas
+            surfaceRef={workspaceSurfaceRef}
+            workspaceNodes={workspaceNodes}
+            workspaceEdges={workspaceEdges}
+            workspaceAssets={workspaceAssets}
+            workspaceAnnotations={workspaceAnnotations}
+            remoteDragByNodeId={remoteDragByNodeId}
+            remoteDragByPeer={remoteDragByPeer}
+            presenceByPeer={presenceByPeer}
+            canUseSdkActions={canUseSdkActions}
+            workspaceTool={workspaceTool}
+            replayMode={replayState.cursor.mode}
+            canvasReplayBadge={canvasReplayBadge}
+            edgeSourceNodeId={edgeSourceNodeIdRef.current}
+            onSurfacePointerDown={handleWorkspaceSurfaceMouseDown}
+            onNodePointerDown={handleWorkspaceNodeMouseDown}
+          />
+          <ReplayControls
+            replayState={replayState}
+            availableBranchIds={availableBranchIds}
+            replayNodeCount={replayNodeCount}
+            replayCanStep={replayCanStep}
+            isReplayPlaying={isReplayPlaying}
+            onSetActiveBranch={(branchId) => {
+              activeBranchIdRef.current = branchId;
+              dispatchReplay({
+                type: "set-active-branch",
+                branchId
+              });
+              if (replayModeRef.current === "live") {
+                queueMicrotask(() => loadLiveWorkspaceForBranch(branchId));
+              }
+            }}
+            onSetMode={(mode) => {
+              dispatchReplay({ type: "set-mode", mode });
+              scheduleReplayCursorPresencePublish({ force: true });
+            }}
+            onTogglePlay={() => {
+              if (isReplayPlaying) {
+                setIsReplayPlaying(false);
+                return;
+              }
+              if (replayNodeCount > 1 && replayState.cursor.nodeIndex >= replayNodeCount - 1) {
+                selectReplayBranchNode(replayState.cursor.branchId, 0);
+              }
+              setIsReplayPlaying(true);
+            }}
+            onSelectNode={selectReplayBranchNode}
+            onCreateBranchFromCursor={createBranchFromCursor}
+            mergeSourceBranchId={mergeSourceBranchId}
+            onMergeSourceBranchChange={(branchId) => {
+              setMergeSourceBranchId(branchId);
+              setMergeSourceNodeId("");
+            }}
+            mergeSourceNodeId={mergeSourceNodeId}
+            onMergeSourceNodeChange={setMergeSourceNodeId}
+            mergeSourceBranchNodeIds={mergeSourceBranchNodeIds}
+            onMergeIntoActiveHead={mergeSelectedSourceIntoActiveHead}
+            mergeEligibilityMessage={mergeEligibilityMessage}
+            laneLayout={laneLayout}
+            sortedBranchIds={sortedBranchIds}
+            branchOffsetById={branchOffsetById}
+            mergeConnectors={mergeConnectors}
+            remoteReplayCursorByPeer={remoteReplayCursorByPeer}
+            laneXForRemoteReplayCursor={laneXForRemoteReplayCursor}
+          />
         </article>
+
+        <PresencePanel
+          backend={backend}
+          onBackendChange={setBackend}
+          activeNotice={activeNotice}
+          lastAction={lastAction}
+          currentReplayNode={currentReplayNode}
+          presenceName={presenceName}
+          onPresenceNameChange={setPresenceName}
+          onPublishPresence={publishPresence}
+          onlinePeers={onlinePeers}
+          presenceByPeer={presenceByPeer}
+          peerTarget={peerTarget}
+          onPeerTargetChange={setPeerTarget}
+          signalPayload={signalPayload}
+          onSignalPayloadChange={setSignalPayload}
+          onSendPeerSignal={sendPeerSignal}
+          lastSignalStatus={lastSignalStatus}
+          incomingSignals={incomingSignals}
+          persistenceFeed={persistenceFeed}
+          canUseSdkActions={canUseSdkActions}
+          diagnostics={diagnostics}
+        />
       </section>
       </div>
     </main>

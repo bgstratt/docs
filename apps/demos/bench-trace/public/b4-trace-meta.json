@@ -1,0 +1,15 @@
+{
+  "source": "automerge-perf b4 editing trace (via nodalmerge/benchmarks/data/b4-editing-trace.json)",
+  "slices": {
+    "b4-trace-50k.json": {
+      "opCount": 50000,
+      "finalLength": 32800,
+      "finalSha256": "f66a1603382a9bfa95aed6b0bca5fcab948839c777ba30d396c3868bedec5967"
+    },
+    "b4-trace-full.json": {
+      "opCount": 259778,
+      "finalLength": 104852,
+      "finalSha256": "a489e9022976c14e46627aea174d07797edcb3fd17df42605956d4cf01bf9039"
+    }
+  }
+}

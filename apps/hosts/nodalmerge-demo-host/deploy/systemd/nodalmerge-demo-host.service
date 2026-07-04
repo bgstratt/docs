@@ -1,0 +1,28 @@
+[Unit]
+Description=NodalMerge demo host (public demos/playground backend)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/nodalmerge-demo-host
+ExecStart=/usr/bin/dotnet /opt/nodalmerge-demo-host/NodalMerge.DemoHost.dll
+Restart=on-failure
+RestartSec=5
+User=nodalmerge
+Group=nodalmerge
+
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+# Hard memory backstop: OOM-kill and self-heal instead of taking the box down.
+# Sized for t3a.small (2 GB): ~1.5 GB free after OS/nginx(/dockerd); soft
+# pressure at 900M, hard cap 1200M. Retune if the instance type changes.
+MemoryHigh=900M
+MemoryMax=1200M
+
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -385,6 +385,22 @@ hr {
   flex-shrink: 0;
 }
 
+/* ── Field group (label + input + action) ─────────────── */
+
+.nm-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--nm-sp-2);
+  margin-bottom: var(--nm-sp-3);
+}
+
+.nm-field .nm-input,
+.nm-field .nm-textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* ── Section label ────────────────────────────────────── */
 
 .nm-section-label {
@@ -639,6 +655,13 @@ input[type="range"] {
   color: var(--nm-text-3);
 }
 
+.nm-controls-hint {
+  flex-basis: 100%;
+  margin: var(--nm-sp-1) 0 0;
+  font-size: var(--nm-text-sm);
+  color: var(--nm-text-3);
+}
+
 .nm-last-action {
   margin-bottom: 6px;
   font-size: var(--nm-text-sm);
@@ -657,12 +680,177 @@ input[type="range"] {
   height: 360px;
 }
 
+/* Responsive board: fills its column, keeps a 16:9 stage. Children position
+   with percentage offsets so pins keep their relative spot on resize. */
+.nm-board-responsive {
+  width: 100%;
+  max-width: 860px;
+  aspect-ratio: 16 / 9;
+  touch-action: manipulation;
+}
+
+/* ── Benchmark comparison bars (bench-trace) ──────────── */
+
+.nm-benchbars {
+  display: grid;
+  gap: var(--nm-sp-2);
+  margin: var(--nm-sp-3) 0;
+}
+
+.nm-benchbar-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  align-items: center;
+  gap: var(--nm-sp-3);
+  font-size: var(--nm-text-sm);
+}
+
+.nm-benchbar-track {
+  position: relative;
+  height: 22px;
+  border-radius: var(--nm-radius-sm, 6px);
+  background: var(--nm-bg-surface);
+  border: 1px solid var(--nm-border-subtle);
+  overflow: hidden;
+}
+
+.nm-benchbar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 3px;
+  border-radius: inherit;
+}
+
+.nm-benchbar-fill-native { background: #0f766e; }
+.nm-benchbar-fill-browser { background: #2563eb; }
+
+.nm-benchbar-value {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--nm-text-xs);
+  color: var(--nm-text-2);
+  white-space: nowrap;
+}
+
+.nm-benchbar-value-onfill { color: #ffffff; }
+
+.nm-benchbar-caption { margin-bottom: 4px; }
+
+/* ── Pixel board (pixel-canvas) ───────────────────────── */
+
+.nm-pixel-board {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--nm-border-subtle);
+  border-radius: var(--nm-radius-md);
+  overflow: hidden;
+  margin-bottom: var(--nm-sp-3);
+  touch-action: none;
+}
+
+.nm-pixel-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.nm-pixel-overlay {
+  cursor: crosshair;
+}
+
+.nm-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--nm-sp-3);
+}
+
+.nm-palette-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.nm-palette-swatch-active {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.35);
+}
+
+.nm-offline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nm-sp-2);
+}
+
 /* ── Pin dot (collab-maps) ────────────────────────────── */
 
 .nm-pin-dot {
   position: absolute;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}
+
+.nm-pin-dot-remote {
+  animation: nm-pin-arrive 0.8s ease-out;
+}
+
+@keyframes nm-pin-arrive {
+  0% { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.9); }
+  100% { box-shadow: 0 0 0 14px rgba(96, 165, 250, 0); }
+}
+
+/* Small popover anchored to a pin (delete / details). */
+.nm-pin-popover {
+  position: absolute;
+  transform: translate(-50%, 10px);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--nm-sp-2);
+  padding: var(--nm-sp-2) var(--nm-sp-3);
+  border: 1px solid var(--nm-border-subtle);
+  border-radius: var(--nm-radius-md);
+  background: var(--nm-bg-2, #161b26);
+  font-size: var(--nm-text-sm);
+  white-space: nowrap;
+}
+
+/* Presence chips (live peer roster). */
+.nm-peer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nm-sp-2);
+  margin: 0 0 var(--nm-sp-3);
+  padding: 0;
+  list-style: none;
+}
+
+.nm-peer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--nm-border-subtle);
+  border-radius: 999px;
+  font-size: var(--nm-text-sm);
+  color: var(--nm-text-2);
+}
+
+.nm-peer-chip-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
 

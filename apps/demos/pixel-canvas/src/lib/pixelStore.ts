@@ -1,0 +1,136 @@
+// pixelStore — shared pixel-board state over the createDoc high-level SDK.
+// Maintains a palette-index buffer for canvas painting and emits fine-grained
+// change events (with local/remote origin) for the convergence-flash overlay.
+
+import type { Doc } from "nodalmerge-sdk-js/doc";
+import {
+  GRID_SIZE,
+  decodePixelValue,
+  encodePixelValue,
+  parsePixelKey,
+  pixelKey
+} from "./pixelCodec";
+
+export const PIXEL_NAMESPACE = "px";
+/** Buffer value for "unpainted". */
+export const EMPTY_PIXEL = 255;
+
+export interface PixelChange {
+  x: number;
+  y: number;
+  paletteIndex: number;
+  source: "local" | "remote";
+}
+
+export type PixelListener = (changes: PixelChange[], fullRefresh: boolean) => void;
+
+export class PixelStore {
+  /** GRID_SIZE*GRID_SIZE palette indexes; EMPTY_PIXEL = unpainted. */
+  readonly buffer = new Uint8Array(GRID_SIZE * GRID_SIZE).fill(EMPTY_PIXEL);
+
+  private readonly doc: Doc;
+  private readonly authorShort: string;
+  private readonly listeners = new Set<PixelListener>();
+  private readonly unsubscribe: () => void;
+
+  constructor(doc: Doc) {
+    this.doc = doc;
+    this.authorShort = doc.pubkeyHex.slice(0, 6);
+    this.reloadAll();
+    this.unsubscribe = doc.map(PIXEL_NAMESPACE).onChange((ev) => {
+      const source: "local" | "remote" = ev.source === "local" ? "local" : "remote";
+      if (typeof ev.key === "string") {
+        const coords = parsePixelKey(ev.key);
+        if (!coords) {
+          return;
+        }
+        // A missing/undecodable value means the key was deleted (eraser).
+        const decoded = decodePixelValue(this.doc.map(PIXEL_NAMESPACE).get(ev.key));
+        const paletteIndex = decoded ? decoded.paletteIndex : EMPTY_PIXEL;
+        if (this.buffer[coords.y * GRID_SIZE + coords.x] === paletteIndex) {
+          return;
+        }
+        this.buffer[coords.y * GRID_SIZE + coords.x] = paletteIndex;
+        this.emit([{ x: coords.x, y: coords.y, paletteIndex, source }], false);
+        return;
+      }
+      // Bulk merge (remote pack / undo) — rescan and report changed cells so
+      // the overlay can still flash them.
+      const changes = this.reloadAll(source);
+      this.emit(changes, true);
+    });
+  }
+
+  paint(x: number, y: number, paletteIndex: number): void {
+    if (x < 0 || y < 0 || x >= GRID_SIZE || y >= GRID_SIZE) {
+      return;
+    }
+    if (this.buffer[y * GRID_SIZE + x] === paletteIndex) {
+      return;
+    }
+    this.doc.map(PIXEL_NAMESPACE).set(pixelKey(x, y), encodePixelValue(paletteIndex, this.authorShort));
+  }
+
+  /** Delete the pixel's key entirely — back to background, and less room state. */
+  erase(x: number, y: number): void {
+    if (x < 0 || y < 0 || x >= GRID_SIZE || y >= GRID_SIZE) {
+      return;
+    }
+    if (this.buffer[y * GRID_SIZE + x] === EMPTY_PIXEL) {
+      return;
+    }
+    this.doc.map(PIXEL_NAMESPACE).delete(pixelKey(x, y));
+  }
+
+  paintedCount(): number {
+    let count = 0;
+    for (const v of this.buffer) {
+      if (v !== EMPTY_PIXEL) count += 1;
+    }
+    return count;
+  }
+
+  subscribe(listener: PixelListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  dispose(): void {
+    this.unsubscribe();
+    this.listeners.clear();
+  }
+
+  private reloadAll(source: "local" | "remote" = "remote"): PixelChange[] {
+    const all = this.doc.map(PIXEL_NAMESPACE).all();
+    // Rebuild from scratch so keys deleted in a bulk merge fall back to empty.
+    const next = new Uint8Array(GRID_SIZE * GRID_SIZE).fill(EMPTY_PIXEL);
+    for (const [key, value] of Object.entries(all)) {
+      const coords = parsePixelKey(key);
+      const decoded = decodePixelValue(value);
+      if (!coords || !decoded) {
+        continue;
+      }
+      next[coords.y * GRID_SIZE + coords.x] = decoded.paletteIndex;
+    }
+    const changes: PixelChange[] = [];
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        const idx = y * GRID_SIZE + x;
+        if (this.buffer[idx] !== next[idx]) {
+          this.buffer[idx] = next[idx];
+          changes.push({ x, y, paletteIndex: next[idx], source });
+        }
+      }
+    }
+    return changes;
+  }
+
+  private emit(changes: PixelChange[], fullRefresh: boolean): void {
+    if (changes.length === 0 && !fullRefresh) {
+      return;
+    }
+    for (const listener of this.listeners) {
+      listener(changes, fullRefresh);
+    }
+  }
+}

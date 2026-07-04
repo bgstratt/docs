@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { loadRuntimeConfig } from "../../../../shared/runtime/config";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
+import { connectWithRoomFallback } from "../../../../shared/runtime/roomFallback";
 import { SdkRuntimeClient } from "../../../demos/infinite-room-workspace/src/lib/sdkRuntimeClient";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
 import { diffTextEdits } from "./lib/textDiff";
@@ -18,11 +19,19 @@ import {
   parseTimelineItems,
   type ReplayTimelineItem
 } from "./lib/localReplayTimeline";
+import { transformCaret } from "./lib/caretTransform";
 
 const config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
-const DEFAULT_ROOM_ID = (import.meta.env.VITE_DEFAULT_ROOM_ID as string | undefined)?.trim() || "collab-text";
+const SHARED_ROOM_ID = new URLSearchParams(window.location.search).get("room")?.trim() || "";
+const DEFAULT_ROOM_ID =
+  SHARED_ROOM_ID || (import.meta.env.VITE_DEFAULT_ROOM_ID as string | undefined)?.trim() || "collab-text";
 const TEXT_KEY = "notes/demo/body";
 const TEXT_KEY_PREFIX = "notes/demo/";
+
+// Demo-only guardrail, not a protocol limit: keeps edits comfortably under the host's
+// 64 KiB max WebSocket message size (which has no chunking on the SDK side) while
+// giving room users a predictable, small-scale editing surface.
+const MAX_DOC_LENGTH = 8000;
 
 const client = new SdkRuntimeClient(config);
 
@@ -62,9 +71,12 @@ export default function App() {
   const [status, setStatus] = useState(`Connecting to ${DEFAULT_ROOM_ID}...`);
   const [roomPeers, setRoomPeers] = useState<RoomPeer[]>([]);
   const [localPeerId, setLocalPeerId] = useState<string | null>(null);
+  const [isTryingAnotherRoom, setIsTryingAnotherRoom] = useState(false);
 
   const syncedTextRef = useRef("");
   const applyingRemoteRef = useRef(false);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const pendingCaretRef = useRef<{ start: number; end: number } | null>(null);
   const pushTimerRef = useRef<number | null>(null);
   const localAuthorRef = useRef<string | null>(null);
   const connectGenerationRef = useRef(0);
@@ -73,6 +85,16 @@ export default function App() {
 
   const isConnected = diagnostics.connectionState === "open";
   const canEdit = isConnected && activeRoomId !== null;
+
+  // Restore the transformed caret after a remote-driven editorText replace.
+  useLayoutEffect(() => {
+    const pending = pendingCaretRef.current;
+    const editor = editorRef.current;
+    if (pending && editor) {
+      pendingCaretRef.current = null;
+      editor.setSelectionRange(pending.start, pending.end);
+    }
+  }, [editorText]);
 
   const syncFromRuntimeGraph = useCallback(() => {
     if (!activeRoomId) {
@@ -88,6 +110,15 @@ export default function App() {
     setTextGlyphs(glyphs);
     setAttributionSpans(spans);
     if (next !== syncedTextRef.current) {
+      // Remote (or reconciled) update replaces the textarea value wholesale;
+      // transform the local caret through the change so typing doesn't jump.
+      const editor = editorRef.current;
+      if (editor && document.activeElement === editor) {
+        pendingCaretRef.current = {
+          start: transformCaret(editor.value, next, editor.selectionStart ?? 0),
+          end: transformCaret(editor.value, next, editor.selectionEnd ?? 0)
+        };
+      }
       applyingRemoteRef.current = true;
       syncedTextRef.current = next;
       setEditorText(next);
@@ -132,6 +163,12 @@ export default function App() {
       void refreshTimeline();
     }, 200);
   }, [refreshTimeline]);
+
+  useEffect(() => {
+    if (diagnostics.lastError?.toLowerCase().includes("message too large")) {
+      setStatus("Demo limit reached: that edit was too large for this demo host and was not applied. Try a smaller edit.");
+    }
+  }, [diagnostics.lastError]);
 
   useEffect(() => {
     return client.subscribeRuntimeMessages((message) => {
@@ -253,6 +290,24 @@ export default function App() {
     [roomId, refreshTimeline, syncFromRuntimeGraph]
   );
 
+  const tryAnotherRoom = useCallback(async () => {
+    const baseRoomId = roomId.trim() || DEFAULT_ROOM_ID;
+    setIsTryingAnotherRoom(true);
+    const result = await connectWithRoomFallback(
+      baseRoomId,
+      (candidate) => connectRoom(candidate),
+      () => client.getDiagnostics().connectionState === "open",
+      (candidate) => {
+        setRoomId(candidate);
+        setStatus(`Room busy — trying ${candidate}...`);
+      }
+    );
+    setIsTryingAnotherRoom(false);
+    if (!result.connected) {
+      setStatus(`Tried ${result.attempts} room(s) starting from ${baseRoomId} — still unavailable.`);
+    }
+  }, [roomId, connectRoom]);
+
   const disconnectRoom = useCallback(() => {
     connectGenerationRef.current += 1;
     client.disconnect();
@@ -315,8 +370,13 @@ export default function App() {
     }, 80);
   }
 
-  function handleEditorChange(nextText: string) {
+  function handleEditorChange(rawNextText: string) {
+    const wasTruncated = rawNextText.length > MAX_DOC_LENGTH;
+    const nextText = wasTruncated ? rawNextText.slice(0, MAX_DOC_LENGTH) : rawNextText;
     setEditorText(nextText);
+    if (wasTruncated) {
+      setStatus(`Demo limit: text capped at ${MAX_DOC_LENGTH.toLocaleString()} characters.`);
+    }
     if (applyingRemoteRef.current || !canEdit) {
       return;
     }
@@ -361,20 +421,52 @@ export default function App() {
         <button type="button" className="nm-btn" onClick={() => void refreshTimeline()} disabled={!canEdit}>
           Refresh timeline
         </button>
+        <button
+          type="button"
+          className="nm-btn"
+          onClick={() => void tryAnotherRoom()}
+          disabled={isTryingAnotherRoom}
+        >
+          {isTryingAnotherRoom ? "Trying rooms..." : "Try another room"}
+        </button>
+        <button
+          type="button"
+          className="nm-btn"
+          disabled={!activeRoomId}
+          onClick={() => {
+            const url = new URL(window.location.href);
+            url.searchParams.set("room", activeRoomId ?? roomId);
+            void navigator.clipboard.writeText(url.toString()).then(
+              () => setStatus("Share link copied — anyone opening it lands in this room."),
+              () => setStatus("Could not copy share link (clipboard blocked).")
+            );
+          }}
+        >
+          Copy share link
+        </button>
         <span className="nm-p-muted" style={{ marginBottom: 0 }}>{status}</span>
+        <p className="nm-controls-hint">
+          Room busy or unreachable? Type a different room name above, or click "Try another
+          room" to attempt a couple of nearby room ids automatically.
+        </p>
       </section>
 
       <section className="nm-layout-2col-wide">
         <article className="nm-card">
           <h2 className="nm-card-title">Editor</h2>
           <textarea
+            ref={editorRef}
             className="nm-textarea"
             value={editorText}
             onChange={(event) => handleEditorChange(event.target.value)}
             disabled={!canEdit}
             rows={12}
             spellCheck={false}
+            maxLength={MAX_DOC_LENGTH}
           />
+          <p className="nm-p-muted">
+            Demo limit: {editorText.length.toLocaleString()}/{MAX_DOC_LENGTH.toLocaleString()} characters.
+          </p>
           <h3 style={{ marginBottom: 6, marginTop: 14 }}>Live peer-colored preview</h3>
           <pre className="nm-pre">
             {renderAttributedText(editorText, attributionSpans)}

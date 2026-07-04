@@ -12,8 +12,8 @@
     "smoke:sdk": "node ./scripts/sdk-smoke.mjs"
   },
   "dependencies": {
-    "nodalmerge-bridge": "file:../../../../nodalmerge/artifacts/package-local/npm/nodalmerge-bridge-0.1.0.tgz",
-    "nodalmerge-sdk-js": "file:../../../../nodalmerge/artifacts/package-local/npm/nodalmerge-sdk-js-0.1.0.tgz",
+    "nodalmerge-bridge": "file:../../../../nodalmerge/artifacts/package-local/npm/nodalmerge-bridge-0.1.4.tgz",
+    "nodalmerge-sdk-js": "file:../../../../nodalmerge/artifacts/package-local/npm/nodalmerge-sdk-js-0.1.6.tgz",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

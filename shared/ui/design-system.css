@@ -689,6 +689,51 @@ input[type="range"] {
   touch-action: manipulation;
 }
 
+/* ── Benchmark comparison bars (bench-trace) ──────────── */
+
+.nm-benchbars {
+  display: grid;
+  gap: var(--nm-sp-2);
+  margin: var(--nm-sp-3) 0;
+}
+
+.nm-benchbar-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  align-items: center;
+  gap: var(--nm-sp-3);
+  font-size: var(--nm-text-sm);
+}
+
+.nm-benchbar-track {
+  position: relative;
+  height: 22px;
+  border-radius: var(--nm-radius-sm, 6px);
+  background: var(--nm-bg-surface);
+  border: 1px solid var(--nm-border-subtle);
+  overflow: hidden;
+}
+
+.nm-benchbar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 3px;
+  border-radius: inherit;
+}
+
+.nm-benchbar-fill-native { background: #0f766e; }
+.nm-benchbar-fill-browser { background: #2563eb; }
+
+.nm-benchbar-value {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--nm-text-xs);
+  color: var(--nm-text-2);
+  white-space: nowrap;
+}
+
 /* ── Pixel board (pixel-canvas) ───────────────────────── */
 
 .nm-pixel-board {

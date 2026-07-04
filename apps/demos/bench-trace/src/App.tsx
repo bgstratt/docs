@@ -29,6 +29,16 @@ const SLICES: SliceOption[] = [
   }
 ];
 
+// Native engine reference on this exact trace (core/tests/b4_editing_trace.rs,
+// x86-64 release build; see nodalmerge/benchmarks/benchmarks.md). The native
+// harness matches the JS-CRDT convention of unsigned nodes; the browser run
+// additionally ed25519-signs every node.
+const NATIVE_REFERENCE = {
+  opsPerSec: 294_521,
+  totalMs: 882,
+  label: "Native engine (x86-64)"
+};
+
 const traceCache = new Map<string, TraceEdit[]>();
 let metaCache: Record<string, SliceMeta> | null = null;
 
@@ -176,6 +186,42 @@ export default function App() {
                 <li>final length: <code>{result.finalLength.toLocaleString()}</code> chars</li>
                 <li>SHA-256: <code>{result.finalSha256.slice(0, 16)}…</code></li>
               </ul>
+
+              <p className="nm-section-label">Same engine, two environments</p>
+              <div className="nm-benchbars">
+                <div className="nm-benchbar-row">
+                  <span>{NATIVE_REFERENCE.label}</span>
+                  <div className="nm-benchbar-track">
+                    <div className="nm-benchbar-fill nm-benchbar-fill-native" style={{ width: "100%" }} />
+                    <span className="nm-benchbar-value" style={{ color: "#ffffff" }}>
+                      {NATIVE_REFERENCE.opsPerSec.toLocaleString()} ops/sec · {(1_000_000 / NATIVE_REFERENCE.opsPerSec).toFixed(1)} µs/op
+                    </span>
+                  </div>
+                </div>
+                <div className="nm-benchbar-row">
+                  <span>This browser (WASM)</span>
+                  <div className="nm-benchbar-track">
+                    <div
+                      className="nm-benchbar-fill nm-benchbar-fill-browser"
+                      style={{ width: `${Math.max(1, Math.min(100, (result.opsPerSec / NATIVE_REFERENCE.opsPerSec) * 100))}%` }}
+                    />
+                    <span className="nm-benchbar-value">
+                      {result.opsPerSec.toLocaleString()} ops/sec · {(1_000_000 / Math.max(1, result.opsPerSec)).toFixed(1)} µs/op
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="nm-card-desc">
+                Identical engine code and identical per-edit DAG transactions — the gap is the
+                execution environment, measured at ~{Math.max(1, Math.round(NATIVE_REFERENCE.opsPerSec / Math.max(1, result.opsPerSec)))}×
+                here. Each browser op pays: a JS→WASM boundary crossing (string + call marshalling
+                per keystroke), WASM codegen versus native x86-64 (no wide SIMD, bounds-checked
+                memory), and an Ed25519 signature per node — the browser signs every op for
+                authenticated sync, while the native benchmark row matches the unsigned convention
+                of the JS CRDT libraries it's compared against. The engine work itself — RGA
+                insert, Blake3 hashing, DAG append, incremental caches — is the same on both bars,
+                which is why the hash check above converges identically.
+              </p>
             </div>
           ) : null}
         </article>

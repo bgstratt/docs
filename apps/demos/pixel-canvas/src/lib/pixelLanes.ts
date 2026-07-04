@@ -21,11 +21,17 @@ export interface ClusterOptions {
   gapMs?: number;
   /** Merge adjacent clusters to stay at or below this many lane nodes. */
   maxClusters?: number;
+  /**
+   * Event indexes that must END a cluster (fork anchors) — forces the fork
+   * point to be its own visible lane node even inside one long painting burst.
+   */
+  breakAfter?: readonly number[];
 }
 
 export function clusterEvents(events: readonly PixelTimelineEvent[], options: ClusterOptions = {}): LaneCluster[] {
   const gapMs = options.gapMs ?? 3000;
   const maxClusters = Math.max(1, options.maxClusters ?? 60);
+  const breakAfter = new Set(options.breakAfter ?? []);
   const clusters: LaneCluster[] = [];
   for (let index = 0; index < events.length; index++) {
     const event = events[index];
@@ -36,7 +42,8 @@ export function clusterEvents(events: readonly PixelTimelineEvent[], options: Cl
       previousEvent?.wallMs !== undefined && event.wallMs !== undefined
         ? event.wallMs - previousEvent.wallMs > gapMs
         : false;
-    if (previous && previous.author === author && !paused) {
+    const forcedBreak = index > 0 && breakAfter.has(index - 1);
+    if (previous && previous.author === author && !paused && !forcedBreak) {
       previous.endIndex = index;
       previous.count += 1;
       previous.lamportEnd = event.lamport ?? previous.lamportEnd;
@@ -70,22 +77,33 @@ export function clusterEvents(events: readonly PixelTimelineEvent[], options: Cl
   return merged;
 }
 
+export interface ForkAnchor {
+  forkLamport: number | null;
+  forkNodeId: string | null;
+  forkIndex: number;
+}
+
+/** Index of the parent-lane event a branch forked at; -1 = before any event. */
+export function forkEventIndex(parentEvents: readonly PixelTimelineEvent[], fork: ForkAnchor): number {
+  if (fork.forkLamport !== null && fork.forkNodeId !== null) {
+    const found = parentEvents.findIndex(
+      (event) => event.lamport === fork.forkLamport && event.nodeId === fork.forkNodeId
+    );
+    if (found >= 0) {
+      return found;
+    }
+  }
+  // forkIndex counts applied events, so the anchor event is the one before it.
+  return Math.min(fork.forkIndex, parentEvents.length) - 1;
+}
+
 /** Column (cluster index) in the parent lane a branch forked from; -1 = lane start. */
 export function forkColumn(
   parentEvents: readonly PixelTimelineEvent[],
   parentClusters: LaneCluster[],
-  fork: { forkLamport: number | null; forkNodeId: string | null; forkIndex: number }
+  fork: ForkAnchor
 ): number {
-  let eventIndex = -1;
-  if (fork.forkLamport !== null && fork.forkNodeId !== null) {
-    eventIndex = parentEvents.findIndex(
-      (event) => event.lamport === fork.forkLamport && event.nodeId === fork.forkNodeId
-    );
-  }
-  if (eventIndex < 0) {
-    // forkIndex counts applied events, so the anchor event is the one before it.
-    eventIndex = Math.min(fork.forkIndex, parentEvents.length) - 1;
-  }
+  const eventIndex = forkEventIndex(parentEvents, fork);
   if (eventIndex < 0) {
     return -1;
   }

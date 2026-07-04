@@ -2769,7 +2769,8 @@ export default function App() {
             <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>Peers: {onlinePeers.length}</span>
           </div>
           <p style={{ marginTop: 0 }}>
-            Add and drag nodes, connect edges with shift-click, place annotations in annotate mode.
+            Add and drag nodes, double-click a node to rename it, connect edges with shift-click,
+            place annotations in annotate mode.
           </p>
           {!canUseSdkActions ? (
             <p className="nm-notice nm-notice-offline">

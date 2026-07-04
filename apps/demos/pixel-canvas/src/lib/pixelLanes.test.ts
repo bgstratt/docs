@@ -36,6 +36,15 @@ describe("clusterEvents", () => {
     expect(clusterEvents(events)).toHaveLength(2);
   });
 
+  it("forces a cluster boundary after fork anchor events", () => {
+    const events = burst("alice", 0, 10, 1);
+    const clusters = clusterEvents(events, { breakAfter: [4] });
+    expect(clusters.map((c) => [c.startIndex, c.endIndex])).toEqual([
+      [0, 4],
+      [5, 9]
+    ]);
+  });
+
   it("caps the number of lane nodes by merging adjacent clusters", () => {
     const events: PixelTimelineEvent[] = [];
     for (let i = 0; i < 30; i++) {

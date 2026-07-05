@@ -20,6 +20,9 @@ TestResults/
 *.user
 *.suo
 
+# Packaged release archives (too large for GitHub; distribute out of band)
+*.tar.gz
+
 # Common local logs and temp files
 *.log
 npm-debug.log*

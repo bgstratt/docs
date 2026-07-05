@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { loadRuntimeConfig } from "../../../../shared/runtime/config";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
 import { connectWithRoomFallback } from "../../../../shared/runtime/roomFallback";
-import { SdkRuntimeClient } from "../../../demos/infinite-room-workspace/src/lib/sdkRuntimeClient";
+import { SdkRuntimeClient } from "../../../demos/workflow-demo/src/lib/sdkRuntimeClient";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
 import { diffTextEdits } from "./lib/textDiff";
 import {

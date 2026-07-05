@@ -32,7 +32,7 @@ $checks = @(
   },
   @{
     Label = "SdkRuntimeClient replay helper"
-    Path  = Join-Path $root "..\..\demos\infinite-room-workspace\src\lib\sdkRuntimeClient.ts"
+    Path  = Join-Path $root "..\..\demos\workflow-demo\src\lib\sdkRuntimeClient.ts"
     Pattern = "getTextSequenceForReplay"
   }
 )

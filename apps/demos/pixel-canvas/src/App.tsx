@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bridgeWasmUrl from "nodalmerge-bridge/nodalmerge_bridge_bg.wasm?url";
 import type { Doc } from "nodalmerge-sdk-js/doc";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
@@ -7,9 +7,23 @@ import { createDemoDoc } from "../../../../shared/sdk/createDemoDoc";
 import { createDocDiagnostics, type DocDiagnostics } from "../../../../shared/sdk/diagnosticsAdapter";
 import { createOfflineToggle, type OfflineToggle } from "../../../../shared/sdk/offlineToggle";
 import { PixelBoard } from "./components/PixelBoard";
+import { PixelLanes, shortRoomLabel } from "./components/PixelLanes";
 import { PIXEL_NAMESPACE, PixelStore } from "./lib/pixelStore";
-import { PixelTimeline, timelineFromHistory, type PixelHistoryItem } from "./lib/pixelTimeline";
+import {
+  PixelTimeline,
+  timelineFromHistory,
+  type PixelHistoryItem,
+  type PixelTimelineEvent
+} from "./lib/pixelTimeline";
 import { GRID_SIZE, PALETTE } from "./lib/pixelCodec";
+import { branchRoomId, rootRoomId, parentRoomId, seedPaintsFromSnapshot } from "./lib/pixelBranch";
+import {
+  BRANCH_NAMESPACE,
+  readBranchRecords,
+  writeBranchRecord,
+  type BranchRecord
+} from "./lib/branchRegistry";
+import { clusterEvents, forkColumn, forkEventIndex, type PixelLane } from "./lib/pixelLanes";
 
 const env = import.meta.env as Record<string, string | undefined>;
 
@@ -23,6 +37,35 @@ interface Session {
 }
 
 const REPLAY_TOOLTIP = "Replay view — jump to Live to paint.";
+
+/** Most branch lanes rendered at once (root + newest branches). */
+const MAX_LANES = 4;
+
+function dedupe(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+/** Page a room's full px/ history out of its doc (same loop the session uses). */
+function pagePixelHistory(doc: Doc): PixelHistoryItem[] {
+  const items: PixelHistoryItem[] = [];
+  let cursor: string | null = "";
+  do {
+    const page = doc.history({ prefix: `${PIXEL_NAMESPACE}/`, limit: 2000, cursor });
+    items.push(...(page.items as PixelHistoryItem[]));
+    cursor = page.nextCursor;
+  } while (cursor);
+  return items;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function replaceRoomInUrl(roomId: string): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set("room", roomId);
+  window.history.replaceState(null, "", url);
+}
 
 // Palette-selection sentinel for the eraser (delete pixel back to background).
 const ERASER_INDEX = -1;
@@ -50,6 +93,15 @@ export default function App() {
   const [replayCursor, setReplayCursor] = useState<number | null>(null);
   const [isReplayPlaying, setIsReplayPlaying] = useState(false);
   const [timelineLength, setTimelineLength] = useState(0);
+  // Branch family: registry records (from the root room) + per-room lane
+  // histories for rooms other than the active one.
+  const [branchRecords, setBranchRecords] = useState<BranchRecord[]>([]);
+  const [laneEventsByRoom, setLaneEventsByRoom] = useState<Record<string, PixelTimelineEvent[]>>({});
+  const [isBranching, setIsBranching] = useState(false);
+  // Open aux docs by room id (registry writes reuse them).
+  const auxDocsRef = useRef<Map<string, Doc>>(new Map());
+  // Cursor to apply once a freshly joined room's history has loaded.
+  const pendingCursorRef = useRef<number | null>(null);
 
   const openSession = useCallback(async (roomOverride?: string) => {
     const sharedRoom = new URLSearchParams(window.location.search).get("room")?.trim();
@@ -57,7 +109,8 @@ export default function App() {
       wasmUrl: bridgeWasmUrl,
       env,
       room: roomOverride ?? (sharedRoom || undefined),
-      docOptions: { subscribe: ["px/**"] }
+      // branch/** carries the family registry when this room is a family root.
+      docOptions: { subscribe: ["px/**", "branch/**"] }
     });
     const store = new PixelStore(handle.doc);
     const diag = createDocDiagnostics(handle.doc, handle.config);
@@ -113,6 +166,12 @@ export default function App() {
       } while (cursor);
       session.timeline.replaceAll(timelineFromHistory(items));
       setTimelineLength(session.timeline.length);
+      // A lane-click across rooms scrubs once enough history has arrived.
+      const pending = pendingCursorRef.current;
+      if (pending !== null && session.timeline.length >= pending) {
+        pendingCursorRef.current = null;
+        setReplayCursor(pending >= session.timeline.length ? null : pending);
+      }
     };
     // Throttle rebuilds: paint drags emit many change events per second.
     let rebuildTimer: number | null = null;
@@ -171,15 +230,224 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [isReplayPlaying, session]);
 
+  // Never let a fresh, not-yet-synced doc wipe records we already have —
+  // an empty read only wins when we had nothing (records are additive; the
+  // whole set resets explicitly on room switches).
+  const refreshRegistry = useCallback((doc: Doc) => {
+    const records = readBranchRecords(doc);
+    setBranchRecords((previous) => (records.length === 0 && previous.length > 0 ? previous : records));
+  }, []);
+
+  // Registry doc — long-lived per session, NOT torn down when records change.
+  // The registry lives in the family's root room: the session doc when we're
+  // viewing the root, otherwise a dedicated aux doc (which doubles as the
+  // root lane's history source).
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+    const timers: number[] = [];
+    let openedDoc: Doc | null = null;
+    const rootRoom = rootRoomId(session.roomId);
+
+    if (session.roomId === rootRoom) {
+      refreshRegistry(session.doc);
+      unsubs.push(session.doc.map(BRANCH_NAMESPACE).onChange(() => refreshRegistry(session.doc)));
+    } else {
+      void (async () => {
+        let doc: Doc;
+        try {
+          const handle = await createDemoDoc({
+            wasmUrl: bridgeWasmUrl,
+            env,
+            room: rootRoom,
+            docOptions: { subscribe: ["px/**", "branch/**"] }
+          });
+          doc = handle.doc;
+        } catch {
+          return;
+        }
+        if (cancelled) {
+          doc.close();
+          return;
+        }
+        openedDoc = doc;
+        auxDocsRef.current.set(rootRoom, doc);
+        refreshRegistry(doc);
+        unsubs.push(doc.map(BRANCH_NAMESPACE).onChange(() => refreshRegistry(doc)));
+        const rebuild = () => {
+          const events = timelineFromHistory(pagePixelHistory(doc));
+          setLaneEventsByRoom((previous) => ({ ...previous, [rootRoom]: events }));
+        };
+        let timer: number | null = null;
+        const schedule = () => {
+          if (timer !== null) {
+            return;
+          }
+          timer = window.setTimeout(() => {
+            timer = null;
+            rebuild();
+          }, 500);
+          timers.push(timer);
+        };
+        rebuild();
+        unsubs.push(doc.map(PIXEL_NAMESPACE).onChange(schedule));
+        unsubs.push(doc.onConnect(schedule));
+      })();
+    }
+
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) {
+        unsub();
+      }
+      for (const timer of timers) {
+        window.clearTimeout(timer);
+      }
+      if (openedDoc) {
+        if (auxDocsRef.current.get(rootRoom) === openedDoc) {
+          auxDocsRef.current.delete(rootRoom);
+        }
+        openedDoc.close();
+      }
+    };
+  }, [session, refreshRegistry]);
+
+  // Sibling-branch lane histories: one lightweight px-only doc per registered
+  // branch room other than the active room and the root (both covered above).
+  // Reopened when the registered set changes; capped at MAX_LANES rooms.
+  const familyKey = branchRecords.map((record) => record.roomId).join("|");
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+    let cancelled = false;
+    const openedDocs: Doc[] = [];
+    const unsubs: Array<() => void> = [];
+    const timers: number[] = [];
+    const rootRoom = rootRoomId(session.roomId);
+    const laneRooms = dedupe([rootRoom, ...branchRecords.map((record) => record.roomId)]).slice(0, MAX_LANES);
+    const auxRooms = laneRooms.filter((room) => room !== session.roomId && room !== rootRoom);
+
+    void (async () => {
+      for (const room of auxRooms) {
+        let doc: Doc;
+        try {
+          const handle = await createDemoDoc({
+            wasmUrl: bridgeWasmUrl,
+            env,
+            room,
+            docOptions: { subscribe: ["px/**"] }
+          });
+          doc = handle.doc;
+        } catch {
+          continue;
+        }
+        if (cancelled) {
+          doc.close();
+          return;
+        }
+        openedDocs.push(doc);
+        auxDocsRef.current.set(room, doc);
+        const rebuild = () => {
+          const events = timelineFromHistory(pagePixelHistory(doc));
+          setLaneEventsByRoom((previous) => ({ ...previous, [room]: events }));
+        };
+        let timer: number | null = null;
+        const schedule = () => {
+          if (timer !== null) {
+            return;
+          }
+          timer = window.setTimeout(() => {
+            timer = null;
+            rebuild();
+          }, 500);
+          timers.push(timer);
+        };
+        rebuild();
+        unsubs.push(doc.map(PIXEL_NAMESPACE).onChange(schedule));
+        unsubs.push(doc.onConnect(schedule));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) {
+        unsub();
+      }
+      for (const timer of timers) {
+        window.clearTimeout(timer);
+      }
+      for (const doc of openedDocs) {
+        for (const [room, entry] of auxDocsRef.current) {
+          if (entry === doc) {
+            auxDocsRef.current.delete(room);
+          }
+        }
+        doc.close();
+      }
+    };
+  }, [session, familyKey]);
+
+  // Lane model for the branch visualization: cluster each room's paint events
+  // into bursts and anchor child lanes at their fork cluster in the parent.
+  // Fork points force a cluster boundary in the parent lane, so "branched at
+  // frame 50" renders as its own circle mid-lane rather than disappearing
+  // inside one long painting burst.
+  const lanes = useMemo<PixelLane[]>(() => {
+    if (!session || branchRecords.length === 0) {
+      return [];
+    }
+    const rootRoom = rootRoomId(session.roomId);
+    const laneRooms = dedupe([rootRoom, ...branchRecords.map((record) => record.roomId)]).slice(0, MAX_LANES);
+    const eventsFor = (room: string): readonly PixelTimelineEvent[] =>
+      room === session.roomId ? session.timeline.allEvents : laneEventsByRoom[room] ?? [];
+    const breakAfterByRoom = new Map<string, number[]>();
+    for (const record of branchRecords) {
+      if (!laneRooms.includes(record.parentRoomId)) {
+        continue;
+      }
+      const anchor = forkEventIndex(eventsFor(record.parentRoomId), record);
+      if (anchor >= 0) {
+        const existing = breakAfterByRoom.get(record.parentRoomId) ?? [];
+        existing.push(anchor);
+        breakAfterByRoom.set(record.parentRoomId, existing);
+      }
+    }
+    const clustersByRoom = new Map(
+      laneRooms.map((room) => [room, clusterEvents(eventsFor(room), { breakAfter: breakAfterByRoom.get(room) })])
+    );
+    return laneRooms.map((room) => {
+      const record = branchRecords.find((entry) => entry.roomId === room);
+      const parent = record && laneRooms.includes(record.parentRoomId) ? record.parentRoomId : null;
+      return {
+        roomId: room,
+        label: shortRoomLabel(room),
+        clusters: clustersByRoom.get(room) ?? [],
+        parentRoomId: parent,
+        forkColumn:
+          record && parent
+            ? forkColumn(eventsFor(parent), clustersByRoom.get(parent) ?? [], record)
+            : -1
+      };
+    });
+  }, [session, branchRecords, laneEventsByRoom, timelineLength]);
+
   // timelineLength is a dependency so a history rebuild refreshes a frozen frame.
   const replayBuffer = useMemo(
     () => (session && replayCursor !== null ? session.timeline.snapshotAt(replayCursor) : null),
     [session, replayCursor, timelineLength]
   );
   const isLive = replayCursor === null;
+  // Real lineage from the registry; falls back to the room-name convention.
+  const activeParentRoom = session
+    ? branchRecords.find((record) => record.roomId === session.roomId)?.parentRoomId ??
+      parentRoomId(session.roomId)
+    : null;
 
-  function closeSessionAndSwitch() {
-    const roomId = roomIdInput.trim();
+  function switchToRoom(roomId: string, pendingCursor: number | null = null) {
     if (!session || !roomId || roomId === session.roomId) {
       return;
     }
@@ -188,10 +456,110 @@ export default function App() {
     setReplayCursor(null);
     setIsReplayPlaying(false);
     setTimelineLength(0);
+    setBranchRecords([]);
+    setLaneEventsByRoom({});
+    pendingCursorRef.current = pendingCursor;
     setNotice(`Switching to ${roomId}...`);
-    void openSession(roomId).then(setSession).catch((error) => {
+    void openSession(roomId).then((next) => {
+      setSession(next);
+      setRoomIdInput(next.roomId);
+      replaceRoomInUrl(next.roomId);
+    }).catch((error) => {
       setNotice(`Failed to join ${roomId}: ${error instanceof Error ? error.message : String(error)}`);
     });
+  }
+
+  function closeSessionAndSwitch() {
+    switchToRoom(roomIdInput.trim());
+  }
+
+  function selectLaneCluster(roomId: string, lastEventIndex: number) {
+    if (!session) {
+      return;
+    }
+    const cursor = lastEventIndex + 1;
+    if (roomId === session.roomId) {
+      setIsReplayPlaying(false);
+      setReplayCursor(cursor >= timelineLength ? null : cursor);
+      return;
+    }
+    switchToRoom(roomId, cursor);
+  }
+
+  /** Persist the branch record in the ROOT room so every family member sees it. */
+  async function writeRegistryRecordToRoot(rootRoom: string, record: BranchRecord): Promise<void> {
+    const existing =
+      session && session.roomId === rootRoom ? session.doc : auxDocsRef.current.get(rootRoom) ?? null;
+    if (existing) {
+      writeBranchRecord(existing, record);
+      // Local mutations broadcast on a microtask; give the socket a beat
+      // before this doc might get closed by the room switch.
+      await delay(200);
+      return;
+    }
+    // No live doc for the root (rare: branching a branch before the aux root
+    // doc finished opening) — open a short-lived one just for the write.
+    const handle = await createDemoDoc({
+      wasmUrl: bridgeWasmUrl,
+      env,
+      room: rootRoom,
+      docOptions: { subscribe: ["branch/**"] }
+    });
+    writeBranchRecord(handle.doc, record);
+    for (let i = 0; i < 20 && !handle.doc.isConnected; i++) {
+      await delay(100);
+    }
+    await delay(300);
+    handle.doc.close();
+  }
+
+  async function branchFromCursor() {
+    if (!session || replayCursor === null || isBranching) {
+      return;
+    }
+    setIsBranching(true);
+    try {
+      const cursor = replayCursor;
+      const events = session.timeline.allEvents;
+      const anchor = cursor > 0 ? events[Math.min(cursor, events.length) - 1] : null;
+      const seeds = seedPaintsFromSnapshot(session.timeline.snapshotAt(cursor));
+      const parentRoom = session.roomId;
+      const rootRoom = rootRoomId(parentRoom);
+      const newRoom = branchRoomId(parentRoom);
+      await writeRegistryRecordToRoot(rootRoom, {
+        roomId: newRoom,
+        parentRoomId: parentRoom,
+        forkIndex: cursor,
+        forkLamport: anchor?.lamport ?? null,
+        forkNodeId: anchor?.nodeId ?? null,
+        createdAtIso: new Date().toISOString()
+      });
+      closeSession(session);
+      setSession(null);
+      setReplayCursor(null);
+      setIsReplayPlaying(false);
+      setTimelineLength(0);
+      setBranchRecords([]);
+      setLaneEventsByRoom({});
+      pendingCursorRef.current = null;
+      setNotice(`Branching from ${parentRoom} at frame ${cursor}...`);
+      const next = await openSession(newRoom);
+      // Seed the frozen frame as this session's own paints — the branch room's
+      // replay then reads "seed → new work".
+      for (const seed of seeds) {
+        next.store.paint(seed.x, seed.y, seed.paletteIndex);
+      }
+      setSession(next);
+      setRoomIdInput(next.roomId);
+      replaceRoomInUrl(next.roomId);
+      setNotice(
+        `Branched from ${parentRoom} at frame ${cursor} — this board now diverges independently.`
+      );
+    } catch (error) {
+      setNotice(`Branch failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsBranching(false);
+    }
   }
 
   function toggleOnline() {
@@ -270,6 +638,16 @@ export default function App() {
 
       <div className="nm-meta-bar">
         <span><strong>Room:</strong> <code>{session?.roomId ?? "—"}</code></span>
+        {activeParentRoom ? (
+          <button
+            type="button"
+            className="nm-btn"
+            onClick={() => switchToRoom(activeParentRoom)}
+            title={`This board branched from ${activeParentRoom}`}
+          >
+            ⤴ Back to <code>{activeParentRoom}</code>
+          </button>
+        ) : null}
         <span>painted: <code>{paintedCount}</code> / {GRID_SIZE * GRID_SIZE}</span>
         <span>peers: <code>{peerCount}</code></span>
         <span>status: <code>{online ? "online" : "offline"}</code></span>
@@ -310,7 +688,8 @@ export default function App() {
           </div>
           {!isLive ? (
             <p className="nm-notice nm-notice-offline">
-              <strong>Replay view.</strong> Painting is disabled — press <em>Live</em> to paint.
+              <strong>Replay view.</strong> Painting is disabled — press <em>Live</em> to paint, or{" "}
+              <em>Branch from here</em> to diverge a new board from this exact frame.
               New paints (yours and peers') keep landing on the live board.
             </p>
           ) : null}
@@ -412,7 +791,24 @@ export default function App() {
               >
                 Live
               </button>
+              <button
+                type="button"
+                className="nm-btn nm-btn-primary"
+                onClick={() => void branchFromCursor()}
+                disabled={!session || isLive || isBranching}
+                title="Open a new board that starts from this frame"
+              >
+                {isBranching ? "Branching…" : "Branch from here"}
+              </button>
             </div>
+            {session && lanes.length > 0 ? (
+              <PixelLanes
+                lanes={lanes}
+                activeRoomId={session.roomId}
+                replayCursor={replayCursor}
+                onSelectCluster={selectLaneCluster}
+              />
+            ) : null}
           </div>
           <p className="nm-card-desc">
             Every pixel is a last-writer-wins register keyed <code>px/x,y</code> in the room's signed

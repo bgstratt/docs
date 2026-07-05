@@ -12,7 +12,7 @@ const client = new RuntimeClient(config, { pubkeyPrefix: "replay", maxEvents: 60
 const KNOWN_ROOMS = [
   "collab-text",
   "collab-maps",
-  "infinite-room-workspace",
+  "workflow-demo",
   "pixel-canvas",
   "demo-room"
 ];

@@ -5,7 +5,7 @@
 // renders and forwards pointer events. Pointer events (not mouse events)
 // are used throughout so touch and pen input drag nodes too.
 
-import type { RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type {
   DragPresence,
   WorkspaceAnnotation,
@@ -14,7 +14,7 @@ import type {
   WorkspaceNode,
   WorkspaceTool
 } from "../../state/workspaceTypes";
-import { shortPeerId, WORKSPACE_HEIGHT, WORKSPACE_WIDTH } from "../../state/workspaceTypes";
+import { shortPeerId, WORKSPACE_HEIGHT, WORKSPACE_WIDTH, type NodeShape } from "../../state/workspaceTypes";
 
 export type RemoteNodeDrag = {
   x: number;
@@ -22,6 +22,22 @@ export type RemoteNodeDrag = {
   peerId: string;
   atIso: string;
 };
+
+/** Box metrics per node shape; cx/cy anchor edge lines and ghost labels. */
+export function nodeVisual(shape: NodeShape | undefined): {
+  width: number;
+  height: number;
+  cx: number;
+  cy: number;
+} {
+  if (shape === "circle") {
+    return { width: 84, height: 84, cx: 42, cy: 42 };
+  }
+  if (shape === "diamond") {
+    return { width: 76, height: 76, cx: 38, cy: 38 };
+  }
+  return { width: 104, height: 36, cx: 52, cy: 18 };
+}
 
 interface WorkspaceCanvasProps {
   surfaceRef: RefObject<HTMLDivElement>;
@@ -37,6 +53,12 @@ interface WorkspaceCanvasProps {
   replayMode: "live" | "playback";
   canvasReplayBadge: string;
   edgeSourceNodeId: string | null;
+  editingNodeId: string | null;
+  editingLabelDraft: string;
+  onEditLabelDraftChange: (value: string) => void;
+  onStartEditNode: (nodeId: string) => void;
+  onCommitRename: (nodeId: string, label: string) => void;
+  onCancelRename: () => void;
   onSurfacePointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   onNodePointerDown: (event: React.PointerEvent<HTMLDivElement>, nodeId: string) => void;
 }
@@ -55,24 +77,59 @@ export function WorkspaceCanvas({
   replayMode,
   canvasReplayBadge,
   edgeSourceNodeId,
+  editingNodeId,
+  editingLabelDraft,
+  onEditLabelDraftChange,
+  onStartEditNode,
+  onCommitRename,
+  onCancelRename,
   onSurfacePointerDown,
   onNodePointerDown
 }: WorkspaceCanvasProps) {
+  // The surface is a fixed 860×360 logical plane, CSS-scaled down to fit
+  // narrow screens. Pointer handlers recover the scale from
+  // getBoundingClientRect (see coords.ts), so surfaceRef must stay on the
+  // scaled element, not this wrapper.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) {
+      return;
+    }
+    const measure = () => {
+      setScale(Math.min(1, wrapper.clientWidth / WORKSPACE_WIDTH));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, []);
   return (
+    <div
+      ref={wrapperRef}
+      style={{
+        width: "100%",
+        maxWidth: WORKSPACE_WIDTH,
+        height: Math.round(WORKSPACE_HEIGHT * scale),
+        overflow: "hidden",
+        marginBottom: 12
+      }}
+    >
     <div
       ref={surfaceRef}
       onPointerDown={onSurfacePointerDown}
       style={{
-        width: "100%",
-        maxWidth: WORKSPACE_WIDTH,
+        width: WORKSPACE_WIDTH,
         height: WORKSPACE_HEIGHT,
         border: "1px solid #cbd5e1",
         borderRadius: 8,
         background: "linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
         position: "relative",
         overflow: "hidden",
-        marginBottom: 12,
-        touchAction: "none"
+        touchAction: "none",
+        transform: `scale(${scale})`,
+        transformOrigin: "top left"
       }}
     >
       <svg
@@ -86,13 +143,15 @@ export function WorkspaceCanvas({
           if (!from || !to) {
             return null;
           }
+          const fromVisual = nodeVisual(from.shape);
+          const toVisual = nodeVisual(to.shape);
           return (
             <line
               key={edge.id}
-              x1={from.x + 52}
-              y1={from.y + 18}
-              x2={to.x + 52}
-              y2={to.y + 18}
+              x1={from.x + fromVisual.cx}
+              y1={from.y + fromVisual.cy}
+              x2={to.x + toVisual.cx}
+              y2={to.y + toVisual.cy}
               stroke="#1e293b"
               strokeOpacity={0.55}
               strokeWidth={2.2}
@@ -104,31 +163,109 @@ export function WorkspaceCanvas({
         const remoteDrag = remoteDragByNodeId[node.id];
         const renderX = remoteDrag ? remoteDrag.x : node.x;
         const renderY = remoteDrag ? remoteDrag.y : node.y;
+        const visual = nodeVisual(node.shape);
+        const border = remoteDrag ? "1px solid #0f766e" : "1px solid #2563eb";
+        const boxShadow = remoteDrag ? "0 0 0 2px rgba(20, 184, 166, 0.18)" : "0 1px 3px rgba(15, 23, 42, 0.25)";
+        const isEditing = editingNodeId === node.id;
+        const label = isEditing ? (
+          <input
+            aria-label="Node name"
+            value={editingLabelDraft}
+            autoFocus
+            maxLength={40}
+            onChange={(event) => onEditLabelDraftChange(event.target.value)}
+            // Typing must not start a node drag.
+            onPointerDown={(event) => event.stopPropagation()}
+            onBlur={() => onCommitRename(node.id, editingLabelDraft)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                onCommitRename(node.id, editingLabelDraft);
+              } else if (event.key === "Escape") {
+                onCancelRename();
+              }
+            }}
+            style={{
+              width: "100%",
+              maxWidth: visual.width - 14,
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "1px 3px",
+              border: "1px solid #2563eb",
+              borderRadius: 4,
+              background: "white",
+              color: "#0f172a"
+            }}
+          />
+        ) : (
+          <>
+            <strong style={{ display: "block", fontSize: node.shape === "rect" || !node.shape ? 12 : 11 }}>
+              {node.label}
+            </strong>
+            <small style={{ color: "#475569", fontSize: node.shape === "rect" || !node.shape ? undefined : 10 }}>
+              {new Date(node.updatedAtIso).toLocaleTimeString()}
+            </small>
+          </>
+        );
+        if (node.shape === "diamond") {
+          return (
+            <div
+              key={node.id}
+              role="button"
+              tabIndex={0}
+              onPointerDown={(event) => onNodePointerDown(event, node.id)}
+              onDoubleClick={() => onStartEditNode(node.id)}
+              style={{
+                position: "absolute",
+                left: renderX,
+                top: renderY,
+                width: visual.width,
+                height: visual.height,
+                borderRadius: 8,
+                border,
+                background: "white",
+                // Fixed light background, so pin the text color too — the page
+                // text color flips white in dark theme and vanished here.
+                color: "#0f172a",
+                cursor: canUseSdkActions ? "grab" : "not-allowed",
+                boxShadow,
+                transform: "rotate(45deg)",
+                display: "grid",
+                placeItems: "center"
+              }}
+            >
+              <div style={{ transform: "rotate(-45deg)", textAlign: "center", maxWidth: visual.width - 8 }}>
+                {label}
+              </div>
+            </div>
+          );
+        }
+        const isCircle = node.shape === "circle";
         return (
           <div
             key={node.id}
             role="button"
             tabIndex={0}
             onPointerDown={(event) => onNodePointerDown(event, node.id)}
+            onDoubleClick={() => onStartEditNode(node.id)}
             style={{
               position: "absolute",
               left: renderX,
               top: renderY,
-              width: 104,
-              minHeight: 36,
-              borderRadius: 8,
-              border: remoteDrag ? "1px solid #0f766e" : "1px solid #2563eb",
+              width: visual.width,
+              ...(isCircle ? { height: visual.height } : { minHeight: visual.height }),
+              borderRadius: isCircle ? "50%" : 8,
+              border,
               background: "white",
               // Fixed light background, so pin the text color too — the page
               // text color flips white in dark theme and vanished here.
               color: "#0f172a",
-              padding: "6px 8px",
+              padding: isCircle ? 4 : "6px 8px",
               cursor: canUseSdkActions ? "grab" : "not-allowed",
-              boxShadow: remoteDrag ? "0 0 0 2px rgba(20, 184, 166, 0.18)" : "0 1px 3px rgba(15, 23, 42, 0.25)"
+              boxShadow,
+              ...(isCircle ? { display: "grid", placeItems: "center", textAlign: "center" as const } : {})
             }}
           >
-            <strong style={{ display: "block", fontSize: 12 }}>{node.label}</strong>
-            <small style={{ color: "#475569" }}>{new Date(node.updatedAtIso).toLocaleTimeString()}</small>
+            {isCircle ? <div style={{ maxWidth: visual.width - 10 }}>{label}</div> : label}
           </div>
         );
       })}
@@ -157,7 +294,7 @@ export function WorkspaceCanvas({
           key={`${peerId}-${drag.nodeId}`}
           style={{
             position: "absolute",
-            left: drag.x + 106,
+            left: drag.x + nodeVisual(workspaceNodes.find((node) => node.id === drag.nodeId)?.shape).width + 2,
             top: drag.y - 10,
             borderRadius: 999,
             border: "1px solid #0f766e",
@@ -254,6 +391,7 @@ export function WorkspaceCanvas({
             : "Select mode: add nodes, shift-click node to start edge connect."}
         </div>
       ) : null}
+    </div>
     </div>
   );
 }

@@ -3,11 +3,16 @@
 
 export type RuntimeBackend = "ws" | "sdk";
 
+export const NODE_SHAPES = ["rect", "circle", "diamond"] as const;
+export type NodeShape = (typeof NODE_SHAPES)[number];
+
 export type WorkspaceNode = {
   id: string;
   x: number;
   y: number;
   label: string;
+  /** Absent on records persisted before shapes existed; treated as "rect". */
+  shape?: NodeShape;
   updatedAtIso: string;
 };
 

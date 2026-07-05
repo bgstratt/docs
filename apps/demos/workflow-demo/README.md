@@ -1,9 +1,9 @@
-# Infinite room workspace demo
+# Workflow demo
 
 ## Purpose
 
-Flagship demo of NodalMerge's DAG model: a spatial multiplayer workspace with
-full branch / replay / merge visualization on top of shared CRDT state.
+Flagship demo of NodalMerge's DAG model: a shared multiplayer workflow canvas
+with full branch / replay / merge visualization on top of shared CRDT state.
 
 Features (all live):
 
@@ -48,7 +48,7 @@ Features (all live):
 
 - `VITE_HOST_BASE_URL` (default `http://localhost:5074`)
 - `VITE_WS_BASE_URL` (derived from host base URL if unset)
-- `VITE_DEFAULT_ROOM_ID` (set to `infinite-room-workspace` in `.env`; falls back to `demo-room`)
+- `VITE_DEFAULT_ROOM_ID` (set to `workflow-demo` in `.env`; falls back to `demo-room`)
 - `VITE_TOKEN_MODE` (`none` | `static` | `provider`)
 - `VITE_TRANSPORT_MODE` (`ws-only` | `auto`)
 
@@ -62,6 +62,16 @@ Features (all live):
    - `npm install`
    - `npm run dev`
 3. Open the printed Vite URL in two tabs and connect both to the same room.
+
+## Notes and future work
+
+- Replay is driven by shared replay-op records (`workspace/replay-op/...`),
+  not the SDK's DAG-backed `doc.history()` API (which the pixel-canvas demo
+  uses). Migrating is possible but the raw DAG is noisier than the curated
+  op stream; deliberately deferred.
+- Rooms created before add-node ops embedded the full node replay the
+  LWW-latest node record for adds, so scrubbing to a frame before a rename
+  shows the post-rename label there. New rooms replay labels faithfully.
 
 ## Verification checklist
 

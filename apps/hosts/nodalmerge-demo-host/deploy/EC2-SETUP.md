@@ -27,8 +27,7 @@ sudo apt-get update
 sudo apt-get install -y ca-certificates curl nginx certbot python3-certbot-nginx
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
-  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo usermod -aG docker $USER   # re-login (or `newgrp docker`) to take effect
@@ -98,9 +97,18 @@ domain, then merge in the shipped block.
 
 ## 6. Nightly recycle (reclaims in-memory demo state)
 
+PowerShell (local machine — copy the two unit files up):
+
+```powershell
+cd apps\hosts\nodalmerge-demo-host\deploy\systemd
+scp -i {certificate} nodalmerge-demo-host-docker-restart.service nodalmerge-demo-host-docker-restart.timer ubuntu@{server}:/tmp/
+```
+
+Server (over ssh):
+
 ```bash
-# from this repo's deploy/systemd/:
-sudo cp nodalmerge-demo-host-docker-restart.service nodalmerge-demo-host-docker-restart.timer /etc/systemd/system/
+sudo mv /tmp/nodalmerge-demo-host-docker-restart.service /tmp/nodalmerge-demo-host-docker-restart.timer /etc/systemd/system/
+sudo chown root:root /etc/systemd/system/nodalmerge-demo-host-docker-restart.{service,timer}
 sudo systemctl daemon-reload
 sudo systemctl enable --now nodalmerge-demo-host-docker-restart.timer
 systemctl list-timers | grep nodalmerge   # verify next run (04:00 UTC)

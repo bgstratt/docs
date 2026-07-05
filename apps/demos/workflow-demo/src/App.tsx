@@ -31,6 +31,7 @@ import {
 import { createInitialReplayState, replayReducer } from "./lib/branchReplay";
 import { computeBranchOffsets, computeMaxBranchColumn } from "./lib/replayLayout";
 import { decideWriteRouting } from "./lib/writeRouting";
+import { applyWorkspaceOpPayload } from "./lib/workspaceProjection";
 import {
   WORKSPACE_BRANCHES_KEY,
   buildForkReplayOp,
@@ -44,6 +45,7 @@ import {
 
 import type {
   DragPresence,
+  NodeShape,
   PersistenceEvent,
   RemoteReplayCursor,
   RuntimeBackend,
@@ -72,6 +74,7 @@ import {
 import { ReplayControls } from "./features/replay/ReplayControls";
 import { PresencePanel } from "./panels/PresencePanel";
 import { WorkspaceCanvas } from "./features/canvas/WorkspaceCanvas";
+import { clientPointToWorkspace } from "./features/canvas/coords";
 
 const config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
 const wsClient = new RuntimeClient(config, { pubkeyPrefix: "workspace", maxEvents: 40 });
@@ -118,7 +121,20 @@ async function waitForConnectionSettle(
   }
 }
 
+/** Matches the design system's 800px single-column breakpoint. */
+function useIsWideViewport(): boolean {
+  const [isWide, setIsWide] = useState(() => window.matchMedia("(min-width: 801px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 801px)");
+    const onChange = (event: MediaQueryListEvent) => setIsWide(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return isWide;
+}
+
 export default function App() {
+  const isWideViewport = useIsWideViewport();
   const [backend, setBackend] = useState<RuntimeBackend>("sdk");
   const [roomIdInput, setRoomIdInput] = useState(config.defaultRoomId);
   const [activeRoomId, setActiveRoomId] = useState<string>(config.defaultRoomId);
@@ -147,6 +163,8 @@ export default function App() {
   const frozenBaselineBranchIdsRef = useRef(new Set<string>());
   const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");
   const [annotationDraft, setAnnotationDraft] = useState("Decision note");
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editingLabelDraft, setEditingLabelDraft] = useState("");
   const [mergeSourceBranchId, setMergeSourceBranchId] = useState("main");
   const [mergeSourceNodeId, setMergeSourceNodeId] = useState<string>("");
   const [replayState, dispatchReplay] = useReducer(
@@ -1409,126 +1427,7 @@ export default function App() {
       } catch {
         continue;
       }
-      if (!payload || typeof payload !== "object") {
-        continue;
-      }
-      const typed = payload as {
-        type?: unknown;
-        node?: unknown;
-        nodeId?: unknown;
-        asset?: unknown;
-        edge?: unknown;
-        annotation?: unknown;
-        move?: unknown;
-        text?: unknown;
-      };
-      if (typed.type === "workspace.add-node") {
-        let raw: WorkspaceNode | null = null;
-        if (typed.node && typeof typed.node === "object") {
-          raw = typed.node as WorkspaceNode;
-        } else if (typeof typed.nodeId === "string") {
-          raw = resolveNodeRecordForBranch(branchId, typed.nodeId);
-        }
-        if (
-          raw &&
-          typeof raw.id === "string" &&
-          typeof raw.label === "string" &&
-          typeof raw.x === "number" &&
-          typeof raw.y === "number" &&
-          typeof raw.updatedAtIso === "string"
-        ) {
-          const exists = projected.nodes.some((entry) => entry.id === raw.id);
-          if (!exists) {
-            projected.nodes.unshift({
-              ...raw,
-              x: Math.max(16, Math.min(WORKSPACE_WIDTH - 120, raw.x)),
-              y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, raw.y))
-            });
-          }
-        }
-      }
-      if (typed.type === "workspace.add-asset" && typed.asset && typeof typed.asset === "object") {
-        const raw = typed.asset as WorkspaceAsset;
-        if (
-          typeof raw.id === "string" &&
-          typeof raw.name === "string" &&
-          typeof raw.x === "number" &&
-          typeof raw.y === "number" &&
-          typeof raw.updatedAtIso === "string"
-        ) {
-          const exists = projected.assets.some((entry) => entry.id === raw.id);
-          if (!exists) {
-            projected.assets.unshift({
-              ...raw,
-              x: Math.max(16, Math.min(WORKSPACE_WIDTH - 160, raw.x)),
-              y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 62, raw.y))
-            });
-          }
-        }
-      }
-      if (typed.type === "workspace.add-edge" && typed.edge && typeof typed.edge === "object") {
-        const edge = typed.edge as WorkspaceEdge;
-        if (
-          typeof edge.id === "string" &&
-          typeof edge.fromNodeId === "string" &&
-          typeof edge.toNodeId === "string" &&
-          typeof edge.updatedAtIso === "string"
-        ) {
-          const exists = projected.edges.some((entry) => entry.id === edge.id);
-          if (!exists) {
-            projected.edges.unshift({ ...edge });
-          }
-        }
-      }
-      if (typed.type === "workspace.move-node" && typed.move && typeof typed.move === "object") {
-        const move = typed.move as { nodeId?: unknown; x?: unknown; y?: unknown; updatedAtIso?: unknown };
-        if (typeof move.nodeId === "string" && typeof move.x === "number" && typeof move.y === "number") {
-          const nextX = move.x;
-          const nextY = move.y;
-          projected.nodes = projected.nodes.map((entry) =>
-            entry.id === move.nodeId
-              ? {
-                  ...entry,
-                  x: Math.max(16, Math.min(WORKSPACE_WIDTH - 120, nextX)),
-                  y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, nextY)),
-                  updatedAtIso: typeof move.updatedAtIso === "string" ? move.updatedAtIso : entry.updatedAtIso
-                }
-              : entry
-          );
-        }
-      }
-      if (typed.type === "workspace.add-annotation" && typed.annotation && typeof typed.annotation === "object") {
-        const note = typed.annotation as WorkspaceAnnotation;
-        if (
-          typeof note.id === "string" &&
-          typeof note.text === "string" &&
-          typeof note.x === "number" &&
-          typeof note.y === "number" &&
-          typeof note.updatedAtIso === "string"
-        ) {
-          const exists = projected.annotations.some((entry) => entry.id === note.id);
-          if (!exists) {
-            projected.annotations.unshift({
-              ...note,
-              x: Math.max(16, Math.min(WORKSPACE_WIDTH - 180, note.x)),
-              y: Math.max(16, Math.min(WORKSPACE_HEIGHT - 90, note.y))
-            });
-          }
-        }
-      }
-      if (typed.type === "workspace.clear-assets") {
-        projected.assets = [];
-      }
-      if (typed.type === "workspace.clear-annotations") {
-        projected.annotations = [];
-      }
-      if (typed.type === "workspace.clear-edges") {
-        projected.edges = [];
-      }
-      if (typed.type === "workspace.clear-nodes") {
-        projected.nodes = [];
-        projected.edges = [];
-      }
+      applyWorkspaceOpPayload(projected, payload, (opNodeId) => resolveNodeRecordForBranch(branchId, opNodeId));
     }
     return projected;
   }
@@ -2134,7 +2033,7 @@ export default function App() {
     }
   }
 
-  function addWorkspaceNode() {
+  function addWorkspaceNode(shape: NodeShape) {
     const writeTarget = ensureWritableBranchForEdit("workspace.add-node", { applySeedSnapshot: true });
     if (!writeTarget) {
       return;
@@ -2152,11 +2051,14 @@ export default function App() {
       x: 40 + (baseNodes.length % 7) * 112,
       y: 40 + Math.floor(baseNodes.length / 7) * 70,
       label: `Node ${baseNodes.length + 1}`,
+      shape,
       updatedAtIso: new Date().toISOString()
     };
     const replayOp = createReplayOp(
       `add-node ${next.label}`,
-      { type: "workspace.add-node", nodeId: next.id },
+      // Embed the full node so playback frames render it as it was created,
+      // instead of falling back to the LWW-latest record.
+      { type: "workspace.add-node", nodeId: next.id, node: next },
       "workspace.add-node",
       next.updatedAtIso,
       branchForAppend
@@ -2178,6 +2080,66 @@ export default function App() {
     }
     activeBranchIdRef.current = branchForAppend;
     setActiveNotice(`Workspace node ${next.label} added.`);
+  }
+
+  function startEditingNode(nodeId: string) {
+    if (!canUseSdkActions) {
+      setLastAction("Connect in npm sdk + wasm mode before renaming workspace nodes.");
+      return;
+    }
+    const current = workspaceNodesRef.current.find((entry) => entry.id === nodeId);
+    if (!current) {
+      return;
+    }
+    setEditingNodeId(nodeId);
+    setEditingLabelDraft(current.label);
+  }
+
+  function cancelEditingNode() {
+    setEditingNodeId(null);
+    setEditingLabelDraft("");
+  }
+
+  function commitNodeRename(nodeId: string, rawLabel: string) {
+    setEditingNodeId(null);
+    setEditingLabelDraft("");
+    const label = rawLabel.trim();
+    const current = workspaceNodesRef.current.find((entry) => entry.id === nodeId);
+    if (!current || label.length === 0 || label === current.label) {
+      return;
+    }
+    const writeTarget = ensureWritableBranchForEdit("workspace.rename-node", { applySeedSnapshot: false });
+    if (!writeTarget) {
+      return;
+    }
+    const branchId = writeTarget.branchId;
+    const updatedAtIso = new Date().toISOString();
+    const seedNodes = writeTarget.seededSnapshot?.nodes ?? null;
+    const baseNodes = seedNodes ?? workspaceNodesRef.current;
+    const snapshot = baseNodes.map((entry) => (entry.id === nodeId ? { ...entry, label, updatedAtIso } : entry));
+    const renamed = snapshot.find((entry) => entry.id === nodeId);
+    workspaceNodesRef.current = snapshot;
+    setWorkspaceNodes(snapshot);
+    if (!renamed) {
+      return;
+    }
+    const renameOp = createReplayOp(
+      `rename-node ${label}`,
+      { type: "workspace.rename-node", rename: { nodeId, label, updatedAtIso } },
+      "workspace.rename-node",
+      updatedAtIso,
+      branchId
+    );
+    const nextOps = [...readReplayOpsForBranch(branchId), renameOp].sort((left, right) =>
+      left.atIso.localeCompare(right.atIso)
+    );
+    // Same persistence shape as a move: rewrite the node record + append the op.
+    const didPersist = persistMovedNodeWithReplayOps(renamed, renameOp, nextOps, branchId);
+    if (!didPersist) {
+      setLastAction("Workspace rename failed to apply locally; reconnect in npm sdk + wasm mode.");
+      return;
+    }
+    setActiveNotice(`Renamed node to ${label}.`);
   }
 
   function createReplayOp(
@@ -2387,6 +2349,11 @@ export default function App() {
       setLastAction("Connect in npm sdk + wasm mode before moving workspace nodes.");
       return;
     }
+    if (editingNodeId === nodeId) {
+      // Typing in the inline rename input must not start a drag.
+      event.stopPropagation();
+      return;
+    }
     event.stopPropagation();
     if (event.shiftKey) {
       const source = edgeSourceNodeIdRef.current;
@@ -2457,9 +2424,9 @@ export default function App() {
     if (!surface) {
       return;
     }
-    const rect = surface.getBoundingClientRect();
-    const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 180, event.clientX - rect.left));
-    const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 90, event.clientY - rect.top));
+    const point = clientPointToWorkspace(event.clientX, event.clientY, surface);
+    const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 180, point.x));
+    const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 90, point.y));
     const text = annotationDraft.trim() || "Untitled note";
     const next: WorkspaceAnnotation = {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
@@ -2550,9 +2517,9 @@ export default function App() {
       if (!drag || !surface) {
         return;
       }
-      const rect = surface.getBoundingClientRect();
-      const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 120, event.clientX - rect.left));
-      const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, event.clientY - rect.top));
+      const point = clientPointToWorkspace(event.clientX, event.clientY, surface);
+      const x = Math.max(16, Math.min(WORKSPACE_WIDTH - 120, point.x));
+      const y = Math.max(16, Math.min(WORKSPACE_HEIGHT - 52, point.y));
       publishDragPresence(drag.nodeId, x, y, false);
       setWorkspaceNodes((previous) => {
         const next = previous.map((node) =>
@@ -2730,9 +2697,9 @@ export default function App() {
   return (
     <main className="nm-app">
       <header className="nm-page-header">
-        <h1 className="nm-page-title">Infinite room workspace</h1>
+        <h1 className="nm-page-title">Workflow demo</h1>
         <p className="nm-page-desc">
-          Spatial shared-state demo: SDK-backed workspace nodes, branches, and replay lanes across peers.
+          Branch, replay, and merge a shared workflow: scrub the timeline, diverge from any node, and converge back to the live head — with peers visible in real time.
         </p>
       </header>
 
@@ -2795,14 +2762,15 @@ export default function App() {
         </span>
       </section>
 
-      <section style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 14 }}>
+      <section className="nm-layout-2col">
         <article style={{ border: "1px solid #9aa4b2", borderRadius: 8, minHeight: 340, minWidth: 0, padding: 12 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
             <h2 style={{ marginTop: 0 }}>Workspace objects (persistent)</h2>
             <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>Peers: {onlinePeers.length}</span>
           </div>
           <p style={{ marginTop: 0 }}>
-            Add and drag nodes, connect edges with shift-click, place annotations in annotate mode.
+            Add and drag nodes, double-click a node to rename it, connect edges with shift-click,
+            place annotations in annotate mode.
           </p>
           {!canUseSdkActions ? (
             <p className="nm-notice nm-notice-offline">
@@ -2843,14 +2811,38 @@ export default function App() {
             <span style={{ width: 1, alignSelf: "stretch", background: "#94a3b8", margin: "2px 4px" }} />
             <button
               type="button"
-              title="Add node"
-              aria-label="Add node"
-              onClick={addWorkspaceNode}
+              title="Add rectangle node"
+              aria-label="Add rectangle node"
+              onClick={() => addWorkspaceNode("rect")}
               disabled={!canUseSdkActions}
               style={{ ...toolButtonStyle(false), color: "#16a34a" }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                <rect x="2" y="4" width="12" height="8" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Add circle node"
+              aria-label="Add circle node"
+              onClick={() => addWorkspaceNode("circle")}
+              disabled={!canUseSdkActions}
+              style={{ ...toolButtonStyle(false), color: "#16a34a" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Add diamond node"
+              aria-label="Add diamond node"
+              onClick={() => addWorkspaceNode("diamond")}
+              disabled={!canUseSdkActions}
+              style={{ ...toolButtonStyle(false), color: "#16a34a" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 1.5 14.5 8 8 14.5 1.5 8z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
               </svg>
             </button>
             <button
@@ -2886,6 +2878,12 @@ export default function App() {
           </div>
           <WorkspaceCanvas
             surfaceRef={workspaceSurfaceRef}
+            editingNodeId={editingNodeId}
+            editingLabelDraft={editingLabelDraft}
+            onEditLabelDraftChange={setEditingLabelDraft}
+            onStartEditNode={startEditingNode}
+            onCommitRename={commitNodeRename}
+            onCancelRename={cancelEditingNode}
             workspaceNodes={workspaceNodes}
             workspaceEdges={workspaceEdges}
             workspaceAssets={workspaceAssets}
@@ -2953,6 +2951,7 @@ export default function App() {
         </article>
 
         <PresencePanel
+          defaultOpen={isWideViewport}
           backend={backend}
           onBackendChange={setBackend}
           activeNotice={activeNotice}

@@ -12,7 +12,7 @@ const client = new RuntimeClient(config, { pubkeyPrefix: "protocol-inspector", m
 const KNOWN_ROOMS = [
   "collab-text",
   "collab-maps",
-  "infinite-room-workspace",
+  "workflow-demo",
   "pixel-canvas",
   "demo-room"
 ];

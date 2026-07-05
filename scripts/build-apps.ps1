@@ -25,7 +25,7 @@ $apps = @(
   @{ Slug = "collab-maps"; Category = "demos"; Path = "apps/demos/collab-maps" },
   @{ Slug = "pixel-canvas"; Category = "demos"; Path = "apps/demos/pixel-canvas" },
   @{ Slug = "bench-trace"; Category = "demos"; Path = "apps/demos/bench-trace" },
-  @{ Slug = "infinite-room-workspace"; Category = "demos"; Path = "apps/demos/infinite-room-workspace" },
+  @{ Slug = "workflow-demo"; Category = "demos"; Path = "apps/demos/workflow-demo" },
   @{ Slug = "collab-text"; Category = "playground"; Path = "apps/playground/collab-text" },
   @{ Slug = "protocol-inspector"; Category = "playground"; Path = "apps/playground/protocol-inspector" },
   @{ Slug = "replay-lab"; Category = "playground"; Path = "apps/playground/replay-lab" }

@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $workspace = Resolve-Path $WorkspaceRoot
-$demoPath = Join-Path $workspace "apps/demos/infinite-room-workspace"
+$demoPath = Join-Path $workspace "apps/demos/workflow-demo"
 $mapsPath = Join-Path $workspace "apps/demos/collab-maps"
 $replayPath = Join-Path $workspace "apps/playground/replay-lab"
 $protocolPath = Join-Path $workspace "apps/playground/protocol-inspector"
@@ -37,7 +37,7 @@ function Start-AppDev {
   ) | Out-Null
 }
 
-Start-AppDev -AppPath $demoPath -Name "infinite-room-workspace" -Port 4173
+Start-AppDev -AppPath $demoPath -Name "workflow-demo" -Port 4173
 Start-AppDev -AppPath $mapsPath -Name "collab-maps" -Port 4175
 Start-AppDev -AppPath $replayPath -Name "replay-lab" -Port 4174
 Start-AppDev -AppPath $protocolPath -Name "protocol-inspector" -Port 4176
@@ -46,7 +46,7 @@ Start-AppDev -AppPath $pixelCanvasPath -Name "pixel-canvas" -Port 4178
 Start-AppDev -AppPath $benchTracePath -Name "bench-trace" -Port 4179
 
 Write-Host "Started app dev servers."
-Write-Host "infinite-room-workspace: http://127.0.0.1:4173"
+Write-Host "workflow-demo: http://127.0.0.1:4173"
 Write-Host "replay-lab: http://127.0.0.1:4174"
 Write-Host "collab-maps: http://127.0.0.1:4175"
 Write-Host "protocol-inspector: http://127.0.0.1:4176"

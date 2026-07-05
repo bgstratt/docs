@@ -1,6 +1,6 @@
 # Collab text playground
 
-Interactive demo for **RGA text operations** (`insertTextAt`, `deleteTextAt`, contiguous range paths) on a single shared key — separate from the infinite room workspace canvas demo.
+Interactive demo for **RGA text operations** (`insertTextAt`, `deleteTextAt`, contiguous range paths) on a single shared key — separate from the workflow demo canvas demo.
 
 ## Run
 

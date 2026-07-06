@@ -4,6 +4,7 @@ import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
 import { connectWithRoomFallback } from "../../../../shared/runtime/roomFallback";
 import { SdkRuntimeClient } from "../../../demos/workflow-demo/src/lib/sdkRuntimeClient";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
+import { SiteBrand } from "../../../../shared/ui/SiteBrand";
 import { diffTextEdits } from "./lib/textDiff";
 import {
   buildAttributionSpans,
@@ -395,6 +396,7 @@ export default function App() {
   return (
     <main className="nm-app">
       <header className="nm-page-header">
+        <SiteBrand href="https://nodalmerge.com/playground" />
         <h1 className="nm-page-title">Collab text playground</h1>
         <p className="nm-page-desc">
           RGA collaborative text on <code>{TEXT_KEY}</code> using <code>insertTextRange</code> /{" "}

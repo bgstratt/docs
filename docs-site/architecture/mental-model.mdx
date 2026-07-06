@@ -5,13 +5,24 @@ description: Build a practical mental model for rooms, history, and convergence 
 
 # Mental model
 
-NodalMerge is a deterministic history system first, and a state system second.
+NodalMerge is a local-first distributed state engine. Within that, one more
+specific idea does most of the work: NodalMerge is a deterministic history
+system first, and a state system second.
 
 If your team internalizes that one idea, most architecture decisions become easier.
 
 ## The one-line model
 
 A room is an append-only history graph; current state is a projection you derive from that history.
+
+```mermaid
+flowchart LR
+    Client[Client] --> Operation[Operation]
+    Operation --> DAG[DAG]
+    DAG --> Replay[Replay]
+    Replay --> Projection[Projection]
+    Projection --> View[Materialized view]
+```
 
 ## Room
 
@@ -123,5 +134,6 @@ When designing a feature, ask:
 
 - [architecture/overview](/architecture/overview)
 - [architecture/crdt-model](/architecture/crdt-model)
+- [architecture/projections](/architecture/projections)
 - [architecture/speculative-vs-authoritative](/architecture/speculative-vs-authoritative)
 - [architecture/replay-and-branching](/architecture/replay-and-branching)

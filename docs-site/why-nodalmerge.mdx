@@ -5,6 +5,25 @@ description: Understand when NodalMerge is a strong fit and how it differs from 
 
 # Why NodalMerge
 
+NodalMerge is a local-first distributed state engine built around immutable
+operations, deterministic replay, and programmable projections. While NodalMerge uses CRDTs,
+synchronization, and local-first replication, those are implementation
+techniques rather than the product itself — much like describing Git as "a
+SHA-1 database" explains part of how it works but not what it enables.
+
+Most systems revolve around mutable state: a document or row that gets
+overwritten in place, with conflicts patched heuristically after the fact.
+NodalMerge instead treats **operations as the primary primitive**. State
+changes are appended as immutable, hash-linked nodes; state itself is a
+**projection** materialized from replaying those operations — deterministically,
+verifiably, and on demand at any point in history. From that single model
+come snapshots, branching, replay, auditing, replication, and deterministic
+synchronization — not as separate subsystems, but as natural consequences of
+representing state as immutable operations. That gives developers one
+consistent model for collaboration, offline operation, synchronization,
+historical replay, and verification, instead of stitching together separate
+technologies for each concern.
+
 NodalMerge is built for products that need low-latency collaboration without giving up deterministic correctness.
 
 If your team is building editors, operational consoles, multiplayer workflows, or AI-assisted workspaces, NodalMerge gives you a replayable state graph instead of fragile last-write snapshots.

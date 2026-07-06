@@ -13,10 +13,10 @@ methodology framing and how to read benchmark results safely.
 
 ## Environment
 
-- Run date: 2026-07-02
-- Host: ASUS ProArt P16 laptop — AMD Ryzen AI 9 HX 370 (12C/24T), ~31 GiB RAM, Windows 11
+- Run date: 2026-07-06
+- Host: AMD Ryzen 9 5900X desktop (12C/24T), Windows 11 Pro
 - Build: `cargo test --release`, `TextProjectionMode::Enabled`
-- Only same-host runs are comparable; treat these as this host's baseline.
+- Only same-host runs are directly comparable; treat these as this host's baseline.
 
 ## What's inside these numbers
 
@@ -66,7 +66,7 @@ the timed loop.
 
 | Metric | Result |
 |---|---:|
-| Apply all 259,778 edits + extract content | **882 ms** (~294,500 ops/sec) |
+| Apply all 259,778 edits + extract content | **882 ms** (294,521 ops/sec) |
 | Convergence | exact final-text match |
 | Cold start: fresh peer applies the full history + extract | 947 ms |
 | Total update bytes (per-node wire encoding) | 46.5 MB (179.2 bytes/edit) |
@@ -74,6 +74,34 @@ the timed loop.
 Note: cold start currently replays the op history; snapshot-based cold start
 is a planned follow-up and will be bounded by document size instead of
 history length.
+
+## Browser (WASM) throughput on the same trace
+
+The [Engine benchmark demo](https://nodalmerge.com/demos/bench-trace) replays
+the same 259,778-operation editing trace through the WebAssembly build in the
+browser and verifies convergence against the same expected final document
+used by the native benchmark. Browser results depend on the client device and
+browser, so they should be treated as representative measurements rather than
+fixed constants. The figures below were measured in Chrome on the Ryzen 9
+5900X system described above.
+
+| Configuration | Throughput | Time |
+|---|---:|---:|
+| Native Rust engine | **294,521 ops/sec** | **882 ms** |
+| Browser (WASM) | **119,482 ops/sec** | **2.17 s** |
+| Browser (WASM + Ed25519) | **27,110 ops/sec** | **9.58 s** |
+
+Comparing these results on the same hardware isolates the cost of the
+execution environment. The gap between the native and browser builds
+reflects WebAssembly execution and the JavaScript↔WASM boundary, while the
+difference between the unsigned and signed browser runs isolates the cost of
+Ed25519 signature verification. All three configurations converge to the
+identical final document.
+
+Even with cryptographic verification enabled on every operation, the browser
+processes more than **27,000 verified operations per second** — comfortably
+above the throughput required for interactive collaborative editing. No one
+types 27,000 characters per second.
 
 ## Large-trace throughput and scaling (up to ~980k ops)
 

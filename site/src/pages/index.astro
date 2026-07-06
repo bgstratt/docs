@@ -39,7 +39,7 @@ const features = [
 ---
 <BaseLayout
   title="NodalMerge"
-  description="A local-first distributed state engine built around immutable operations, deterministic replay, and programmable projections."
+  description="A local-first distributed state engine built around immutable operations — replayed deterministically into programmable projections."
 >
   <section class="nm-hero">
     <div class="nm-hero-inner">
@@ -115,8 +115,9 @@ const features = [
         <div class="nm-flow-step">Materialized view</div>
       </div>
       <p class="nm-section-desc">
-        Two primitives do all the work: immutable operations are what every peer stores and
-        exchanges, and programmable projections are what your product reads. See
+        One primitive does the work: immutable operations are what every peer stores and
+        exchanges. Everything you actually read is a programmable projection — a
+        deterministic consequence of replaying that same history. See
         <a href={`${DOCS_URL}/architecture/overview`} target="_blank" rel="noopener noreferrer"> architecture/overview</a> for the full model.
       </p>
     </section>

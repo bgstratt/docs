@@ -17,24 +17,17 @@ Every step an agent takes produces a durable artifact in a DAG. Every artifact c
 inspected, branched, replayed, merged, and audited. The durable graph is the product;
 agents are features of it.
 
-{/* IMAGE: hero-goal-workspace.png — Control Tower, Goal Workspace tab, hero shot
-    showing the Decision Tree with an in-progress goal and completed branches
-    converging. Primary above-the-fold product screenshot. See IMAGE_LIST.md. */}
+![Control Tower — Goal Workspace tab showing an in-progress goal's Decision Tree, Reasoning & Execution Timeline, and Decision Lens](/images/hero-goal-workspace.png)
 
 ## The artifact pipeline
 
-```
-Goal
-  ↓
-Plan               ← inspectable, reviewable, branchable
-  ↓
-Work Units         ← inspectable, has lineage, has scope
-  ↓
-Branch Changes     ← auditable, attributable, comparable
-  ↓
-Merge Proposal     ← reviewable, approvable, supersedable, replayable
-  ↓
-Approved State     ← committed, traceable back to the goal
+```mermaid
+flowchart TD
+    Goal[Goal] --> Plan["Plan<br/>inspectable · reviewable · branchable"]
+    Plan --> WorkUnits["Work Units<br/>inspectable · has lineage · has scope"]
+    WorkUnits --> BranchChanges["Branch Changes<br/>auditable · attributable · comparable"]
+    BranchChanges --> MergeProposal["Merge Proposal<br/>reviewable · approvable · supersedable · replayable"]
+    MergeProposal --> ApprovedState["Approved State<br/>committed · traceable back to the goal"]
 ```
 
 1. **You define a goal.** A human describes what needs to be accomplished.

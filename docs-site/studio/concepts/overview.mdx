@@ -23,16 +23,12 @@ description: Key concepts behind NodalMerge Studio's agent orchestration model.
 
 ## The agent execution loop
 
-```
-Observe → Read projections
-   ↓
-Think   → Determine next action
-   ↓
-Act     → Perform workspace operation
-   ↓
-Verify  → Validate outcome
-   ↓
-Propose → Submit merge proposal
+```mermaid
+flowchart TD
+    Observe["Observe<br/>Read projections"] --> Think["Think<br/>Determine next action"]
+    Think --> Act["Act<br/>Perform workspace operation"]
+    Act --> Verify["Verify<br/>Validate outcome"]
+    Verify --> Propose["Propose<br/>Submit merge proposal"]
 ```
 
 The loop ends at proposal submission. Merge authority remains external — agents

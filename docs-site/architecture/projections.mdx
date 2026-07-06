@@ -1,17 +1,42 @@
 ---
 title: Projections
-description: Why programmable projections — not the DAG itself — are what your product reads, and how NodalMerge builds, serves, and invalidates them.
+description: How NodalMerge turns immutable operation history into deterministic, materialized views — and why that's a downstream consequence of operations, not a second identity.
 ---
 
 # Projections
 
-Immutable operations are what NodalMerge **stores**. Projections are what
-your product **reads**. Between the two sits one deterministic function: same
-history in, same materialized view out, every time, on every peer.
+Immutable operations are what NodalMerge **stores** — and what makes
+NodalMerge NodalMerge. Projections are what that history becomes once you
+turn it into something usable. They're not a second primitive sitting next
+to operations; they're the most powerful *consequence* of having operations
+as the source of truth in the first place. Without projections, NodalMerge
+would still be NodalMerge, but every consumer would have to replay and
+interpret the operation history itself. Without immutable operations,
+projections have nothing to be a deterministic interpretation *of*.
 
-If operations are the primitive that makes convergence possible, projections
-are the primitive that makes convergence *usable* — they're the other half
-of the same idea, not a feature bolted onto it.
+```
+Immutable operations
+        ↓
+Deterministic replay
+        ↓
+Projections
+        ↓
+Materializations
+        ↓
+Applications
+```
+
+A working definition, where every word is load-bearing:
+
+> A projection is a **deterministic**, **materialized** **interpretation** of
+> **immutable operation history**.
+
+- **Deterministic** — every peer computes the same result from the same history.
+- **Materialized** — it's actual usable state, not a query expression you evaluate later.
+- **Interpretation** — the operation log doesn't prescribe one single "view"; the same history supports many.
+- **Immutable operation history** — a projection is derived from the DAG. It is never the source of truth itself.
+
+## The mechanism
 
 ```mermaid
 flowchart LR
@@ -23,12 +48,32 @@ flowchart LR
     Proj --> View3[Speculative or canonical lane]
 ```
 
-## Why this is a primitive, not a feature
+## Two kinds of projections
+
+**State projections** produce canonical state that lives back in the room's
+data model — maps, lists, text, blob references, indexes. These are what
+`resolve` / `resolve_canonical` / `resolve_list` return, and what the
+speculative/canonical lanes are built from. They're still "state" by another
+name.
+
+**Materialization projections** produce something that lives *outside* the
+state graph entirely — a deterministic function of history that outputs a
+different kind of artifact altogether. The concrete shipped example today is
+[NodalMerge Studio's repository virtualization](/studio/guides/repository-virtualization):
+each work-unit branch gets a real, physically isolated working directory on
+disk, derived deterministically from that branch's state. The same pattern
+generalizes to other materializations — a search index, a generated build
+output, an audit timeline export — without changing anything about the
+underlying history. Those aren't shipped as built-in projection types today;
+the point is that the mechanism doesn't care, because a materialization is
+still just a deterministic function of the same immutable operations.
+
+## Why this is a powerful consequence, not a special case
 
 Most systems that separate "log" from "read model" treat the read model as
 one specific integration — a search index, a cache, a materialized SQL view.
-NodalMerge treats the *shape of that separation itself* as the core
-abstraction, and reuses it everywhere:
+NodalMerge treats the *shape of that separation itself* as reusable, and
+applies it everywhere:
 
 - **Map, text, and list state** — `resolve` / `resolve_canonical` /
   `resolve_list` are projections over the room DAG, incrementally maintained
@@ -52,7 +97,9 @@ abstraction, and reuses it everywhere:
   [architecture/replay-and-branching](/architecture/replay-and-branching).
 
 One mechanism — deterministic replay of immutable operations into a
-materialized view — covers all four. Nothing here is a special case.
+materialized view — covers all four. Nothing here is a special case, and
+none of it would exist without operations as the single source of truth
+underneath it.
 
 ## What makes a projection safe to treat this way
 
@@ -82,9 +129,9 @@ A projection is a pure function of the history it was built from:
 Without a shared projection model, "read model" tends to mean N different
 bespoke mechanisms — one for your UI's live state, one for search, one for
 an audit export, one for offline caching — each with its own invalidation
-bugs. With projections as the primitive, all of those are the same
-operation (replay history into a view) with different descriptors and
-checkpoints, which means:
+bugs. With projections as the standard consequence of replaying operations,
+all of those are the same operation (replay history into a view) with
+different descriptors and checkpoints, which means:
 
 - Debugging a divergent read is always the same question: *which history,
   replayed through which projection, at which checkpoint?*
@@ -92,6 +139,17 @@ checkpoints, which means:
   new subsystem.
 - Caching is safe by construction — a stale or corrupted projection is
   never a source-of-truth problem, only a rebuild.
+
+## Terminology note
+
+"Projection" is overloaded — CQRS, event sourcing, and plain databases each
+use it slightly differently. The first few times it helps to say
+**deterministic projection** or **programmable materialized view** in full;
+once the concept is anchored, "projection" alone is fine.
+[NodalMerge Studio](/studio/concepts/overview) builds on this concept but
+uses "projection" to refer to a compressed, agent-oriented view of
+work-unit state, rather than a materialized interpretation of the operation
+DAG.
 
 ## Related pages
 
@@ -101,3 +159,5 @@ checkpoints, which means:
 - [architecture/replay-and-branching](/architecture/replay-and-branching)
 - [api-reference/websocket-commands](/api-reference/websocket-commands#query-and-projection-commands)
 - [benchmarks/text-engine-performance](/benchmarks/text-engine-performance)
+- [studio/guides/repository-virtualization](/studio/guides/repository-virtualization) — a shipped materialization projection
+- [studio/concepts/overview](/studio/concepts/overview) — Studio's distinct, agent-context use of "projection"

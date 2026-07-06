@@ -72,8 +72,11 @@ always produces the same projection, which is what makes projections safe to
 rebuild, cache, invalidate, and register per-query rather than hand-rolled
 per feature.
 
-This is one of the two primitives (alongside immutable operations) that
-everything else in NodalMerge is built from — see
+Operations are the primitive NodalMerge is built from; projections are the
+most powerful *consequence* of that primitive, not a second one — the same
+history can become canonical state, a registered query view, a speculative
+lane, or a materialization outside the state graph entirely, without
+changing anything upstream. See
 [architecture/projections](/architecture/projections) for the dedicated
 walkthrough.
 

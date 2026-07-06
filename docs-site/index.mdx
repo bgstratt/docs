@@ -1,13 +1,13 @@
 ---
 title: "NodalMerge"
-description: "A local-first, deterministic replication engine built around CRDT history replay, room-based sync, and policy-governed authority."
+description: "A local-first distributed state engine built around immutable operations, deterministic replay, and programmable projections."
 ---
 
 {/* ── HERO ──────────────────────────────────────────────────── */}
 
 <div class="nm-hero">
   <div class="nm-hero-eyebrow">
-    Local-first &nbsp;·&nbsp; Deterministic &nbsp;·&nbsp; CRDT
+    Local-first &nbsp;·&nbsp; Deterministic &nbsp;·&nbsp; Distributed state
   </div>
 
   <h1 class="nm-hero-title">
@@ -18,9 +18,9 @@ description: "A local-first, deterministic replication engine built around CRDT 
   <p class="nm-hero-subtitle">
     Build collaborative, offline-first, and distributed applications without
     designing your own synchronization, conflict resolution, replay, or
-    replication layer. NodalMerge is a replication engine built around
-    deterministic history replay — write locally, merge concurrently, converge
-    deterministically, with full audit-grade replay semantics.
+    replication layer. NodalMerge is a local-first distributed state engine:
+    write locally, merge concurrently, converge deterministically, with full
+    audit-grade replay semantics.
   </p>
 
   <div class="nm-hero-actions">
@@ -61,9 +61,9 @@ description: "A local-first, deterministic replication engine built around CRDT 
   <span class="nm-pill nm-pill-amber">Audit-grade history</span>
 </div>
 
-{/* ── MEASURED, NOT HAND-WAVED ──────────────────────────────── */}
+{/* ── REAL-WORLD MEASUREMENTS ──────────────────────────────── */}
 
-<div class="nm-section-label">Measured, not hand-waved</div>
+<div class="nm-section-label">Real-world measurements</div>
 
 <div class="nm-feature-row">
   <div class="nm-feature-item">
@@ -71,11 +71,11 @@ description: "A local-first, deterministic replication engine built around CRDT 
     <p class="nm-feature-desc">Native Rust core — real-world 259,778-edit editing trace, hash-linked DAG, per-character identity, policy checks all included.</p>
   </div>
   <div class="nm-feature-item">
-    <p class="nm-feature-title">~120,000 ops/sec</p>
+    <p class="nm-feature-title">119,482 ops/sec</p>
     <p class="nm-feature-desc">Same engine, same trace, running in-browser via WASM — try it live in the <a href="https://nodalmerge.com/demos/bench-trace">Engine benchmark demo</a>.</p>
   </div>
   <div class="nm-feature-item">
-    <p class="nm-feature-title">~27,000 ops/sec</p>
+    <p class="nm-feature-title">27,110 ops/sec</p>
     <p class="nm-feature-desc">Same browser run, with an Ed25519 signature on every operation — the integrity work most CRDT libraries skip entirely.</p>
   </div>
 </div>
@@ -83,6 +83,25 @@ description: "A local-first, deterministic replication engine built around CRDT 
 <p class="nm-section-desc">
   See <a href="/benchmarks/text-engine-performance">benchmarks/text-engine-performance</a> for methodology, environment, and how to read these numbers safely.
 </p>
+
+{/* ── HOW IT WORKS ──────────────────────────────────────────── */}
+
+<div class="nm-section-label" style={{ marginTop: "3rem" }}>How it works</div>
+
+```mermaid
+flowchart LR
+    Client[Client] --> Operation[Operation]
+    Operation --> DAG[DAG]
+    DAG --> Replay[Deterministic replay]
+    Replay --> Projection[Projection]
+    Projection --> View[Materialized view]
+```
+
+Two primitives do all the work: **immutable operations** are what every peer
+stores and exchanges, and **programmable projections** are what your product
+reads. See [architecture/overview](/architecture/overview) for the full
+layer breakdown and [architecture/projections](/architecture/projections)
+for why that second primitive is the more underrated of the two.
 
 {/* ── CHOOSE YOUR PATH ──────────────────────────────────────── */}
 

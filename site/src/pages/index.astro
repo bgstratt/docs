@@ -39,20 +39,20 @@ const features = [
 ---
 <BaseLayout
   title="NodalMerge"
-  description="A local-first, deterministic replication engine built around CRDT history replay, room-based sync, and policy-governed authority."
+  description="A local-first distributed state engine built around immutable operations, deterministic replay, and programmable projections."
 >
   <section class="nm-hero">
     <div class="nm-hero-inner">
-      <div class="nm-hero-eyebrow">Local-first · Deterministic · CRDT</div>
+      <div class="nm-hero-eyebrow">Local-first · Deterministic · Distributed state</div>
       <h1 class="nm-hero-title">
         Build collaborative systems that <span class="nm-gradient-text">converge</span>
       </h1>
       <p class="nm-hero-subtitle">
         Build collaborative, offline-first, and distributed applications without
         designing your own synchronization, conflict resolution, replay, or
-        replication layer. NodalMerge is a replication engine built around
-        deterministic history replay — write locally, merge concurrently, converge
-        deterministically, with full audit-grade replay semantics.
+        replication layer. NodalMerge is a local-first distributed state engine:
+        write locally, merge concurrently, converge deterministically, with full
+        audit-grade replay semantics.
       </p>
       <div class="nm-hero-actions">
         <a href={`${DOCS_URL}/quickstart`} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-primary">Get started →</a>
@@ -82,21 +82,43 @@ const features = [
     </section>
 
     <section class="nm-section">
-      <div class="nm-section-label">Measured, not hand-waved</div>
+      <div class="nm-section-label">Real-world measurements</div>
       <div class="nm-feature-row">
         <div class="nm-feature-item">
           <p class="nm-feature-title">294,521 ops/sec</p>
           <p class="nm-feature-desc">Native Rust core — real-world 259,778-edit editing trace, hash-linked DAG, per-character identity, policy checks all included.</p>
         </div>
         <div class="nm-feature-item">
-          <p class="nm-feature-title">~120,000 ops/sec</p>
+          <p class="nm-feature-title">119,482 ops/sec</p>
           <p class="nm-feature-desc">Same engine, same trace, running in-browser via WASM — try it live in the <a href="/demos/bench-trace">Engine benchmark demo</a>.</p>
         </div>
         <div class="nm-feature-item">
-          <p class="nm-feature-title">~27,000 ops/sec</p>
+          <p class="nm-feature-title">27,110 ops/sec</p>
           <p class="nm-feature-desc">Same browser run, with an Ed25519 signature on every operation — the integrity work most CRDT libraries skip entirely.</p>
         </div>
       </div>
+    </section>
+
+    <section class="nm-section">
+      <div class="nm-section-label">How it works</div>
+      <div class="nm-flow">
+        <div class="nm-flow-step">Client</div>
+        <div class="nm-flow-arrow">→</div>
+        <div class="nm-flow-step">Operation</div>
+        <div class="nm-flow-arrow">→</div>
+        <div class="nm-flow-step">DAG</div>
+        <div class="nm-flow-arrow">→</div>
+        <div class="nm-flow-step">Deterministic replay</div>
+        <div class="nm-flow-arrow">→</div>
+        <div class="nm-flow-step nm-flow-step-brand">Projection</div>
+        <div class="nm-flow-arrow">→</div>
+        <div class="nm-flow-step">Materialized view</div>
+      </div>
+      <p class="nm-section-desc">
+        Two primitives do all the work: immutable operations are what every peer stores and
+        exchanges, and programmable projections are what your product reads. See
+        <a href={`${DOCS_URL}/architecture/overview`} target="_blank" rel="noopener noreferrer"> architecture/overview</a> for the full model.
+      </p>
     </section>
 
     <section class="nm-section">
@@ -166,6 +188,34 @@ const features = [
 </BaseLayout>
 
 <style>
+  .nm-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--nm-sp-3);
+    margin: var(--nm-sp-6) 0;
+  }
+  .nm-flow-step {
+    padding: var(--nm-sp-3) var(--nm-sp-5);
+    border-radius: var(--nm-radius-lg);
+    border: 1px solid var(--nm-border-subtle);
+    font-size: var(--nm-text-sm);
+    font-weight: 600;
+    color: var(--nm-text-2);
+    white-space: nowrap;
+  }
+  .nm-flow-step-brand {
+    color: var(--nm-text-brand);
+    border-color: var(--nm-text-brand);
+  }
+  .nm-flow-arrow {
+    color: var(--nm-text-4);
+    font-size: var(--nm-text-lg);
+  }
+  @media (max-width: 640px) {
+    .nm-flow { flex-direction: column; align-items: flex-start; }
+    .nm-flow-arrow { transform: rotate(90deg); margin-left: var(--nm-sp-5); }
+  }
   .nm-studio-teaser {
     display: grid;
     grid-template-columns: 1.1fr 0.9fr;

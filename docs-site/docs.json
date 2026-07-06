@@ -79,6 +79,7 @@
               "architecture/overview",
               "architecture/mental-model",
               "architecture/crdt-model",
+              "architecture/projections",
               "architecture/speculative-vs-authoritative",
               "architecture/replay-and-branching",
               "architecture/authority-and-topology",

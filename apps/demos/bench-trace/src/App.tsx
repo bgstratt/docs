@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import bridgeWasmUrl from "nodalmerge-bridge/nodalmerge_bridge_bg.wasm?url";
+import { SiteBrand } from "../../../../shared/ui/SiteBrand";
 import {
   runBench,
   type BenchProgress,
@@ -186,6 +187,7 @@ export default function App() {
   return (
     <main className="nm-app">
       <header className="nm-page-header">
+        <SiteBrand href="https://nodalmerge.com/demos" />
         <h1 className="nm-page-title">Engine benchmark — live in your browser</h1>
         <p className="nm-page-desc">
           Replay a real collaborative-editing trace (the automerge-perf B4 dataset: 259,778

@@ -146,6 +146,28 @@ hr {
   background: var(--nm-bg-surface);
 }
 
+.nm-site-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nm-sp-2);
+  margin-bottom: var(--nm-sp-3);
+  color: var(--nm-text-1);
+  font-weight: 700;
+  font-size: var(--nm-text-md);
+  letter-spacing: -0.01em;
+}
+
+.nm-site-brand:hover {
+  text-decoration: none;
+  color: var(--nm-text-brand);
+}
+
+.nm-site-brand-mark {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
 .nm-page-title {
   margin: 0 0 4px 0;
   font-size: var(--nm-text-xl);

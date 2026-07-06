@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import bridgeWasmUrl from "nodalmerge-bridge/nodalmerge_bridge_bg.wasm?url";
 import type { Doc, PresencePeer } from "nodalmerge-sdk-js/doc";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
+import { SiteBrand } from "../../../../shared/ui/SiteBrand";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
 import { createDemoDoc } from "../../../../shared/sdk/createDemoDoc";
 import { createDocDiagnostics, type DocDiagnostics } from "../../../../shared/sdk/diagnosticsAdapter";
@@ -253,6 +254,7 @@ export default function App() {
   return (
     <main className="nm-app">
       <header className="nm-page-header">
+        <SiteBrand href="https://nodalmerge.com/demos" />
         <h1 className="nm-page-title">Collab maps</h1>
         <p className="nm-page-desc">
           Shared map pins on the NodalMerge CRDT — every pin is its own replicated key, so

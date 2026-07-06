@@ -4,6 +4,7 @@ import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
 import { RuntimeClient } from "../../../../shared/runtime/runtimeClient";
 import { connectWithRoomFallback } from "../../../../shared/runtime/roomFallback";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
+import { SiteBrand } from "../../../../shared/ui/SiteBrand";
 import { SdkRuntimeClient, type SharedWriteResult } from "./lib/sdkRuntimeClient";
 import {
   ALL_REPLAY_OP_KEY_PREFIX,
@@ -2697,6 +2698,7 @@ export default function App() {
   return (
     <main className="nm-app">
       <header className="nm-page-header">
+        <SiteBrand href="https://nodalmerge.com/demos" />
         <h1 className="nm-page-title">Workflow demo</h1>
         <p className="nm-page-desc">
           Branch, replay, and merge a shared workflow: scrub the timeline, diverge from any node, and converge back to the live head — with peers visible in real time.

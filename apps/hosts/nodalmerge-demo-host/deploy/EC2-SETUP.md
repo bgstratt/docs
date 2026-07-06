@@ -53,7 +53,7 @@ docker save nodalmerge-demo-host:0.1.5 | gzip > nodalmerge-demo-host-0.1.5.tar.g
 scp nodalmerge-demo-host-0.1.5.tar.gz ubuntu@api.nodalmerge.com:/tmp/
 
 # box:
-gunzip -c /tmp/nodalmerge-demo-host-0.1.5.tar.gz | docker load
+gunzip -c /tmp/nodalmerge-demo-host-0.2.0.tar.gz | docker load
 ```
 
 ## 4. Run it

@@ -41,19 +41,19 @@ restores NodalMerge 0.1.4 from nuget.org, no Rust toolchain involved):
 ```bash
 # from a checkout of the docs repo on the box:
 cd docs/apps/hosts/nodalmerge-demo-host
-docker build -t nodalmerge-demo-host:0.1.4 -f deploy/docker/Dockerfile .
+docker build -t nodalmerge-demo-host:0.1.5 -f deploy/docker/Dockerfile .
 ```
 
 Option B — build locally, ship the tarball (keeps the box small):
 
 ```bash
 # local machine (repo: docs/apps/hosts/nodalmerge-demo-host):
-docker build -t nodalmerge-demo-host:0.1.4 -f deploy/docker/Dockerfile .
-docker save nodalmerge-demo-host:0.1.4 | gzip > nodalmerge-demo-host-0.1.4.tar.gz
-scp nodalmerge-demo-host-0.1.4.tar.gz ubuntu@api.nodalmerge.com:/tmp/
+docker build -t nodalmerge-demo-host:0.1.5 -f deploy/docker/Dockerfile .
+docker save nodalmerge-demo-host:0.1.5 | gzip > nodalmerge-demo-host-0.1.5.tar.gz
+scp nodalmerge-demo-host-0.1.5.tar.gz ubuntu@api.nodalmerge.com:/tmp/
 
 # box:
-gunzip -c /tmp/nodalmerge-demo-host-0.1.4.tar.gz | docker load
+gunzip -c /tmp/nodalmerge-demo-host-0.1.5.tar.gz | docker load
 ```
 
 ## 4. Run it

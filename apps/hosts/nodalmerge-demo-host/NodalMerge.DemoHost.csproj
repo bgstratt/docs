@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <NodalMergePackageVersion Condition="'$(NodalMergePackageVersion)' == ''">0.1.4</NodalMergePackageVersion>
+    <NodalMergePackageVersion Condition="'$(NodalMergePackageVersion)' == ''">0.1.5</NodalMergePackageVersion>
     <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
   </PropertyGroup>
 

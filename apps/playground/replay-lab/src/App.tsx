@@ -3,6 +3,7 @@ import { loadRuntimeConfig } from "../../../../shared/runtime/config";
 import type { RuntimeDiagnostics } from "../../../../shared/runtime/contracts";
 import { RuntimeClient } from "../../../../shared/runtime/runtimeClient";
 import { DiagnosticsPanel } from "../../../../shared/ui/DiagnosticsPanel";
+import { SiteBrand } from "../../../../shared/ui/SiteBrand";
 
 const config = loadRuntimeConfig(import.meta.env as Record<string, string | undefined>);
 const client = new RuntimeClient(config, { pubkeyPrefix: "replay", maxEvents: 60 });
@@ -397,6 +398,7 @@ export default function App() {
   return (
     <main className="nm-app">
       <header className="nm-page-header">
+        <SiteBrand href="https://nodalmerge.com/playground" />
         <h1 className="nm-page-title">Replay lab</h1>
         <p className="nm-page-desc">
           Capture runtime snapshots, inspect event payload summaries, and adjust replay range windows.

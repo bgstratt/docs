@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40" width="200" height="40" role="img" aria-label="NodalMerge">
+  <image href="icon.png" x="0" y="0" width="40" height="40" />
+  <text
+    x="50"
+    y="27"
+    font-family="Inter, system-ui, -apple-system, 'Segoe UI', sans-serif"
+    font-size="22"
+    font-weight="700"
+    letter-spacing="-0.2"
+    fill="#f1f5f9"
+  >NodalMerge</text>
+</svg>

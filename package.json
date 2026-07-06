@@ -12,8 +12,8 @@
     "build:all": "npm run build:site && npm run build:apps"
   },
   "dependencies": {
-    "nodalmerge-bridge": "file:../nodalmerge/artifacts/package-local/npm/nodalmerge-bridge-0.1.4.tgz",
-    "nodalmerge-sdk-js": "file:../nodalmerge/artifacts/package-local/npm/nodalmerge-sdk-js-0.1.6.tgz"
+    "nodalmerge-bridge": "file:../nodalmerge/artifacts/package-local/npm/nodalmerge-bridge-0.2.0.tgz",
+    "nodalmerge-sdk-js": "file:../nodalmerge/artifacts/package-local/npm/nodalmerge-sdk-js-0.2.0.tgz"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

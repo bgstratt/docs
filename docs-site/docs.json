@@ -32,8 +32,8 @@
   },
 
   "logo": {
-    "light": "/logo/icon.png",
-    "dark":  "/logo/icon.png"
+    "light": "/logo/wordmark-light.svg",
+    "dark":  "/logo/wordmark-dark.svg"
   },
 
   "navbar": {

@@ -1,6 +1,6 @@
 ---
 title: "NodalMerge"
-description: "A local-first distributed state engine built around immutable operations, deterministic replay, and programmable projections."
+description: "A local-first distributed state engine built around immutable operations — replayed deterministically into programmable projections."
 ---
 
 {/* ── HERO ──────────────────────────────────────────────────── */}
@@ -97,11 +97,14 @@ flowchart LR
     Projection --> View[Materialized view]
 ```
 
-Two primitives do all the work: **immutable operations** are what every peer
-stores and exchanges, and **programmable projections** are what your product
-reads. See [architecture/overview](/architecture/overview) for the full
-layer breakdown and [architecture/projections](/architecture/projections)
-for why that second primitive is the more underrated of the two.
+One primitive does the work: **immutable operations** are what every peer
+stores and exchanges. Everything you actually read — canonical state, a
+registered query view, a speculative lane, even a materialization outside
+the state graph — is a **programmable projection**, a deterministic
+consequence of replaying that same history. See
+[architecture/overview](/architecture/overview) for the full layer breakdown
+and [architecture/projections](/architecture/projections) for why that
+consequence is the most underrated part of the design.
 
 {/* ── CHOOSE YOUR PATH ──────────────────────────────────────── */}
 

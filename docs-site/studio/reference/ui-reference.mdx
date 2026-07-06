@@ -13,14 +13,30 @@ and to [Reference → API surface](/studio/reference/api-reference)'s backend ca
 
 | Command | What it opens |
 |---|---|
-| `NodalMerge: Open Studio` | The Studio shell — tabs for Goal Workspace, Activity Center, Model & Agent Studio, Decision Convergence, Pathways |
-| `NodalMerge: Open Review` | Decision Convergence, scoped to a specific merge proposal |
-| `NodalMerge: Open Decision Conflict` | Decision Convergence in conflict-resolution mode |
+| `NodalMerge: Open Studio` | The Studio shell — tabs for Goal Workspace, Model & Agent Studio, Activity Center, Review, Pathways, Insights, Projection Snapshots |
+| `NodalMerge: Open Review` | Review (this page's "Decision Convergence"), scoped to a specific merge proposal |
+| `NodalMerge: Open Decision Conflict` | Review in conflict-resolution mode |
+| `NodalMerge: Open Insights` | The Insights tab directly |
+| `NodalMerge: Start Local Runtime` | Starts the local Studio host if it isn't already running |
 | `NodalMerge: Restart Studio Host` | Restarts the embedded .NET host process |
 | `NodalMerge: Show Output` | Extension output channel (host logs) |
 
 {/* IMAGE: ui-ref-command-palette.png — VS Code command palette open, filtered to
-    "NodalMerge:" showing all five commands. See IMAGE_LIST.md. */}
+    "NodalMerge:" showing all seven commands. See IMAGE_LIST.md. */}
+
+## Side panel — quick launch
+
+The NodalMerge icon in the Activity Bar opens a webview sidebar — a quick-launch
+panel rather than a scaled-down copy of the Control Tower. It shows one line of
+positioning copy ("Agent orchestration, task management, and human review — backed
+by a persistent, branchable artifact graph") and five buttons: **Open Studio**,
+**Open Insights**, **Start Local Runtime**, **Restart Studio Host**, **Show Output**
+— each just dispatches the matching command above. There's no Open Review / Open
+Decision Conflict button here since those need a specific proposal to scope to;
+reach them via the command palette, a notification click-through, or from inside
+Review itself.
+
+![Side panel quick-launch panel and the Control Tower shell it opens](/images/quickstart-control-tower-shell.png)
 
 ## Goal Workspace
 
@@ -56,9 +72,11 @@ entry. `Multi-Model Comparison` picks 2 orchestrator profiles automatically and
 ignores the constraint field; the other three require every fork to have a
 constraint (the backend rejects the request otherwise).
 
-{/* IMAGE: ui-ref-goal-workspace-topbar.png — Goal Workspace topbar with Exploration
-    Strategy dropdown expanded and the fork config panel visible for an Architecture
-    Fork experiment. See IMAGE_LIST.md. */}
+![Goal Workspace topbar with the strategy dropdown expanded, showing Default, Multi-Model Comparison, Architecture Fork, Library Comparison, and Product Strategy Fork](/images/ui-ref-goal-workspace-topbar.png)
+
+The extension currently labels this dropdown **Investigation Strategy** rather than
+**Exploration Strategy** — a naming drift from this reference, not a different
+control.
 
 ### Decision Tree (left column)
 - Click a node to select it (loads its timeline + Decision Lens)
@@ -131,8 +149,7 @@ through the Goal Workspace's Decision Tree.
   decomposes the failed goal into fresh, independently-budgeted sub-slices and marks
   the original `Cancelled`, rather than resuming it)
 
-{/* IMAGE: ui-ref-activity-center.png — Activity Center with Active Goals, Running
-    Agents, and Pending Decisions sections populated. See IMAGE_LIST.md. */}
+![Activity Center with Active Goals, Running Agents, and Pending Decisions populated](/images/ui-ref-activity-center.png)
 
 ## Model & Agent Studio
 
@@ -173,7 +190,8 @@ host, or override per-goal at agent spawn time. See
 
 ## Decision Convergence
 
-The merge-review gate. Two modes depending on the proposal/work-unit state.
+The merge-review gate — labeled **Review** in the extension's tab bar. Two modes
+depending on the proposal/work-unit state.
 
 ### Proposal review mode
 - Status badge, source/target branch, confidence, goal, summary, rationale
@@ -190,9 +208,7 @@ The merge-review gate. Two modes depending on the proposal/work-unit state.
 Shows the conflict report; resolution itself happens by editing the conflicting
 branches outside the panel, then re-running the merger.
 
-{/* IMAGE: ui-ref-decision-convergence.png — Decision Convergence in proposal review
-    mode, split diff view with the Accept/Reject/Apply action row visible.
-    See IMAGE_LIST.md. */}
+![Review (Decision Convergence) in proposal review mode: rationale, split diff view, evidence, and the Accept/Reject/Apply action row](/images/ui-ref-decision-convergence.png)
 
 ## Pathways / Trajectory Replay
 
@@ -206,8 +222,7 @@ DAG visualization and historical scrubbing.
   + save checkpoint) · **↩ Restore Known Good** (pick a marked checkpoint for this
   branch and restore the branch's files to that point in place)
 
-{/* IMAGE: ui-ref-pathways-dag.png — Pathways panel showing the DAG canvas with the
-    scrubber mid-timeline and playback bar controls visible. See IMAGE_LIST.md. */}
+![Pathways timeline view with the scrubber mid-timeline and playback bar controls visible](/images/ui-ref-pathways-dag.png)
 
 ## Summary
 

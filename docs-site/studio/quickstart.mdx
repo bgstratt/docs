@@ -20,14 +20,29 @@ pulled from NuGet automatically.
 
 ## 2. Open the Control Tower
 
-Open the command palette (<kbd>Ctrl+Shift+P</kbd> / <kbd>Cmd+Shift+P</kbd>) and run
-`NodalMerge: Open Studio`. This opens the Control Tower — a tabbed shell with Goal
-Workspace, Activity Center, Model & Agent Studio, Decision Convergence, and Pathways.
+Two ways in:
 
-{/* IMAGE: quickstart-control-tower-shell.png — the Control Tower shell freshly
-    opened, showing the tab bar (Goal Workspace / Activity Center / Model & Agent
-    Studio / Decision Convergence / Pathways) with an empty Goal Workspace.
-    See IMAGE_LIST.md. */}
+- **Command palette** — <kbd>Ctrl+Shift+P</kbd> / <kbd>Cmd+Shift+P</kbd>, then run
+  `NodalMerge: Open Studio`.
+- **Side panel** — click the NodalMerge icon in the Activity Bar. This opens a
+  quick-launch panel ("Agent orchestration, task management, and human review —
+  backed by a persistent, branchable artifact graph") with five buttons: **Open
+  Studio**, **Open Insights**, **Start Local Runtime**, **Restart Studio Host**, and
+  **Show Output**.
+
+Either one opens the Control Tower — a tabbed shell with Goal Workspace, Model &
+Agent Studio, Activity Center, Review, Pathways, Insights, and Projection Snapshots.
+(The extension's tab labels have moved on a bit from a couple of names still used
+elsewhere in these docs — e.g. the merge-review gate is called "Decision
+Convergence" on this page and in the [UI reference](/studio/reference/ui-reference);
+the extension itself labels that tab **Review**.)
+
+![Side panel quick-launch (left) and the Control Tower shell with its full tab bar (right)](/images/quickstart-control-tower-shell.png)
+
+You can also reach `NodalMerge: Open Studio` and the rest of the command set from
+the command palette directly:
+
+![Command palette filtered to "noda", showing the full NodalMerge command set](/images/quickstart-extension-launch.png)
 
 ## 3. Configure an agent profile
 
@@ -56,9 +71,7 @@ Model API — no API key required). Store API keys via VS Code's `SecretStorage`
 (**Ctrl+Shift+P → "Preferences: Configure Runtime Arguments"**, or through the
 Model & Agent Studio panel's Profiles tab).
 
-{/* IMAGE: quickstart-model-agent-studio-profiles.png — Model & Agent Studio panel,
-    Profiles tab, showing the "+ Add Profile" form filled in with an orchestrator
-    profile. See IMAGE_LIST.md. */}
+![Model & Agent Studio, Profiles tab, with the Add Profile form filled in](/images/quickstart-model-agent-studio-profiles.png)
 
 ## 4. Run your first goal
 
@@ -83,9 +96,7 @@ Convergence for review (or shows up under Activity Center's "Pending Decisions")
 Inspect the diff, evidence, and rationale, then **Accept Decision** and **Apply
 Decision**.
 
-{/* IMAGE: quickstart-decision-convergence-review.png — Decision Convergence panel
-    in proposal review mode: diff view, evidence section with build/test results,
-    and the Accept/Reject/Apply action row. See IMAGE_LIST.md. */}
+![Review (Decision Convergence) in proposal review mode: rationale, split diff view, evidence, and the Accept/Reject/Apply action row](/images/ui-ref-decision-convergence.png)
 
 ## Next steps
 

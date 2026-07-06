@@ -54,9 +54,10 @@ const MODE_META: Record<SignMode, { barLabel: string; fillClass: string }> = {
 // most directly against the browser's *unsigned* pass; the signed pass adds
 // an Ed25519 signature per node on top.
 const NATIVE_REFERENCE = {
-  opsPerSec: 294_521,
+  opsPerSec: 294_654,
   totalMs: 882,
-  label: "Native engine (x86-64) — unsigned"
+  label: "Native engine (x86-64) — unsigned",
+  host: "AMD Ryzen 9 5900X desktop — recorded separately, not on this device"
 };
 
 const traceCache = new Map<string, TraceEdit[]>();
@@ -275,6 +276,12 @@ export default function App() {
               })}
 
               <p className="nm-section-label">Same engine, {throughputRows.length} configurations</p>
+              <p className="nm-card-desc nm-benchbar-caption">
+                The native bar is a fixed reference from {NATIVE_REFERENCE.host}, not a live
+                measurement of your device — the browser bars below it are running on whatever
+                you're reading this on right now, so treat the native/browser gap as
+                order-of-magnitude, not a controlled same-host comparison.
+              </p>
               <p className="nm-card-desc nm-benchbar-caption">Throughput — longer is faster:</p>
               <div className="nm-benchbars">
                 {throughputRows.map((row) => (

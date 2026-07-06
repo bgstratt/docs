@@ -48,9 +48,11 @@ const features = [
         Build collaborative systems that <span class="nm-gradient-text">converge</span>
       </h1>
       <p class="nm-hero-subtitle">
-        NodalMerge is a replication engine built around deterministic history replay.
-        Write locally, merge concurrently, converge deterministically — with full
-        audit-grade replay semantics.
+        Build collaborative, offline-first, and distributed applications without
+        designing your own synchronization, conflict resolution, replay, or
+        replication layer. NodalMerge is a replication engine built around
+        deterministic history replay — write locally, merge concurrently, converge
+        deterministically, with full audit-grade replay semantics.
       </p>
       <div class="nm-hero-actions">
         <a href={`${DOCS_URL}/quickstart`} target="_blank" rel="noopener noreferrer" class="nm-btn nm-btn-primary">Get started →</a>
@@ -76,6 +78,24 @@ const features = [
         <span class="nm-pill nm-pill-neutral">WebSocket-first</span>
         <span class="nm-pill nm-pill-neutral">IndexedDB persistence</span>
         <span class="nm-pill nm-pill-amber">Audit-grade history</span>
+      </div>
+    </section>
+
+    <section class="nm-section">
+      <div class="nm-section-label">Measured, not hand-waved</div>
+      <div class="nm-feature-row">
+        <div class="nm-feature-item">
+          <p class="nm-feature-title">294,521 ops/sec</p>
+          <p class="nm-feature-desc">Native Rust core — real-world 259,778-edit editing trace, hash-linked DAG, per-character identity, policy checks all included.</p>
+        </div>
+        <div class="nm-feature-item">
+          <p class="nm-feature-title">~120,000 ops/sec</p>
+          <p class="nm-feature-desc">Same engine, same trace, running in-browser via WASM — try it live in the <a href="/demos/bench-trace">Engine benchmark demo</a>.</p>
+        </div>
+        <div class="nm-feature-item">
+          <p class="nm-feature-title">~27,000 ops/sec</p>
+          <p class="nm-feature-desc">Same browser run, with an Ed25519 signature on every operation — the integrity work most CRDT libraries skip entirely.</p>
+        </div>
       </div>
     </section>
 

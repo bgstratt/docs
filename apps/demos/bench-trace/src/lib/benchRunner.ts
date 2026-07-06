@@ -46,6 +46,12 @@ export async function sha256Hex(text: string): Promise<string> {
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
+export interface RunOptions {
+  /** Skip Ed25519 signing of each node — isolates engine cost from crypto
+   *  cost. Only sane here because the doc never connects to a server. */
+  unsigned?: boolean;
+}
+
 /**
  * Run the trace. A fresh local-only doc is created per run so results are
  * clean and memory from prior runs is released with the old wasm store.
@@ -55,7 +61,8 @@ export async function runBench(
   expected: SliceMeta,
   wasmModule: string,
   onProgress: (progress: BenchProgress) => void,
-  shouldAbort?: () => boolean
+  shouldAbort?: () => boolean,
+  options: RunOptions = {}
 ): Promise<BenchResult | null> {
   const doc: Doc = await createDoc({
     // Never dialed: autoConnect is off and connect() is never called.
@@ -63,7 +70,8 @@ export async function runBench(
     room: `bench-${Date.now()}`,
     wasmModule,
     autoConnect: false,
-    transport: "ws-only"
+    transport: "ws-only",
+    unsignedNodes: options.unsigned === true
   });
 
   try {

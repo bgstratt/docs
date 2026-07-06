@@ -723,6 +723,7 @@ input[type="range"] {
 
 .nm-benchbar-fill-native { background: #0f766e; }
 .nm-benchbar-fill-browser { background: #2563eb; }
+.nm-benchbar-fill-browser-unsigned { background: #7c3aed; }
 
 .nm-benchbar-value {
   position: absolute;

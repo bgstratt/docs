@@ -241,6 +241,7 @@
               "studio/guides/domain-observers",
               "studio/guides/extending-goals",
               "studio/guides/headless-peer",
+              "studio/guides/standalone-host",
               "studio/guides/repository-virtualization",
               "studio/guides/build-from-source"
             ]

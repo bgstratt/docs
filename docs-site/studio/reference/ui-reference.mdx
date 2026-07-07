@@ -153,7 +153,8 @@ through the Goal Workspace's Decision Tree.
 
 ## Model & Agent Studio
 
-Configuration surface — profiles, templates, and session-wide defaults.
+Configuration surface — profiles, agent topology, session-wide defaults, and live
+participant monitoring. Six tabs.
 
 ### Profiles tab
 Table of agent profiles with **Edit** / **Delete** per row, **+ Add Profile**. The
@@ -161,12 +162,15 @@ form: ID, label, domain, LLM provider (VS Code LM / OpenAI-compatible / Anthropi
 model (with **↑ Refresh** to fetch live model list), base URL + API key (hidden for
 VS Code LM), system prompt hint. **Save Profiles** persists everything.
 
-### Exploration Strategies tab
-Topology templates (orchestrator + worker assignments): **Set Default**, **Edit**,
-**Delete**, **+ Add Exploration Strategy**. **Save Strategies** persists.
+### Agent Topology tab
+Topology templates — which profile fills each role (Orchestrator / Planner / Worker
+/ Reviewer) for a run: **Set Default**, **Edit**, **Delete**, **+ Add Topology**.
+**Save Strategies** persists. (This tab was called "Exploration Strategies"
+elsewhere in these docs and in the Quick Explore tab's own dropdown label — same
+templates, current tab label is **Agent Topology**.)
 
 ### Quick Explore tab
-One-off run: strategy, goal, "run automated review before human gate" checkbox,
+One-off run: topology, goal, "run automated review before human gate" checkbox,
 **▶ Quick Explore**.
 
 ### Pipeline Profiles tab
@@ -188,6 +192,17 @@ host, or override per-goal at agent spawn time. See
 [Guides → Domain observers](/studio/guides/domain-observers).
 </Note>
 
+### Participants tab
+A live table — **ID** (truncated, hover for full), **Kind**, **Status**
+(`running` / `connected` / `idle`), **Work Unit**, **Activity / Type** — covering
+both in-process agents (their current work-unit activity) and connected room peers
+(their declared peer type). **↻ Refresh** re-polls; **Stop** ends that participant
+after a confirmation prompt. This is the interactive surface for the same
+multi-peer model documented in
+[Concepts → Architecture § Multi-peer goal sourcing](/studio/concepts/architecture#multi-peer-goal-sourcing) —
+a persistent headless peer watching logs or alerts shows up here exactly like an
+interactively-spawned agent.
+
 ## Decision Convergence
 
 The merge-review gate — labeled **Review** in the extension's tab bar. Two modes
@@ -205,8 +220,13 @@ depending on the proposal/work-unit state.
   files)
 
 ### Conflict resolution mode
-Shows the conflict report; resolution itself happens by editing the conflicting
-branches outside the panel, then re-running the merger.
+Read-only: shows the conflict report and hides the entire action row (no Apply,
+Accept, or Reject button while a conflict is showing). There's no in-panel or
+in-extension action that retries the merge — resolving it means fixing the
+conflicting files outside Studio, then either applying the same proposal via the
+REST/MCP surface directly (`nm_v1_merge_apply` / `POST /studio/merges/{id}/apply`),
+or re-proposing from the current target state, which is what the conflict report
+itself recommends.
 
 ![Review (Decision Convergence) in proposal review mode: rationale, split diff view, evidence, and the Accept/Reject/Apply action row](/images/ui-ref-decision-convergence.png)
 
@@ -224,12 +244,73 @@ DAG visualization and historical scrubbing.
 
 ![Pathways timeline view with the scrubber mid-timeline and playback bar controls visible](/images/ui-ref-pathways-dag.png)
 
+## Insights
+
+Two independent surfaces, both manually triggered — nothing here runs on a timer or
+chains automatically into anything else.
+
+### Run Analysis
+**Last 30 Days** / **All Time** period selector, then **▶ Run Analysis** aggregates
+outcomes across every goal, work unit, and proposal recorded so far into an overview
+(session/work-unit counts and status breakdown, overall success rate, average
+rework cycles, top failure cause, most successful model, most successful topology)
+plus detail tables: model performance (overall and by pipeline stage), topology-fork
+win rates (overall and by constraint), failure causes, and review outcomes. This
+dashboard is itself a registered projection
+(`/studio/projections/RunRetrospective`) — see
+[Architecture → Projections](/architecture/projections) for what that guarantees
+about it.
+
+### Findings — knowledge & process improvements
+Two ways to populate the queue: **Detect Findings** (free, instant, deterministic
+pattern rules) and **Run LLM Scan** (calls a real model using your own configured
+credentials — real cost and latency, profile picked from a dropdown of profiles
+with a model set). Findings filter by status (**Open** / **Promoted** /
+**Dismissed** / **Investigating** / **All**); each has review actions to promote,
+dismiss, or mark investigating. **Export Selected** writes chosen findings to a
+portable JSON file (stripped of repo-specific IDs); **Import Findings…** brings
+findings exported from another repo back in.
+
+## Projection Snapshots
+
+An on-demand inspection tool for the AgentWorkspace projection — Studio's
+compressed, agent-consumable view of a work unit's state (see the terminology note
+in [Architecture → Projections](/architecture/projections) for how that differs
+from NodalMerge's own use of "projection"). Point-in-time captures here, not a live
+feed — unrelated to the Run Analysis dashboard above.
+
+### Captured Snapshots
+Enter a **Work Unit ID** and **Capture Snapshot** to freeze that unit's current
+AgentWorkspace projection (its artifact chain and inherited constraints) as an
+immutable, addressable snapshot. **Refresh List** reloads captures. Each listed
+snapshot can be checked for staleness — whether an artifact it referenced has since
+been invalidated elsewhere (the panel keeps a live room connection so a staleness
+badge can flip without a manual re-check).
+
+### Compare Two Snapshots
+Pick any two captured snapshots and **Compare** — a symmetric set difference:
+artifacts only in A, only in B, and artifacts present in both but with a differing
+status. This is the concrete way to answer "how did this fork diverge from that
+one?" without hand-diffing artifact chains.
+
+### Known Good States
+**Find** lists the marked Known Good checkpoints for a **Branch ID** (the same
+checkpoints the Pathways panel's **📌 Mark Known Good** / **↩ Restore Known Good**
+work with, above). **Diff Files** compares two states' file-level
+changes (added/removed/modified counts and per-file list) without touching disk.
+Restoring materializes the chosen state's files back onto disk — the same
+materialization mechanism as
+[Guides → Repository virtualization](/studio/guides/repository-virtualization),
+applied to a checkpoint instead of a live branch.
+
 ## Summary
 
 | Panel | Core job |
 |---|---|
 | Goal Workspace | Create goals, explore the Decision Tree, run experiments/steering/counterfactuals |
 | Activity Center | Direct work-unit/agent lifecycle without the Decision Tree |
-| Model & Agent Studio | Profiles, topology templates, session-wide defaults |
-| Decision Convergence | The human approval gate — accept/reject/apply |
+| Model & Agent Studio | Profiles, agent topology, session-wide defaults, live participants |
+| Decision Convergence ("Review" tab) | The human approval gate — accept/reject/apply |
 | Pathways | DAG visualization, timeline scrubbing, checkpoint marking |
+| Insights | Run-history analytics dashboard, plus the Findings knowledge-promotion queue |
+| Projection Snapshots | Capture, compare, and diff point-in-time AgentWorkspace projections and Known Good States |

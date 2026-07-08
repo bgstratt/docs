@@ -17,6 +17,7 @@ description: Key concepts behind NodalMerge Studio's agent orchestration model.
 | **Room** | Sync boundary for multi-peer NodalMerge replication. |
 | **Review Policy** | Per-work-unit setting (`Human Required` / `Agent Approval` / `Hybrid`) controlling who approves a proposal before it applies. |
 | **Candidate Branch** | Optional safety layer: when promotion branches are enabled, applies land here instead of `main` until a human explicitly promotes. |
+| **Candidate Conflict** / **Task Conflict** | Two proposals landing on the candidate branch (or two sibling work units under the same goal) touching the same file paths. Resolved by reconciling, restarting the losing goal, or resolving manually — see [Trust & autonomy → Reconciling candidate conflicts](/studio/concepts/trust-and-autonomy#reconciling-candidate-conflicts). |
 | **Experiment** | A parent work unit fanned out into 2+ sibling forks (different model, architecture, library, or product framing) that run in parallel for comparison. |
 | **Steering** | Pausing a running work unit and injecting a constraint, which forks a sibling that resumes with it — the original's decision log is never rewritten. |
 | **Counterfactual** | A sibling work unit branched from a completed proposal's base state and re-run under a different model/profile for comparison. |

@@ -45,6 +45,33 @@ Agent Work Branches  →  Candidate Branch  →  Main
 A goal can opt out of the candidate layer with the **Direct** target override,
 bypassing promotion even when it's on session-wide.
 
+## Reconciling candidate conflicts
+
+Multiple agents proposing changes onto the same `candidate` branch will
+occasionally touch the same file paths. Studio calls this a **Candidate
+Conflict** (or, when it's between two fan-out sibling work units of the same
+parent goal rather than session-wide, a **Task Conflict** — scoped to that one
+goal instead of the whole candidate branch). Either way, the losing proposal
+doesn't just disappear — it shows up in the Activity Center with three ways
+forward:
+
+- **Reconcile** — spawn a dedicated *reconciliation* work unit whose goal is
+  built automatically from the conflicting proposals' diffs (plus any steering
+  notes you add). If a **Reconciler** agent profile is configured in Model &
+  Agent Studio → Agent Topology, it auto-spawns; otherwise the goal is created
+  for you to spawn manually. This is the "let an agent sort it out" path.
+- **Restart** — reject the losing proposal and restart its goal in **Revert**
+  mode (a clean branch snapshot, not the Revise default) with your steering
+  notes as the only new context. This is the "let it try again from scratch"
+  path.
+- **Resolve manually** — submit the resolved file content yourself. It's
+  written straight to the candidate branch and recorded as a synthetic merged
+  proposal that supersedes the losing one(s) — no new work unit spawned at all.
+
+**View Conflict Diff** is available regardless of which path you pick — a
+read-only side-by-side of what's currently on the candidate branch versus the
+losing proposal's content, per conflicting file.
+
 ## Experiments — explore several approaches in parallel
 
 A goal can fan out into 2+ sibling work units that run concurrently and converge

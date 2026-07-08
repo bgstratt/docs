@@ -141,6 +141,24 @@ through the Goal Workspace's Decision Tree.
   agents and can be paused, resumed, or stopped from here — see
   [Guides → Headless peer](/studio/guides/headless-peer).
 - Pending Decisions: **Review Decision →**
+- Candidate Conflicts / Task Conflicts (only shown when promotion branches are on):
+  when two proposals touch the same file paths on the shared `candidate` branch (or
+  two fan-out sibling work units conflict on a per-goal basis), each conflict lists
+  the losing proposal against what's currently on the candidate branch, plus:
+  **View Conflict Diff** (opens a read-only side-by-side diff per conflicting file —
+  candidate content vs. the losing proposal's content), **Reconcile** (inline
+  steering-notes field, then spawns a dedicated reconciliation work unit seeded from
+  the candidate branch and the conflicting proposals' diffs — auto-spawns if a
+  **Reconciler** profile is configured in Model & Agent Studio → Agent Topology,
+  otherwise it's created for you to **Spawn** manually from Active Goals), **Restart**
+  (rejects the losing proposal and restarts its goal in **Revert** mode — always
+  Revert, not Revise, so the retry starts from a clean branch snapshot rather than
+  building on content that just lost the conflict), and **Resolve manually** (submit
+  resolved file content directly; it's written to the candidate branch and recorded
+  as a synthetic merged proposal that supersedes the losing ones). Task Conflicts
+  work the same way but are scoped to one parent work unit's sibling slices rather
+  than the whole session. See
+  [Concepts → Trust & autonomy § Reconciling candidate conflicts](/studio/concepts/trust-and-autonomy#reconciling-candidate-conflicts).
 - Blocked Explorations (dead-letter queue): **Retry** (when attempts remain) ·
   **Continue** (`MaxIterationsExceeded` only, also gated on attempts remaining —
   resumes the same work unit with its own prior conversation reconstructed and a
@@ -210,23 +228,31 @@ depending on the proposal/work-unit state.
 
 ### Proposal review mode
 - Status badge, source/target branch, confidence, goal, summary, rationale
-- Code Changes: **Inline** / **Split** diff toggle, per-file expand, **Open Diff in
-  Editor**
+- Code Changes: **Inline** / **Split** diff toggle, per-file expand, **View Diff
+  (read-only)**, **Edit File** (opens the file for direct editing; once you save, an
+  inline **Resync Workspace** button appears on that row to pull your edit back into
+  the work unit's branch before deciding)
 - Evidence: build/test results, **download full output** when truncated
 - Converged Decision section (if synthesized from multiple candidates): constituent
   proposal cards
-- **Validate Evidence** · **Accept Decision** · **Reject Decision** · **Apply
-  Decision** · **Fork Hypothesis** · **Restore workspace** (read-only pre-change
-  files)
+- **Validate Evidence** · **Accept Decision** · **Revise** (keep the agent's current
+  file changes, attach a compacted summary of the almost-correct attempt, and steer
+  it toward the gap) · **Revert and Restart** (wipe the work unit's branch back to
+  its pre-attempt snapshot and restart the goal fresh with just your steering note)
+  · **Apply Decision** · **Fork Hypothesis** · **Restore workspace** (read-only
+  pre-change files)
 
 ### Conflict resolution mode
-Read-only: shows the conflict report and hides the entire action row (no Apply,
-Accept, or Reject button while a conflict is showing). There's no in-panel or
-in-extension action that retries the merge — resolving it means fixing the
-conflicting files outside Studio, then either applying the same proposal via the
-REST/MCP surface directly (`nm_v1_merge_apply` / `POST /studio/merges/{id}/apply`),
-or re-proposing from the current target state, which is what the conflict report
-itself recommends.
+Reached via **NodalMerge: Open Decision Conflict** for a single work unit's own
+apply-time conflict (distinct from the Activity Center's candidate/task conflict
+list above, which is cross-proposal). Hides the Apply/Accept/Reject row and instead
+shows the conflict report with a per-file **Edit File** button — edit the
+conflicting file directly, then an inline **Resync Workspace** button appears on
+that row to pull the edit back into the work unit's branch. There's still no
+in-panel "retry the merge" button: once the files are resynced, apply the same
+proposal via the REST/MCP surface directly (`nm_v1_merge_apply` /
+`POST /studio/merges/{id}/apply`), or re-propose from the current target state,
+which is what the conflict report itself recommends.
 
 ![Review (Decision Convergence) in proposal review mode: rationale, split diff view, evidence, and the Accept/Reject/Apply action row](/images/ui-ref-decision-convergence.png)
 

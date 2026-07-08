@@ -291,6 +291,17 @@ segment can never match.
 - Branches: `GET /studio/branches`, `POST /studio/branches`,
   `POST /studio/branches/{id}/checkout`, `GET /studio/branches/{id}/status`,
   `POST /studio/branches/candidate/promote`
+- Candidate & task conflicts (reconciliation — see
+  [Concepts → Trust & autonomy § Reconciling candidate conflicts](/studio/concepts/trust-and-autonomy#reconciling-candidate-conflicts)):
+  `GET /studio/branches/candidate/conflicts`,
+  `POST /studio/branches/candidate/conflicts/{id}/reconcile`,
+  `POST /studio/branches/candidate/conflicts/{id}/resolve`,
+  `GET /studio/workunits/{id}/task-conflicts`,
+  `POST /studio/workunits/{id}/task-conflicts/{conflictId}/reconcile`,
+  `POST /studio/workunits/{id}/task-conflicts/{conflictId}/resolve`. The work unit's
+  own `/proposal-dag` (listed above) now also surfaces reconciliation edges, and
+  `GET /studio/merges/{id}/constituents` resolves a reconciled proposal back to its
+  source proposals.
 
 ### Known-good states & cache management
 - `POST /studio/state/markKnownGood`, `GET /studio/state/knownGood/{branchId}`,

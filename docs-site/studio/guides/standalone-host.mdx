@@ -1,0 +1,111 @@
+---
+title: Standalone Studio host
+description: Run the Studio host as its own long-lived process, decoupled from any single VS Code window — for shared team runtimes, remote deployment, or a room for headless peers to join.
+---
+
+# Standalone Studio host
+
+By default, the VS Code extension spawns and owns a Studio host process for you —
+that's the "embedded host" everywhere else in these docs. You can instead launch
+that same host yourself and point the extension (or nothing at all) at it. This
+page is about that mode: what it is, why you'd want it, and exactly how the
+extension decides whether to spawn its own host or adopt yours.
+
+## Same binary, different startup path
+
+`NodalMerge.Studio.Host` has two build paths (`Program.cs` picks one at startup):
+
+- **Server mode (default)** — no `--mode peer` argument, no `STUDIO_MODE=peer`, no
+  `Peer:Enabled: true`. Starts the full ASP.NET host: REST API, MCP-over-HTTP, and
+  the WebSocket room server, bound to `Studio:Urls` (default
+  `http://127.0.0.1:5080`). This is exactly what runs whether the extension spawned
+  it or you did — "standalone" just means *you* own the process lifecycle instead
+  of the extension.
+- **Peer mode** — see [Guides → Headless peer](/studio/guides/headless-peer). No
+  HTTP/MCP server at all; runs agent loops only, optionally connecting *out* to a
+  room host via `Peer:HostUri`. A standalone server-mode instance is what a
+  connected headless peer's `Peer:HostUri` actually points at.
+
+## Why run one
+
+- **Share one room across multiple people.** Each VS Code window's extension
+  normally spawns its own isolated local host. Pointing several extensions at one
+  standalone instance instead gives you genuine multi-peer collaboration in a
+  single room, rather than N independent single-player instances.
+- **Decouple the host's lifecycle from the editor.** Keep it running across VS Code
+  restarts, run it on a separate machine, under a process supervisor, or in a
+  container.
+- **Give headless peers something to connect to.** A connected-mode headless peer
+  (`Peer:HostUri` set) needs an actual room host on the other end — that's this.
+- **Serve external MCP/REST clients** (CI, an eval harness, another tool) without
+  any VS Code window ever being open.
+
+## Launching it
+
+No source checkout required — the packaged extension already ships a
+self-contained host binary inside its own install directory, at
+`bin/<rid>/NodalMerge.Studio.Host` (`.exe` on Windows; `<rid>` is a standard .NET
+RID like `win-x64`, `linux-x64`, `osx-arm64`). Run that binary directly to get a
+standalone instance without building anything.
+
+Building from source instead: see [Guides → Build from source](/studio/guides/build-from-source),
+then run the host directly rather than via `scripts/dev.ps1`'s dev-loop wrapper:
+
+```powershell
+dotnet run --project src/NodalMerge.Studio.Host
+```
+
+Either way, verify it's up:
+
+```bash
+curl http://127.0.0.1:5080/health
+curl http://127.0.0.1:5080/studio/health
+```
+
+## Pointing the extension at it
+
+Set `nodalmerge.runtimeUri` (VS Code setting) to the standalone host's address.
+What happens next depends on whether the extension considers that address local or
+remote (loopback hostnames — `localhost`, `127.0.0.1`, `::1` — count as local;
+everything else is remote):
+
+- **Local, nothing healthy there yet** — the extension spawns and owns its own
+  instance on that port. This is the ordinary embedded-host path, not standalone.
+- **Local, something already healthy there for this same workspace** — the
+  extension *adopts* it instead of spawning a duplicate. This is how you attach the
+  extension to an instance you started yourself. Two caveats: the extension didn't
+  spawn that process, so it won't stream its logs to the NodalMerge Output channel,
+  and `NodalMerge: Restart Studio Host` won't do anything to it. Stop it yourself,
+  then run that command if you want the extension to spawn (and thereafter own and
+  stream logs for) its replacement.
+- **Local, but healthy for a *different* workspace** — the extension assumes
+  another VS Code window got there first and spawns its own instance on a
+  different free port instead, rather than attaching this window's UI to another
+  repo's data.
+- **Remote** (any non-loopback host) — the extension never spawns anything; it
+  only health-checks and connects. If unreachable, you get an explicit error
+  telling you to make sure the remote runtime is running and accessible.
+
+`NodalMerge: Start Local Runtime` (command palette, or the side-panel quick-launch
+button — see [Reference → Control Tower UI](/studio/reference/ui-reference)'s
+"Side panel — quick launch" section) explicitly spawns a local instance even while
+a remote `runtimeUri` is configured, for when you want both at once.
+
+## Configuration
+
+A standalone instance takes the same configuration surface as any other Studio
+host — `Studio:Urls` for the bind address, plus the `Workspace:*` keys
+(`RootPath`, `AllowAgentGitCommits`, `AllowAgentGitPush`, `EnabledDomainAgents`,
+etc. — see [Guides → Repository virtualization](/studio/guides/repository-virtualization)
+for the full reference) via `appsettings.json`, environment variables, or CLI
+arguments. When the extension spawns a host itself, it derives these paths
+automatically from VS Code's per-workspace storage (or `nodalmerge.workspaceDataPath`
+if set); a standalone instance you launch yourself is responsible for its own
+config instead.
+
+## Related pages
+
+- [Guides → Headless peer](/studio/guides/headless-peer)
+- [Guides → Repository virtualization](/studio/guides/repository-virtualization)
+- [Guides → Build from source](/studio/guides/build-from-source)
+- [Concepts → Architecture](/studio/concepts/architecture)

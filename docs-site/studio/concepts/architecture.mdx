@@ -36,7 +36,8 @@ extension exposes an HTTP server and MCP-over-HTTP; a headless peer does not. Se
 
 | Surface | Status | What it is |
 |---|---|---|
-| VS Code extension ("Control Tower") | Functional, primary UI | Tabbed webview: Goal Workspace, Activity Center, Model & Agent Studio, Decision Convergence, Pathways |
+| VS Code extension ("Control Tower") | Functional, primary UI | Tabbed webview: Goal Workspace, Model & Agent Studio, Activity Center, Review, Pathways, Insights, Projection Snapshots |
+| Standalone Studio host | Functional | The same host binary, run and owned outside the extension's lifecycle — a shared team runtime, remote deployment, or the room a headless peer connects to. See [Guides → Standalone Studio host](/studio/guides/standalone-host). |
 | Headless peer | Functional | Runs the full agent runtime with no HTTP server — the integration point for CI/CD and programmatic goal injection |
 | Web dashboard | Placeholder | Not yet built |
 
@@ -48,7 +49,9 @@ system, or a different human's Studio instance connected to the same room — ca
 create goals and record constraint artifacts alongside interactively created ones.
 See [Guides → Extending goals](/studio/guides/extending-goals) for the REST surface and
 [Guides → Headless peer](/studio/guides/headless-peer) for how a connected peer joins a
-room and appears in the extension in real time.
+room and appears in the extension in real time — in the Model & Agent Studio tab's
+[Participants table](/studio/reference/ui-reference#participants-tab), alongside
+interactively-spawned agents.
 
 This matters architecturally because **every goal, regardless of source, funnels
 through the same governance surface**: review policy (`Human Required` / `Agent

@@ -12,7 +12,10 @@ background workers, and non-interactive goal injection.
 
 The embedded Studio host (the server powering the VS Code extension) and a headless
 peer are built from the same binary — the only difference is the build path used at
-startup.
+startup. See [Guides → Standalone Studio host](/studio/guides/standalone-host) for
+running that other build path (the full server, not a peer) as its own long-lived
+process — which is also what a connected peer's `Peer:HostUri` below actually
+points at.
 
 ## Two modes
 

@@ -11,7 +11,7 @@ each one.
 
 Ground truth (verified directly against source, not the tables below — the tables
 illustrate shape/category, not an exhaustive per-tool listing): **117 `nm_v1_*` MCP
-tools**, **72 of them** dispatched in-process to autonomous agents, **14 `nms_v1_*`
+tools**, **72 of them** dispatched in-process to autonomous agents, **15 `nms_v1_*`
 external-caller tools**, and **187 REST routes**.
 
 <Note>
@@ -40,6 +40,7 @@ host and the same error envelope format.
 | `nms_v1_goal_list` | List all goals with current status. |
 | `nms_v1_goal_status` | Detailed status for one goal, including pending clarifications, an unresolved failure if the goal is dead-lettered (with which recovery actions currently apply), and session state. |
 | `nms_v1_goal_cancel` | Cancel a goal and its entire subtree. Completed or merged work units are left untouched. |
+| `nms_v1_goal_requeue` | Un-cancel a goal and resume it — the inverse of `nms_v1_goal_cancel`. A leaf work unit is re-queued for a worker; a fan-out parent re-attempts reconciliation. Optional override params resupply LLM credentials without starting a new orchestrator loop. |
 | `nms_v1_goal_pause` | Pause a goal and all its active agents. |
 | `nms_v1_goal_resume` | Resume a paused goal. Optionally inject a steering message. |
 | `nms_v1_goal_recover` | Recover a dead-lettered goal — `action` is one of `retry`, `retry_with_context`, `continue` (`MaxIterationsExceeded` only), or `replan`. Resolves the goal's own latest dead-letter entry internally; no entry ID needed. |
@@ -278,7 +279,8 @@ segment can never match.
 - Work units: `GET/POST /studio/workunits`, `GET /studio/workunits/{id}`
   (+`/children`, `/artifacts`, `/orchestration-events`, `/intents`,
   `/conflict-report`, `/proposal-dag`), `POST /studio/workunits/{id}/cancel`,
-  `POST /studio/stop-all`
+  `POST /studio/workunits/{id}/requeue` (un-cancel and resume; optional credential
+  overrides), `POST /studio/stop-all`
 - Tasks: `GET /studio/tasks`, `GET /studio/tasks/{id}`, `POST /studio/tasks`,
   `PUT /studio/tasks/{id}`, `POST /studio/tasks/{id}/assign`
 - Agents: `GET /studio/agents` (`?all=true` for all), `POST /studio/agents/spawn`,

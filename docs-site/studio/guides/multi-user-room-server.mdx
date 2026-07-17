@@ -1,0 +1,170 @@
+---
+title: Multi-user room server
+description: Run one Studio host as a shared room server so people on different machines collaborate in the same room — with each person keeping their own local runtime and workspace.
+---
+
+# Multi-user room server
+
+This guide is the practical, end-to-end recipe for the collaboration topology:
+**one Studio host acting as a shared room server, and two or more people — each on
+their own machine, each running their own local runtime — replicating through it.**
+
+It's the topology the CAS/blob distribution and multi-peer replication work is built
+for. Everyone edits against their own local runtime and workspace; the room server is
+a relay that carries the CRDT traffic (work units, artifacts, proposals) and blobs
+between them.
+
+## The mental model: two different URLs
+
+The single most common point of confusion is that there are **two** connection
+settings, and they do different jobs:
+
+| Setting | What it is | Per-person? |
+|---|---|---|
+| `nodalmerge.runtimeUri` | The **local runtime** the extension spawns/adopts for *you*. Default `http://127.0.0.1:5080`. Never a remote machine. | Yes — one per person, on their own loopback |
+| `nodalmerge.room.hostUri` | The **room server** your local runtime connects *out* to for replication. This is the shared machine. | No — everyone points at the same one |
+
+So each person keeps their own `runtimeUri` (loopback `5080`, auto-managed) and they
+all set `room.hostUri` to the *same* room server address. The room server is a third
+process — it is **not** anyone's editing runtime. See
+[Guides → Standalone Studio host](/studio/guides/standalone-host) for how the
+extension decides whether to spawn or adopt a `runtimeUri` host.
+
+<Note>
+Running the room server on one of the participants' machines is fine. That machine
+then has **two** host processes: the shared room server (e.g. on `0.0.0.0:7878`) and
+that person's own extension-spawned local runtime (`127.0.0.1:5080`). They don't
+conflict — different ports, different data.
+</Note>
+
+## Step 1 — Start the room server
+
+Any Studio host in server mode is a room server; it maps `/ws/{roomId}` from the
+`NodalMerge.DotNetHost` package. Bind it to `0.0.0.0` (all interfaces) so other
+machines can reach it — the default `127.0.0.1` is loopback-only and unreachable from
+a second machine.
+
+From a source checkout:
+
+```powershell
+cd nodalmerge-studio
+dotnet run --project src/NodalMerge.Studio.Host -c Release -- --Studio:Urls=http://0.0.0.0:7878
+```
+
+Or run the self-contained host binary the extension already ships (no build needed) —
+`bin/<rid>/NodalMerge.Studio.Host(.exe)` inside the installed extension directory:
+
+```powershell
+.\NodalMerge.Studio.Host.exe --Studio:Urls=http://0.0.0.0:7878
+```
+
+The port is arbitrary — `7878` is just a convention. Leave the process running.
+
+### Persistence
+
+Node storage defaults to **SQLite on disk** (`NodalMerge:Providers:NodeStorage:
+Sqlite`), so the room and its history survive a restart out of the box. By default the
+files land in `data/` next to the binary:
+
+- Nodes: `NodalMerge:Storage:Sqlite:DbPath` (default `data/nodalmerge-nodes.db`)
+- Blobs: `NodalMerge:Storage:FileBlobs:RootPath` (default `data/blobs`)
+
+Point them somewhere deliberate for a shared server:
+
+```powershell
+dotnet run --project src/NodalMerge.Studio.Host -c Release -- `
+  --Studio:Urls=http://0.0.0.0:7878 `
+  --NodalMerge:Storage:Sqlite:DbPath=C:\nm-room\nodes.db `
+  --NodalMerge:Storage:FileBlobs:RootPath=C:\nm-room\blobs
+```
+
+<Warning>
+The room server's data directory must be **separate** from any editing runtime's data
+directory. When the extension spawns your local runtime it uses VS Code's per-workspace
+storage (or `nodalmerge.workspaceDataPath`), which is already distinct — just don't
+manually point a local runtime and the room server at the same SQLite DB, or they'll
+contend for it.
+</Warning>
+
+## Step 2 — Open the firewall
+
+On the server machine, allow inbound TCP on the port you chose (`7878` here). On
+Windows:
+
+```powershell
+New-NetFirewallRule -DisplayName "NodalMerge room server 7878" `
+  -Direction Inbound -Action Allow -Protocol TCP -LocalPort 7878
+```
+
+Find the server's LAN address with `ipconfig` (e.g. `192.168.1.110`).
+
+## Step 3 — Point each person's extension at it
+
+In VS Code settings (per-workspace `.vscode/settings.json` or user settings), each
+participant sets:
+
+| Setting | Person on the server machine | Person on another machine |
+|---|---|---|
+| `nodalmerge.room.hostUri` | `ws://127.0.0.1:7878` | `ws://192.168.1.110:7878` |
+| `nodalmerge.room.workgroup` | `test-room` | `test-room` |
+| `nodalmerge.blobOrigin.uri` | `http://127.0.0.1:7878` | `http://192.168.1.110:7878` |
+
+- **`room.workgroup` must match on every participant** — it's what resolves to the
+  same room id, and therefore what puts everyone in the same room. Empty falls back to
+  the server-side default (`workgroup`).
+- **`blobOrigin.uri`** points the local runtime's blob store at the server so large
+  blobs (artifacts, attachments) replicate through it rather than staying local. Use
+  the same host/port as the room server; the scheme is `http(s)://`, not `ws://`.
+- Leave `runtimeUri` unset — each extension keeps managing its own local runtime.
+
+For **standalone / single-player** use, simply leave all three empty: the extension
+runs its bundled local runtime with no room connection.
+
+## Step 4 — Verify the server is reachable
+
+From the server machine:
+
+```bash
+curl http://127.0.0.1:7878/health
+# {"service":"nodalmerge-studio","status":"ok",...}
+```
+
+From the second machine, confirm the port is open before launching VS Code:
+
+```powershell
+Test-NetConnection 192.168.1.110 -Port 7878   # TcpTestSucceeded : True
+```
+
+A blocked firewall is by far the most common failure; check this first if a remote
+peer can't connect.
+
+## What "working" looks like
+
+Once two peers are connected to the same room:
+
+1. **Replication** — a workspace or goal change made by peer A appears on peer B.
+2. **Late joiner** — a peer that connects *after* changes were made hydrates the
+   existing room state, not just new deltas.
+3. **Blob pull** — a large artifact produced on peer A is fetched by peer B through
+   the server blob origin (the CAS distribution path).
+4. **Bidirectional** — edits flow both directions between peers.
+
+## Room server vs. headless peer vs. standalone host
+
+These three guides describe adjacent-but-distinct roles; pick by what you need:
+
+- **This page** — a shared server that *multiple independent peers replicate
+  through*. Everyone keeps their own runtime and workspace.
+- [Standalone Studio host](/studio/guides/standalone-host) — running the host process
+  yourself (instead of letting the extension spawn it), and how the extension adopts
+  it. A room server is a standalone host bound to a reachable address.
+- [Headless peer](/studio/guides/headless-peer) — a runtime with **no** HTTP/WS
+  server that connects *out* to a room server (via `Peer:HostUri`) to inject or run
+  agent work non-interactively. It's a client of a room server like this one.
+
+## Related pages
+
+- [Guides → Standalone Studio host](/studio/guides/standalone-host)
+- [Guides → Headless peer](/studio/guides/headless-peer)
+- [Guides → Repository virtualization](/studio/guides/repository-virtualization)
+- [Concepts → Architecture](/studio/concepts/architecture)

@@ -10,8 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "nodalmerge-bridge": "file:../../../../nodalmerge/artifacts/package-local/npm/nodalmerge-bridge-0.2.0.tgz",
-    "nodalmerge-sdk-js": "file:../../../../nodalmerge/artifacts/package-local/npm/nodalmerge-sdk-js-0.2.0.tgz",
+    "nodalmerge-bridge": "file:../../../../nodalmerge/artifacts/package-local/npm/nodalmerge-bridge-0.2.5.tgz",
+    "nodalmerge-sdk-js": "file:../../../../nodalmerge/artifacts/package-local/npm/nodalmerge-sdk-js-0.2.5.tgz",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

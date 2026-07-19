@@ -5,6 +5,13 @@ description: The three-layer design behind NodalMerge Studio and how it relates 
 
 # Architecture
 
+**NodalMerge is the engine; Studio is the runtime.** The Rust core provides durable
+graph storage, CRDT convergence, replication, replay, and branching. Studio is the
+collaborative environment humans and agents actually live in — goals, reasoning,
+execution, projections, and review — with NodalMerge as the storage engine beneath
+it. Studio is not a UI *over* a version-control tool; it's a runtime that uses
+NodalMerge the way an application uses a database.
+
 ## Three-layer design
 
 ```

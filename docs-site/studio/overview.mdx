@@ -1,18 +1,19 @@
 ---
 title: "NodalMerge Studio"
-description: "Git for agent reasoning and execution — not Git for files. An agent-native collaborative development runtime built on NodalMerge."
+description: "A persistent collaborative runtime where humans and AI agents share goals, reasoning, execution, and artifacts as one content-addressed graph — reviewable, branchable, and materializable at any step."
 ---
 
 # NodalMerge Studio
 
-NodalMerge Studio is an agent-native collaborative development runtime built on
-[NodalMerge](/). Humans, AI agents, automation, and MCP tools work together through
-deterministic projections, coordinated task execution, and human review workflows — all
-backed by a persistent, branchable, replayable artifact graph.
+NodalMerge Studio is a persistent collaborative runtime where humans and AI agents share
+goals, reasoning, execution, and artifacts as one content-addressed graph, built on the
+[NodalMerge](/) engine. Humans, AI agents, automation, and MCP tools work together through
+deterministic projections, coordinated task execution, and human review workflows.
 
-Every step an agent takes produces a durable artifact in a DAG. Every artifact can be
-inspected, branched, replayed, merged, and audited. The durable graph is the product;
-agents are features of it.
+Every step anyone takes — a goal, a decision, a tool call, an agent's chat turn, a merge —
+becomes a durable node in that graph. Every node can be inspected, branched, replayed,
+merged, materialized to a working tree, and audited. The durable graph is the product;
+agents are features of it. Repositories are just one projection of it.
 
 ![Control Tower — Goal Workspace tab showing an in-progress goal's Decision Tree, Reasoning & Execution Timeline, and Decision Lens](/images/hero-goal-workspace.png)
 
@@ -37,8 +38,9 @@ flowchart TD
 ## Why teams use Studio
 
 <CardGroup cols={2}>
-  <Card title="Durable artifact graph" icon="diagram-project">
-    Every plan, task, proposal, and decision is a persistent DAG node. Trace any
+  <Card title="One shared graph" icon="diagram-project">
+    Every plan, task, proposal, decision, and agent chat turn is a persistent,
+    content-addressed node — shared memory for humans and agents alike. Trace any
     approved change back through its entire lineage to the original goal.
   </Card>
   <Card title="Human-governed by default" icon="user-check">
@@ -46,10 +48,10 @@ flowchart TD
     before speculative work lands in the authoritative branch — unless a goal
     explicitly opts out.
   </Card>
-  <Card title="Branch and replay" icon="code-branch">
-    Branch from any artifact checkpoint to spawn alternate executions. Replay a
-    proposal under a different model to compare outcomes. Roll back to any Known
-    Good State.
+  <Card title="Pathways: review, branch, materialize" icon="code-branch">
+    Scrub the whole graph in the Pathways tab. Review the reasoning behind any step,
+    branch from any node to spawn an alternate execution, replay a proposal under a
+    different model, or materialize any node's state back onto disk as a working tree.
   </Card>
   <Card title="MCP-native" icon="plug">
     A frozen MCP v1 tool surface with 117 tools across 21 namespaces. Integrate any

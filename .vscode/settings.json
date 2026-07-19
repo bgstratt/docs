@@ -17,6 +17,22 @@
             "model": "deepseek-v4-flash",
             "baseUrl": "https://api.deepseek.com",
             "apiKeyRef": "nodalmerge.apikey.worker"
+        },
+        {
+            "id": "claudecli",
+            "label": "claudecli",
+            "domain": "general",
+            "provider": "claude-cli",
+            "model": "haiku"
         }
-    ]
+    ],
+    "nodalmerge.topologyTemplates": [
+        {
+            "name": "Default",
+            "orchestrator": "claudecli",
+            "worker": "claudecli"
+        }
+    ],
+    "nodalmerge.defaultTaskReviewPolicy": "AgentApproval",
+    "nodalmerge.defaultWorkspaceReviewPolicy": "AgentApproval"
 }

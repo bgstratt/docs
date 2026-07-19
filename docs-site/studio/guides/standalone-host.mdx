@@ -31,7 +31,9 @@ extension decides whether to spawn its own host or adopt yours.
 - **Share one room across multiple people.** Each VS Code window's extension
   normally spawns its own isolated local host. Pointing several extensions at one
   standalone instance instead gives you genuine multi-peer collaboration in a
-  single room, rather than N independent single-player instances.
+  single room, rather than N independent single-player instances. See
+  [Guides → Multi-user room server](/studio/guides/multi-user-room-server) for the
+  end-to-end recipe (a room server is a standalone host bound to a reachable address).
 - **Decouple the host's lifecycle from the editor.** Keep it running across VS Code
   restarts, run it on a separate machine, under a process supervisor, or in a
   container.
@@ -105,6 +107,7 @@ config instead.
 
 ## Related pages
 
+- [Guides → Multi-user room server](/studio/guides/multi-user-room-server)
 - [Guides → Headless peer](/studio/guides/headless-peer)
 - [Guides → Repository virtualization](/studio/guides/repository-virtualization)
 - [Guides → Build from source](/studio/guides/build-from-source)

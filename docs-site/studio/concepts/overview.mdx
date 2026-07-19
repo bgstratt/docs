@@ -44,6 +44,14 @@ answer questions ephemeral agent frameworks cannot:
 - Which model produced this proposal? Under what constraints?
 - What was the full artifact lineage for this change?
 
+## Pathways: branch, review, materialize
+
+Because the graph is durable and addressable, the Pathways tab lets you move through
+it directly rather than reading a flat log. You can scrub the workspace's whole
+history, review the reasoning behind any step, branch from any node to spawn an
+alternate execution, and materialize any node's state back onto disk as a real
+working tree. Git history is one projection of this graph — not the substrate.
+
 ## Token efficiency through state compression
 
 Agents receive compact projections — not full DAG history. Projections compress
@@ -52,10 +60,15 @@ token-efficient view. Knowledge artifacts (constraints, conventions, decisions)
 persist across runs so agents don't rediscover the same information on every
 execution.
 
-## Architectural invariant
+## Shared memory: one content-addressed graph
 
 All persistent state lives in NodalMerge nodes. There is no separate memory
-database, no vector database, and no agent-specific memory store.
+database, no vector database, and no agent-specific memory store. Reasoning,
+decisions, artifacts, repository snapshots, and agent chat history are all
+content-addressed nodes in the same graph — so "what an agent remembers" and "what
+the workspace contains" are the same durable, replicated thing, not two stores kept
+in sync. Large bodies (diffs, chat transcripts, file blobs) are stored once by
+content hash and referenced, not copied per node.
 
 ## Next
 

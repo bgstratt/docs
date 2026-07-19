@@ -12,7 +12,7 @@ each one.
 Ground truth (verified directly against source, not the tables below — the tables
 illustrate shape/category, not an exhaustive per-tool listing): **117 `nm_v1_*` MCP
 tools**, **72 of them** dispatched in-process to autonomous agents, **15 `nms_v1_*`
-external-caller tools**, and **187 REST routes**.
+external-caller tools**, and **213 REST routes**.
 
 <Note>
 Frozen design principles, request/response schemas, and the error envelope format
@@ -256,7 +256,7 @@ None of these are dispatched to autonomous agents yet.
 | Promotion branches | `usePromotionBranch`/`candidateBranchId` on `POST /studio/options`, `POST /studio/branches/candidate/promote` | No tool to toggle or promote |
 | Fork from Known Good | `POST /studio/state/{stateId}/fork` | An MCP client/agent can checkout (mutate) a known-good state via `nm_v1_state_checkoutKnownGood`, but can't fork a *new* work unit from one without writing its own `seedFromBranchId`-style call |
 
-## REST endpoint catalog (187 routes)
+## REST endpoint catalog (213 routes)
 
 Grouped by resource area; `StudioRestEndpoints.cs` is the single file that registers
 all of these.
@@ -342,7 +342,27 @@ segment can never match.
   `POST /studio/sessions/{id}/pause|resume|abandon`,
   `GET /studio/sessions/{id}/workunits|events|state`, `GET /studio/events/{id}`
 - Artifacts: `GET/POST /studio/artifacts`, `GET /studio/artifacts/{id}`
-  (+`/children`)
+  (+`/children`), `POST /studio/artifacts/{id}/elevate` (widen a repo-scoped
+  constraint to all repositories)
+- Insights & findings (see
+  [Guides → Knowledge & constraints](/studio/guides/knowledge-and-constraints)):
+  `GET /studio/findings` (`?status=`), `POST /studio/findings/{id}/review`
+  (`{ decision, notes }` — promote/dismiss/investigating), `POST /studio/findings/import`,
+  `POST /studio/insights/detect-findings` (deterministic pattern rules),
+  `POST /studio/insights/llm-scan` (body is a resolved LLM config; routes to an HTTP
+  one-shot or a `claude-cli`/`codex-cli` one-shot by provider; returns
+  `{ findings, rawCliOutput }`)
+- Constraints: `GET /studio/constraints` (`?repositoryId=`; each row labeled with
+  reach + `appliesToAllRepos` + local `enabled`), `POST /studio/constraints`
+  (manual add — `{ title, body, reach: "Workgroup"|"Private", repoSpecific }` →
+  a global constraint at the chosen 2×2 scope),
+  `POST /studio/constraints/{id}/toggle` (`{ disabled }` — peer-private local
+  suppression, not replicated),
+  `GET /studio/constraints/proposed` (work-unit-owned observer/agent constraints
+  eligible for promotion, each flagged `promoted`),
+  `POST /studio/constraints/{id}/promote` (`{ reach?, repoSpecific? }` — mint a global
+  copy of a lineage constraint stamped with `promotedFromArtifactId`; idempotent,
+  returns the existing promotion if already promoted)
 - Options/policies/projections/snapshots: `GET/POST /studio/options`,
   `GET /studio/policies`, `GET /studio/projections`, `GET /studio/projections/{type}`,
   `GET /studio/snapshots/{agentId}` (+`/compare/{otherAgentId}`)

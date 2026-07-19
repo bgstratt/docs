@@ -101,3 +101,15 @@ CSRF protection on the password-reset endpoint") or `Research` artifacts for
 findings that don't rise to an actionable constraint. Constraints proposed by
 observers appear in the Decision Lens Context tab's artifact chain, identifiable by
 their title prefix — see [Reference → Control Tower UI](/studio/reference/ui-reference).
+
+<Note>
+**An observer constraint is owned by the work unit it was recorded against, not
+global.** It's inherited *down that goal's work-unit lineage* — so it steers
+descendant agents in the same goal — but it does **not** automatically become
+organization-wide policy. Observer constraints surface in two places: the node's
+Decision Lens → Context tab (in the artifact chain), and the Insights **Constraints**
+tab's **Proposed by observers & agents** section, where a human can **Promote** one to
+a shared global constraint in a click. That human step is the governance gate. See
+[Guides → Knowledge & constraints](/studio/guides/knowledge-and-constraints#where-constraints-come-from)
+for how the four constraint sources differ in reach.
+</Note>

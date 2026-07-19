@@ -289,10 +289,12 @@ DAG visualization and historical scrubbing.
 
 ## Insights
 
-Two independent surfaces, both manually triggered — nothing here runs on a timer or
-chains automatically into anything else.
+Two sub-tabs — **Analysis** and **Constraints** — everything manually triggered;
+nothing here runs on a timer or chains automatically into anything else. For the
+concepts behind findings and constraint scope, see
+[Guides → Knowledge & constraints](/studio/guides/knowledge-and-constraints).
 
-### Run Analysis
+### Analysis tab → Run Analysis
 **Last 30 Days** / **All Time** period selector, then **▶ Run Analysis** aggregates
 outcomes across every goal, work unit, and proposal recorded so far into an overview
 (session/work-unit counts and status breakdown, overall success rate, average
@@ -304,15 +306,45 @@ dashboard is itself a registered projection
 [Architecture → Projections](/architecture/projections) for what that guarantees
 about it.
 
-### Findings — knowledge & process improvements
+### Analysis tab → Findings — knowledge & process improvements
 Two ways to populate the queue: **Detect Findings** (free, instant, deterministic
 pattern rules) and **Run LLM Scan** (calls a real model using your own configured
 credentials — real cost and latency, profile picked from a dropdown of profiles
-with a model set). Findings filter by status (**Open** / **Promoted** /
+with a model set). The scan works with HTTP model profiles **and** CLI profiles
+(`claude-cli` / `codex-cli`) — pick a CLI profile and Studio drives it via a one-shot
+CLI call server-side. If the model responds but nothing parses into findings, a
+toast offers **Open raw output** to inspect (and hand-fix) the verbatim response in an
+untitled JSON document. Findings filter by status (**Open** / **Promoted** /
 **Dismissed** / **Investigating** / **All**); each has review actions to promote,
-dismiss, or mark investigating. **Export Selected** writes chosen findings to a
-portable JSON file (stripped of repo-specific IDs); **Import Findings…** brings
-findings exported from another repo back in.
+dismiss, or mark investigating — **Promote** turns a finding into a global constraint.
+**Export Selected** writes chosen findings to a portable JSON file (stripped of
+repo-specific IDs); **Import Findings…** brings findings exported from another repo
+back in.
+
+### Constraints tab
+The durable guidance folded into every agent's kickoff prompt, listed and grouped by
+**reach** (who shares it) and **application** (which repositories it affects). Only
+**global** constraints appear here — promoted findings and manually-added ones;
+constraints an agent or [domain observer](/studio/guides/domain-observers) recorded
+against a work unit are lineage-scoped and live in that node's Decision Lens → Context
+tab instead, not here.
+
+- **Checkbox per constraint** — unchecking turns it off **for you only**; it stays
+  active for every other peer and the shared constraint is untouched. The toggle is
+  peer-private and never replicated.
+- **+ Add a constraint** — expands an inline form: **Title**, **body**, a reach radio
+  (**Workgroup (shared)** / **Private (only me)**), and an **Only this repository**
+  checkbox. Those two controls are the full 2×2 scope; the form resolves the current
+  repository server-side, so you never handle a repository ID. See
+  [Knowledge & constraints → scope](/studio/guides/knowledge-and-constraints#constraint-scope-reach-and-application)
+  for what each combination means.
+- **Proposed by observers & agents** (section below the global list) — the
+  work-unit-owned constraints a [domain observer](/studio/guides/domain-observers) or
+  agent recorded. Each shows its scope badge and source work unit with a **Promote**
+  button that mints a shared global copy (Workgroup reach, scoped to the source's
+  repository); once promoted, the row is badged **promoted** instead. This is the
+  governed bridge from a lineage-local observation to organization-wide policy — see
+  [Knowledge & constraints → promoting a lineage constraint](/studio/guides/knowledge-and-constraints#promoting-a-lineage-constraint-to-policy).
 
 ## Projection Snapshots
 
@@ -355,5 +387,5 @@ applied to a checkpoint instead of a live branch.
 | Model & Agent Studio | Profiles, agent topology, session-wide defaults, live participants |
 | Decision Convergence ("Review" tab) | The human approval gate — accept/reject/apply |
 | Pathways | DAG visualization, timeline scrubbing, checkpoint marking |
-| Insights | Run-history analytics dashboard, plus the Findings knowledge-promotion queue |
+| Insights | Analysis sub-tab (run-history dashboard + Findings promotion queue) and Constraints sub-tab (view/toggle/author the guidance injected into agents) |
 | Projection Snapshots | Capture, compare, and diff point-in-time AgentWorkspace projections and Known Good States |

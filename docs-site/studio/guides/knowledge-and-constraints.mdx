@@ -69,11 +69,28 @@ Two detectors populate the queue, both manual:
   (`claude-cli` / `codex-cli`) — the scan drives the CLI one-shot when you pick a CLI
   profile. Real cost and latency.
 
-Each finding can be **Promoted** (becomes a global constraint), **Dismissed**, or
-marked **Investigating**. Promotion is the primary, governed path from observation to
-guidance. Findings can also be **Exported** to a portable JSON file (repo-specific IDs
-stripped) and **Imported** into another repo — the sneakernet for sharing across
-workgroup boundaries.
+Each finding can be **Promoted**, **Dismissed**, or marked **Investigating**. Findings
+can also be **Exported** to a portable JSON file (repo-specific IDs stripped) and
+**Imported** into another repo — the sneakernet for sharing across workgroup boundaries.
+
+### What promotion does depends on the finding's kind
+
+Promotion lands in one of two different places, and the finding's **kind** badge tells
+you which:
+
+| Kind | Badge | Promote creates | On the Constraints tab? |
+|---|---|---|---|
+| **Knowledge guideline** | `Knowledge` | a global **Constraint** (default scope: Workgroup + this repo) | ✅ yes — and you can re-scope it there |
+| **Prompt improvement** | `Prompt` (+ a stage badge) | **nothing** — no artifact; it becomes stage-scoped prompt guidance | ❌ no |
+
+A **Knowledge** finding becomes a durable Constraint that every future agent inherits.
+A **Prompt** finding (e.g. "Executors should self-verify before proposing merges") is
+*stage-specific* — promoting it flips the finding to `Promoted` with its target stage,
+and only that stage's agent loop reads it (via `ListPromotedPromptGuidanceAsync`) and
+folds it into that stage's prompt. It is deliberately **not** a constraint, so it never
+appears on the Constraints tab. The UI reflects this: a toast on promote names where it
+landed, and a **Promoted** finding shows a `→ Constraint` or `→ prompt guidance for the
+<stage> stage` destination line.
 
 ## Constraint scope: reach and application
 
@@ -103,6 +120,17 @@ the radio and the checkbox.
 learned on a specific codebase you want your teammates to benefit from. **Elevate**
 widens an existing repo-scoped constraint to all repositories in one action.
 </Note>
+
+## Re-scoping a constraint
+
+Scope isn't fixed at creation. Every global constraint on the Constraints tab carries
+two inline dropdowns — **Reach** (Workgroup / Private) and **Applies to** (All
+repositories / This repository) — the full 2×2. Change either and the constraint is
+re-routed to the matching room immediately; the card moves to its new group on refresh.
+This is how you correct an opinionated default: a promoted finding lands at Workgroup +
+its repo (or all-repos if no repo resolved), and you can narrow it to Private, pin it to
+this repository, or widen it to everywhere right from the card. (Selecting "This
+repository" when the workspace has no resolvable repo falls back to all-repos.)
 
 ## Turning a constraint off for yourself
 

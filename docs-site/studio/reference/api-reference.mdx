@@ -12,7 +12,7 @@ each one.
 Ground truth (verified directly against source, not the tables below — the tables
 illustrate shape/category, not an exhaustive per-tool listing): **117 `nm_v1_*` MCP
 tools**, **72 of them** dispatched in-process to autonomous agents, **15 `nms_v1_*`
-external-caller tools**, and **213 REST routes**.
+external-caller tools**, and **214 REST routes**.
 
 <Note>
 Frozen design principles, request/response schemas, and the error envelope format
@@ -256,7 +256,7 @@ None of these are dispatched to autonomous agents yet.
 | Promotion branches | `usePromotionBranch`/`candidateBranchId` on `POST /studio/options`, `POST /studio/branches/candidate/promote` | No tool to toggle or promote |
 | Fork from Known Good | `POST /studio/state/{stateId}/fork` | An MCP client/agent can checkout (mutate) a known-good state via `nm_v1_state_checkoutKnownGood`, but can't fork a *new* work unit from one without writing its own `seedFromBranchId`-style call |
 
-## REST endpoint catalog (213 routes)
+## REST endpoint catalog (214 routes)
 
 Grouped by resource area; `StudioRestEndpoints.cs` is the single file that registers
 all of these.
@@ -358,6 +358,8 @@ segment can never match.
   a global constraint at the chosen 2×2 scope),
   `POST /studio/constraints/{id}/toggle` (`{ disabled }` — peer-private local
   suppression, not replicated),
+  `POST /studio/constraints/{id}/scope` (`{ reach, repoSpecific }` — set the full 2×2
+  scope and re-route; generalizes `/elevate`),
   `GET /studio/constraints/proposed` (work-unit-owned observer/agent constraints
   eligible for promotion, each flagged `promoted`),
   `POST /studio/constraints/{id}/promote` (`{ reach?, repoSpecific? }` — mint a global

@@ -316,7 +316,13 @@ CLI call server-side. If the model responds but nothing parses into findings, a
 toast offers **Open raw output** to inspect (and hand-fix) the verbatim response in an
 untitled JSON document. Findings filter by status (**Open** / **Promoted** /
 **Dismissed** / **Investigating** / **All**); each has review actions to promote,
-dismiss, or mark investigating — **Promote** turns a finding into a global constraint.
+dismiss, or mark investigating. **What Promote does depends on the finding's kind**: a
+`Knowledge` finding becomes a global **Constraint** (visible on the Constraints tab and
+re-scopable there); a `Prompt` finding becomes **stage-scoped prompt guidance** for its
+target stage and does *not* appear on the Constraints tab. A toast on promote names
+which happened, and a Promoted finding shows a `→ Constraint` / `→ prompt guidance for
+the <stage> stage` destination line. See
+[Knowledge & constraints → what promotion does](/studio/guides/knowledge-and-constraints#what-promotion-does-depends-on-the-findings-kind).
 **Export Selected** writes chosen findings to a portable JSON file (stripped of
 repo-specific IDs); **Import Findings…** brings findings exported from another repo
 back in.
@@ -332,6 +338,12 @@ tab instead, not here.
 - **Checkbox per constraint** — unchecking turns it off **for you only**; it stays
   active for every other peer and the shared constraint is untouched. The toggle is
   peer-private and never replicated.
+- **Reach / Applies-to dropdowns** — two inline selects on each card set the full 2×2
+  scope: **Reach** (Workgroup / Private) × **Applies to** (All repositories / This
+  repository). Changing either re-routes the constraint immediately and the card moves
+  to its new group. This is how you correct a promoted finding's default scope or narrow
+  a constraint to a local/private override — see
+  [Knowledge & constraints → re-scoping](/studio/guides/knowledge-and-constraints#re-scoping-a-constraint).
 - **+ Add a constraint** — expands an inline form: **Title**, **body**, a reach radio
   (**Workgroup (shared)** / **Private (only me)**), and an **Only this repository**
   checkbox. Those two controls are the full 2×2 scope; the form resolves the current

@@ -239,7 +239,9 @@
             "group": "Configuration and extension",
             "pages": [
               "studio/guides/domain-observers",
+              "studio/guides/knowledge-and-constraints",
               "studio/guides/extending-goals",
+              "studio/guides/multi-agent-profiles",
               "studio/guides/headless-peer",
               "studio/guides/standalone-host",
               "studio/guides/multi-user-room-server",

@@ -1,0 +1,128 @@
+---
+title: Multi-agent profiles
+description: Run frontend, backend, and docs work on different models by binding a Model Profile to each file-scoped Pipeline Profile.
+---
+
+# Multi-agent profiles
+
+You can run a team of Execute-stage workers where each one runs on a **different
+LLM** and carries its own tuned system prompt, and let Studio route each slice to
+the right worker automatically based on which files that slice touches. This guide
+builds one such team end to end: **Opus for planning, Sonnet for frontend, Haiku
+for backend.**
+
+## Two kinds of profile
+
+The setup rests on two distinct objects. Keep them straight and everything else
+follows.
+
+| Object | What it is | Where you author it |
+|---|---|---|
+| **Model Profile** | A single LLM connection: provider, model, base URL, and credentials. Reusable across roles. | The Model & Agent Studio |
+| **Pipeline Profile** *(a.k.a. Agent Profile)* | A worker/role definition: a pipeline **stage**, a system prompt, allowed tools, max iterations, a **file scope** (glob patterns), and a **bound Model Profile**. | The Pipeline Profiles editor in the Model & Agent Studio |
+
+A Model Profile answers *"which LLM do I connect to?"* A Pipeline Profile answers
+*"what does this worker do, on which files, and on which model?"* One Model Profile
+can back many Pipeline Profiles.
+
+## Where the default model comes from
+
+**Agent Topology** sets the *default* Model Profile for each pipeline stage
+(Orchestrate, Plan, Execute, Review, Merge, Reconcile). A Pipeline Profile that
+binds its own Model Profile overrides that stage default when its file scope
+matches. A Pipeline Profile that binds **no** model inherits its stage's default
+from Agent Topology.
+
+That inheritance is what makes this feature back-compatible: nothing about an
+existing setup changes until you bind a model to a profile. The seeded empty-scope
+`worker` Pipeline Profile keeps running on the Execute-stage default exactly as
+before.
+
+## How routing works
+
+At fan-out, the planner splits a goal into slices and each Execute slice is matched
+against your Pipeline Profiles' file scopes. The rule is strict:
+
+> A slice is routed to a Pipeline Profile only when **every file in the slice
+> matches at least one of that profile's glob patterns, and exactly one profile
+> matches.**
+
+Anything else — zero matches, a partial match (some files match, some don't), or
+two or more profiles matching — falls through to the default empty-scope worker.
+
+This means the **granularity of your slices** decides whether domain routing fires.
+A slice that touches only `.tsx` files can match a frontend-only profile; a slice
+that touches both `.tsx` and `.cs` matches neither a frontend-only nor a
+backend-only profile, so it lands on the default worker. If you want domain routing
+to trigger reliably, keep slices within a single domain.
+
+## Walkthrough: Opus plans, Sonnet builds frontend, Haiku builds backend
+
+### 1. Create the Model Profiles
+
+In the Model & Agent Studio, create one Model Profile per LLM you want to use.
+These are just connections and can be reused by any number of Pipeline Profiles.
+
+| Model Profile | Provider | Model |
+|---|---|---|
+| `opus-plan` | Anthropic | Opus |
+| `sonnet-frontend` | Anthropic | Sonnet |
+| `haiku-backend` | Anthropic | Haiku |
+
+### 2. Create the scoped Pipeline Profiles
+
+In the Pipeline Profiles editor, create the workers and planners below. Each one
+picks a stage, a file scope, and a bound Model Profile.
+
+| Pipeline Profile | Stage | File scope | Bound Model Profile | Runs when |
+|---|---|---|---|---|
+| `worker` (seeded) | Execute | *(empty)* | *(stage default)* | nothing else matches |
+| `frontend-worker` | Execute | `src/**/*.tsx, src/**/*.css` | `sonnet-frontend` | slice is all frontend files |
+| `backend-worker` | Execute | `src/**/*.cs` | `haiku-backend` | slice is all backend files |
+| `docs-planner` | Plan | `**/*.md, docs/**` | `opus-plan` | planning docs-only goals |
+
+Give each profile its own tuned system prompt and tool allowlist — that is the point
+of splitting them. A frontend worker can be told about your component conventions; a
+backend worker can be told about your service layering.
+
+### 3. Set the Plan-stage default
+
+In Agent Topology, set the **Plan** stage's default Model Profile to `opus-plan` so
+that planning runs on Opus by default, even for goals the `docs-planner` scope
+doesn't match.
+
+### 4. What happens at runtime
+
+1. A goal arrives and the planner fans it out into slices.
+2. Each Execute slice is matched against the Pipeline Profiles' file scopes.
+3. A slice that matches exactly one scoped profile runs **that profile's prompt and
+   tools, on its bound model** — a pure-frontend slice on `sonnet-frontend`, a
+   pure-backend slice on `haiku-backend`.
+4. A slice that matches zero or more than one profile — including any mixed slice
+   touching both frontend and backend files — runs the default `worker` on the
+   Execute-stage default model.
+
+## Planning routes the same way
+
+File-scope routing is not Execute-only. It applies to **Plan**-stage profiles too,
+so you can put a docs-planner on a cheap model and a backend-planner on a strong one
+and let the goal's files decide which planner runs. The `docs-planner` above is an
+example: a docs-only goal gets planned on `opus-plan` through the profile, while
+other goals fall back to the Plan-stage default you set in Agent Topology.
+
+## Remember
+
+<Note>
+**Routing is all-or-nothing and single-match.** A scoped profile runs only when
+*every* file in the slice matches its globs and it is the *only* matching profile.
+A mixed slice — say one that edits a `.tsx` component and its `.cs` API together —
+matches no single-domain profile and falls through to the default worker. Slice
+granularity is what makes domain routing fire.
+</Note>
+
+<Note>
+**Keep the default worker.** The seeded empty-scope `worker` is the catch-all for
+everything that doesn't route cleanly. It runs on the Execute-stage Model Profile
+from Agent Topology, so it always has a model even when you've bound none to it —
+though you can bind one to it directly if you want a specific catch-all model.
+</Note>

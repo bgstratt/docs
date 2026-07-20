@@ -1,0 +1,189 @@
+---
+title: Knowledge & constraints
+description: How Studio turns run history into durable guidance — findings, promotion, constraint scope (reach × application), per-peer toggles, and manual authoring.
+---
+
+# Knowledge & constraints
+
+Studio's organizational-learning loop turns what happened across your runs into
+**constraints** — durable, advisory guidance that gets folded into every agent's
+kickoff prompt. This page is the conceptual companion to the click-by-click
+[Insights panel reference](/studio/reference/ui-reference#insights): where guidance
+comes from, how far it reaches, and who controls it.
+
+## The one rule: nothing shared without a human gate
+
+A constraint that only you can see is cheap to create. A constraint that steers your
+whole workgroup's agents is a governance act. So the model has exactly one hard rule:
+
+<Note>
+**Nothing enters a shared scope without a human (or an explicit external API call)
+putting it there.** Agents and domain observers can *propose* constraints, but their
+proposals stay attached to the work unit that produced them. Making a constraint
+global — visible to your other repositories or replicated to your workgroup peers —
+is always a deliberate human action (promote a finding, or author one directly) or a
+deliberate external call to `POST /studio/constraints`.
+</Note>
+
+## Where constraints come from
+
+There are four sources, and they differ in **who owns the resulting constraint**,
+which is what decides how far it reaches.
+
+| Source | How | Owner | Reaches |
+|---|---|---|---|
+| **Promoted finding** | A [finding](#findings) is reviewed and **Promoted** by a human | Global (no work unit) | Its scope — see [scope](#constraint-scope-reach-and-application) |
+| **Manual add** | You type one into the Constraints tab, or an external tool calls `POST /studio/constraints` | Global (no work unit) | Its scope |
+| **Domain observer** | A [domain observer](/studio/guides/domain-observers) records a `Constraint` when it spots a gap | The observed **work unit** | That work unit's lineage only |
+| **Agent / feedback** | An agent records a `Constraint` via `nm_v1_artifact_record`, or a human note via `nms_v1_feedback_record` | The work unit | That work unit's lineage only |
+
+The split is deliberate. The first two are **global** (owner = none) and surface on
+the Constraints tab. The last two are **lineage-scoped** (owner = a work unit): they
+steer descendant agents *within the same goal tree* — inherited root-first down the
+work-unit chain — but they never automatically become organization-wide policy and
+they do **not** appear on the Constraints tab. They show up only in that node's
+Decision Lens → **Context** tab, tagged by their author (e.g. `[SecurityAgent] …`).
+
+### Promoting a lineage constraint to policy
+
+Because observer and agent constraints stay lineage-scoped, a genuinely reusable
+insight one of them found does not spread on its own. The **Constraints tab →
+Proposed by observers & agents** section lists them; each has a one-click **Promote**
+button that mints a global copy (Workgroup reach, scoped to the source's repository by
+default — widen it later with **Elevate**, or turn it off with the toggle). The source
+lineage constraint is left in place; promotion just creates the shared copy and records
+a provenance link back to it, so a promoted source is badged **promoted** instead of
+re-offering the button. That human click **is** the governance gate — nothing here
+auto-promotes.
+
+## Findings
+
+A **finding** is a candidate lesson drawn from *run history* (not from artifacts).
+Two detectors populate the queue, both manual:
+
+- **Detect Findings** — free, instant, deterministic pattern rules (e.g. ≥5 decided
+  experiment forks, ≥5 rejected proposals, co-modification patterns). Needs enough
+  history to spot a pattern.
+- **Run LLM Scan** — sends your aggregated run history to a real model using one of
+  your configured profiles. Works with HTTP model profiles **and** CLI profiles
+  (`claude-cli` / `codex-cli`) — the scan drives the CLI one-shot when you pick a CLI
+  profile. Real cost and latency.
+
+Each finding can be **Promoted**, **Dismissed**, or marked **Investigating**. Findings
+can also be **Exported** to a portable JSON file (repo-specific IDs stripped) and
+**Imported** into another repo — the sneakernet for sharing across workgroup boundaries.
+
+### What promotion does depends on the finding's kind
+
+Promotion lands in one of two different places, and the finding's **kind** badge tells
+you which:
+
+| Kind | Badge | Promote creates | On the Constraints tab? |
+|---|---|---|---|
+| **Knowledge guideline** | `Knowledge` | a global **Constraint** (default scope: Workgroup + this repo) | ✅ yes — and you can re-scope it there |
+| **Prompt improvement** | `Prompt` (+ a stage badge) | **nothing** — no artifact; it becomes stage-scoped prompt guidance | ❌ no |
+
+A **Knowledge** finding becomes a durable Constraint that every future agent inherits.
+A **Prompt** finding (e.g. "Executors should self-verify before proposing merges") is
+*stage-specific* — promoting it flips the finding to `Promoted` with its target stage,
+and only that stage's agent loop reads it (via `ListPromotedPromptGuidanceAsync`) and
+folds it into that stage's prompt. It is deliberately **not** a constraint, so it never
+appears on the Constraints tab. The UI reflects this: a toast on promote names where it
+landed, and a **Promoted** finding shows a `→ Constraint` or `→ prompt guidance for the
+<stage> stage` destination line.
+
+## Constraint scope: reach and application
+
+A global constraint carries two orthogonal scope dimensions. Together they form a 2×2,
+and you set both when you author one.
+
+|  | **This repository** | **All repositories** |
+|---|---|---|
+| **Private (only me)** | Local override for one repo | Local override everywhere |
+| **Workgroup (shared)** | Replicated, applies to one repo | Replicated, applies everywhere |
+
+- **Reach** — *who shares it.* `Private` stays on your machine (the peer-private room,
+  never replicated). `Workgroup` replicates to every peer in your workgroup. Workgroup
+  is the outermost boundary: peers who aren't in your workgroup share no room with you,
+  so there is no wider "organization" tier to reach.
+- **Application** — *which repositories it affects.* "This repository" pins the
+  constraint to the repo you authored it in; it's injected only when an agent is
+  working in that repo. "All repositories" applies it everywhere.
+
+Under the hood, reach picks which replication room the constraint lives in, and
+application is a filter applied at injection time (`RepositoryId is null` → all repos,
+else must match the agent's current repo). You don't need to think about rooms — pick
+the radio and the checkbox.
+
+<Note>
+**Promotion defaults** to `Workgroup` + this-repository — the common case for a lesson
+learned on a specific codebase you want your teammates to benefit from. **Elevate**
+widens an existing repo-scoped constraint to all repositories in one action.
+</Note>
+
+## Re-scoping a constraint
+
+Scope isn't fixed at creation. Every global constraint on the Constraints tab carries
+two inline dropdowns — **Reach** (Workgroup / Private) and **Applies to** (All
+repositories / This repository) — the full 2×2. Change either and the constraint is
+re-routed to the matching room immediately; the card moves to its new group on refresh.
+This is how you correct an opinionated default: a promoted finding lands at Workgroup +
+its repo (or all-repos if no repo resolved), and you can narrow it to Private, pin it to
+this repository, or widen it to everywhere right from the card. (Selecting "This
+repository" when the workspace has no resolvable repo falls back to all-repos.)
+
+## Turning a constraint off for yourself
+
+Every applicable constraint — including ones your workgroup shares with you — can be
+toggled **off locally** from the Constraints tab. Unchecking one suppresses it in
+*your* agents' prompts only; it stays active for every other peer and the shared
+constraint itself is untouched. The toggle is peer-private and never replicated, so
+your local overrides don't leak. This is the escape hatch for "my workgroup's rule
+doesn't fit what I'm doing right now" without leaving the workgroup or editing shared
+state.
+
+## Authoring a constraint by hand
+
+Open **Insights → Constraints → + Add a constraint** and fill in a title, the guidance
+body, a **reach** radio (Workgroup / Private), and the **Only this repository**
+checkbox. That's the full 2×2 — the form resolves the current repository server-side
+when you check the box, so you never handle a repository ID.
+
+The same capability is a single REST call, which is how external tooling (a headless
+peer watching logs, a CI hook, a script) contributes policy directly:
+
+```bash
+curl -X POST http://localhost:5080/studio/constraints \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "title": "Always run migrations before integration tests",
+        "body": "Apply pending EF migrations before the integration suite runs.",
+        "reach": "Workgroup",
+        "repoSpecific": false
+      }'
+```
+
+`reach` is `"Workgroup"` or `"Private"`; `repoSpecific: true` pins it to the host's
+current workspace repository, `false` applies it to all repositories. The call creates
+a global (no-owner) constraint, so it surfaces on the Constraints tab and replicates
+according to its reach — the same as a human-authored one. This is the supported way
+for an **external observer** to feed organizational policy without a human retyping it.
+
+## How a constraint reaches an agent
+
+Global constraints are injected **softly** — advisory context in the agent's kickoff
+prompt, not a hard gate. At build time Studio takes every global constraint, drops the
+ones whose application scope doesn't match the agent's current repository, drops the
+ones you've toggled off locally, and folds the rest into the prompt. Lineage
+constraints (observer/agent) ride in through the same prompt via work-unit inheritance.
+Nothing here blocks a merge — enforcement gates (require-build, require-tests) are a
+separate, server-side mechanism.
+
+## See also
+
+- [Insights panel reference](/studio/reference/ui-reference#insights) — the buttons
+  and fields for everything above
+- [Domain observers](/studio/guides/domain-observers) — the reactive agents that
+  propose lineage constraints
+- [Trust & autonomy](/studio/concepts/trust-and-autonomy) — the human-in-the-loop
+  rationale that the one rule above is an instance of

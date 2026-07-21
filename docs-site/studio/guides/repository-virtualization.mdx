@@ -145,6 +145,57 @@ is a legitimate, common, intentional deployment choice, not a misconfiguration
 it is not repeated on every subsequent file operation, and stops appearing entirely
 once configuration is completed at runtime (e.g. via `POST /studio/workspace/switch`).
 
+## Repository binding and re-linking
+
+Every workspace folder you open is **bound** to a registered repository — its
+*repository room*, where that repo's work units, proposals, findings, and constraints
+live and replicate. Studio derives the repository's identity **deterministically from
+its root commit history**, computed locally with no server round-trip: the same clone
+on two machines resolves to the same room, and a fresh checkout binds correctly even
+with the room server offline. Remotes are not part of the identity — they only break
+ties between forks.
+
+Binding usually just works, and Studio records **how** it resolved so it can be trusted
+later:
+
+| Provenance | Meaning |
+|---|---|
+| `Deterministic` | Matched by a strong git signal — the normal case |
+| `ProvisionalMint` | No strong signal yet (e.g. a repo with no commits); a placeholder identity was minted |
+| `HumanResolved` | You chose the binding yourself via re-link — treated as authoritative |
+
+**Studio never silently re-resolves an identity it has already resolved.** Once a folder
+is bound, it stays bound until *you* ask to change it. This is deliberate: re-resolving
+"helpfully" on every open is how a workspace silently drifts into the wrong room. The
+Artifact Explorer shows which repository room you're currently in, so a mismatch is
+visible rather than hidden.
+
+### Re-linking
+
+When the binding is wrong — the folder matched the wrong repository (a fork, a moved
+clone, an ambiguous case), or nothing is registered yet — run **`NodalMerge: Re-link
+Repository…`** (or the **Re-link** action in the Artifact Explorer). It offers whichever
+of these fits your situation:
+
+| Action | When it appears | What it does |
+|---|---|---|
+| **Automatic re-link** | Exactly one registered repository unambiguously matches this folder | Re-binds in one click. Never overrides a `HumanResolved` binding — a prior human choice wins over an automatic guess. |
+| **Manual pick** | Any time | Choose the correct repository from the list of registered ones. The result is recorded as `HumanResolved`. |
+| **Register this folder** | The open folder was never registered | Registers it in place and binds to it. Works offline — the deterministic identity is minted locally, so the same folder yields the same repository ID whether or not the room server is up. |
+| **Create a new repository (split)** | You want this folder to become a *separate* repository from the one it's currently linked to | Mints a new repository room and binds the folder to it. |
+
+<Warning>
+Splitting a folder into a new repository **orphans** the content already in its old
+room. Studio's shared graph has no delete primitive, so the old room's work units and
+artifacts are not removed — they simply stop being reachable from this folder. Re-link
+surfaces a modal confirmation naming what will be left behind before it does this, so a
+split is always a deliberate choice, never an accident.
+</Warning>
+
+Bindings are per workspace folder. If you switch the folder VS Code has open, Studio
+notices and offers to **restart the host** so the new folder binds cleanly rather than
+running against the previous one's room.
+
 ## Git integration
 
 Two `WorkspaceOptions` flags control whether Studio acts on the filesystem changes

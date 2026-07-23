@@ -142,6 +142,69 @@ timings above reflect that fallback path, not the direct-upload path — this ha
 been true since at least the 2026-05-22 run and is a harness/environment
 limitation, not a regression.
 
+## Realtime WS host baseline (2026-07-22)
+
+Same-host stats snapshot for the realtime WebSocket + persistence path after two
+host latency fixes landed on the native Rust hosts: `TCP_NODELAY` enabled on every
+accepted connection (Kestrel does this by default; without it Nagle plus delayed-ACK
+adds a small-frame round-trip stall). These are absolute stats, **not** a baseline/candidate
+delta — see the methodology caveats below.
+
+**Environment**: AMD Ryzen 9 5900X (12C/24T), 64 GB RAM, Windows 11 Pro. Same host
+as the 2026-07-01 run above; do not diff against other-host notes.
+
+**Scenario**: `run_bench.ps1` (SDK scenario runner). Targets
+`rust-integrated-hosted-server` (Mongo-backed dev-server, `:7979`) and
+`dotnet-host-runtime-alias` (Mongo-backed, `:8787`). Peers: 6. Command mix:
+map/list/blob at 6/12/30 ops, 1 KB blobs, `ws-only` transport, 15 iterations per
+cell, 4 warmup ops, 2 ms op delay.
+
+**Results** (avg / p95 ms, lower is better):
+
+Map:
+
+| ops | Rust avg | Rust p95 | .NET avg | .NET p95 |
+|---|---|---|---|---|
+| 6 | 99.1 | 109.7 | 95.4 | 107.0 |
+| 12 | 145.9 | 157.3 | 148.5 | 155.8 |
+| 30 | 330.7 | 354.0 | 295.6 | 322.7 |
+
+List:
+
+| ops | Rust avg | Rust p95 | .NET avg | .NET p95 |
+|---|---|---|---|---|
+| 6 | 112.5 | 122.8 | 104.1 | 122.0 |
+| 12 | 213.6 | 214.8 | 169.7 | 197.7 |
+| 30 | 442.5 | 470.0 | 374.8 | 398.3 |
+
+Blob:
+
+| ops | Rust avg | Rust p95 | .NET avg | .NET p95 |
+|---|---|---|---|---|
+| 6 | 97.0 | 109.1 | 86.9 | 92.8 |
+| 12 | 150.8 | 185.1 | 152.0 | 169.4 |
+| 30 | 353.4 | 374.2 | 326.0 | 339.3 |
+
+Warmup averaged ~46 ms on both hosts. Map and blob are near-parity at 12 ops; list
+remains .NET-favored across the sweep, and .NET keeps an edge at 30 ops.
+
+**Caveats**:
+
+- **Single run per cell, not alternated A/B.** Per this page's own methodology, treat
+  this as a directional same-host snapshot, not release-grade gating evidence.
+  Thermal/load drift of several ms between runs is expected — repeat runs of the
+  identical build moved the *unchanged* .NET numbers by 5–8 ms, so sub-~20 ms
+  differences here are within noise.
+- **Blob path is the WebSocket fallback.** Blob timings reflect the
+  `direct upload failed; falling back to ws` fallback, not the direct-upload path —
+  the same harness limitation noted in the run above.
+- **Target differs from the 2026-07-01 entry.** `rust-integrated-hosted-server` is the
+  Mongo-backed dev-server; the earlier "Latest results" block used
+  `rust-combined-server` (no Mongo). The two result blocks are not directly
+  comparable.
+- **Provenance**: build from branch `host-latency-nodelay-connect-tax`
+  (`TCP_NODELAY` on all native hosts + per-connection connect-tax removed).
+
 ## Related pages
 
 - [benchmarks/runtime-attribution](/benchmarks/runtime-attribution)

@@ -298,6 +298,11 @@ which is what the conflict report itself recommends.
 
 ## Pathways / Trajectory Replay
 
+Two sub-tabs, both scoped to the session in the top-right dropdown (or the workspace
+session it's following).
+
+### Trajectory
+
 DAG visualization and historical scrubbing.
 
 - **Replay Mode**: Linear / Branch Explorer / Counterfactual
@@ -309,6 +314,29 @@ DAG visualization and historical scrubbing.
   branch and restore the branch's files to that point in place)
 
 ![Pathways timeline view with the scrubber mid-timeline and playback bar controls visible](/images/ui-ref-pathways-dag.png)
+
+### Plan — read-only plan decomposition
+
+The session's [recursive plan](/studio/guides/multi-agent-profiles#recursive-planning--decompose-a-slice-instead-of-forcing-it-into-one-worker)
+as a top-down tree: the root goal at top, its child work units below, recursively.
+This is deliberately **read-only** — where you *understand the shape* of a
+decomposition; the Goal Workspace Decision Tree is where you *act* (fork, steer,
+re-explore).
+
+- **Nodes** — **Leaf** (worker) vs **Compound** (sub-planner interior node — drawn
+  as a stacked card). Each node is tinted by its work
+  unit's **status**, so you watch a merge climb the tree bottom-up as grandchildren
+  reconcile into their parent and the parent into the root.
+- **Edges** — solid = *decomposes* (parent → child); dashed amber = *depends on*
+  (sibling sequencing); purple arrow = *contract* (a slice that `provides` an
+  interface → the peer that `consumes` it).
+- **Hover** a node for its full goal + status; **click** for the detail drawer — the
+  full goal plus the slice's kind, file scope, `provides`/`consumes`, steps, and any
+  related contract descriptions.
+- **Drag** to pan, **scroll** to zoom (around the cursor), **⤢ Fit** to frame the
+  whole tree. Your pan/zoom persists as the tree refreshes live.
+
+![Pathways Plan sub-tab: a session's recursive plan as a top-down tree — root goal at top, a compound sub-planner and its leaf children below, with decompose/depends/contract edges; a node's detail drawer open showing the full goal](/images/ui-ref-pathways-plan.png)
 
 ## Insights
 

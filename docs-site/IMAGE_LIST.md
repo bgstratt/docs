@@ -53,6 +53,7 @@ real `## Insights`, `## Projection Snapshots`, `## Agent Topology`, and
 | `studio/reference/ui-reference.mdx` | `ui-ref-activity-center.png` | ✅ captured, embedded | Activity Center with Active Goals, Running Agents, and Pending Decisions sections populated. |
 | `studio/quickstart.mdx` + `reference/ui-reference.mdx` | `ui-ref-decision-convergence.png` | ✅ captured, embedded (shared asset, was a duplicate pair) | Review (Decision Convergence) in proposal review mode: rationale, split diff view, evidence, Accept/Reject/Apply row. |
 | `studio/reference/ui-reference.mdx` | `ui-ref-pathways-dag.png` | ✅ captured, embedded | Pathways timeline view with the scrubber mid-timeline and playback bar controls visible. |
+| `studio/reference/ui-reference.mdx` + `guides/multi-agent-profiles.mdx` | `ui-ref-pathways-plan.png` | ✅ captured, embedded | Pathways → **Plan** sub-tab: a session's recursive plan as a top-down tree — root goal at top, a compound sub-planner (stacked card) and its leaf children below, connected by decompose (solid) / depends-on (dashed amber) / contract (purple arrow) edges, with a node's detail drawer open showing its full goal. Capture on a recursive-planning session (MaxPlanDepth ≥ 2). |
 
 9 of 15 originally-planned Studio shots captured and embedded (one pair consolidated
 into a shared asset, so 8 distinct files); 6 still outstanding (host-running,

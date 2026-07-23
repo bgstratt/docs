@@ -177,6 +177,31 @@ Contracts flow *down* as fixed boundaries: a sub-planner inherits the `provides`
 own children — so a deep tree doesn't reinvent a shared interface at every level. This
 is authored by the planner as part of the plan; there's no separate UI step.
 
+## Seeing the whole decomposition — Pathways → Plan
+
+Because a recursive plan is a tree, the **Pathways** panel has a read-only **Plan**
+sub-tab that draws it: the root goal at top, its child work units below, recursively.
+It's where you *understand the shape* of a decomposition (the Goal Workspace Decision
+Tree is where you *act* on it).
+
+![The Pathways Plan sub-tab: a session's recursive plan as a top-down tree — the root goal at top, a compound sub-planner (drawn as a stacked card) and its leaf children below, connected by decompose/depends/contract edges, with a node's detail drawer open showing its full goal](/images/ui-ref-pathways-plan.png)
+
+Everything this guide describes is visible here at a glance:
+
+- **Leaf vs Compound** nodes — a compound slice (sub-planner) is drawn distinctly, so
+  you can see exactly where the plan went recursive and where it bottomed out at
+  workers.
+- **Status tint** — nodes are colored by their work unit's status, so you watch a
+  merge climb the tree bottom-up as grandchildren reconcile into their parent and the
+  parent into the root.
+- **Edges** make the otherwise-invisible coordination visible: solid *decomposes*,
+  dashed *depends on*, and a purple arrow for each **contract** (provider → consumer)
+  — the peer contracts above, drawn as links.
+
+Hover a node for its goal, click for the full slice detail (kind, file scope,
+provides/consumes, steps, contracts); drag to pan, scroll to zoom, **⤢ Fit** to frame
+the tree. See [Reference → Control Tower UI → Pathways](/studio/reference/ui-reference#plan--read-only-plan-decomposition).
+
 ## Remember
 
 <Note>

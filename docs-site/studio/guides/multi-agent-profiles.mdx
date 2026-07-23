@@ -110,6 +110,98 @@ and let the goal's files decide which planner runs. The `docs-planner` above is 
 example: a docs-only goal gets planned on `opus-plan` through the profile, while
 other goals fall back to the Plan-stage default you set in Agent Topology.
 
+## Recursive planning — decompose a slice instead of forcing it into one worker
+
+By default a plan is one level deep: the planner splits the goal into slices and
+every slice is a **leaf** that runs as a single worker. That's fine when each slice
+is worker-sized, but a goal like *"a React UI, a .NET API, and the services behind
+it"* has slices that are really whole subsystems — cramming each into one worker (or
+splitting so finely up front that the top-level planner has to reason about every
+file) is exactly where flat fan-out strains.
+
+Recursive planning lets a planner mark a slice as **compound**. A compound slice
+isn't run by a worker — it's handed to its own **sub-planner**, which re-slices that
+one subsystem into a smaller sub-plan. Those grandchildren fan out, execute, and then
+**reconcile bottom-up** through the interior node back to the goal: the sub-plan's
+children merge into the compound slice, and the compound slice merges into the root,
+using the identical review/merge machinery a flat fan-out already uses — just one
+layer deeper. Each subsystem gets its own focused planning pass, on whichever Plan
+profile its files route to (see above), instead of one over-wide top-level slice list.
+
+### Turning it on — Max plan depth
+
+Recursive planning is gated by **Max plan depth** (Goal Workspace → ⚙ Settings →
+Planning):
+
+| Max plan depth | Behavior |
+|---|---|
+| `1` (default) | Flat fan-out — every slice is a leaf worker. Byte-for-byte the previous behavior; compound routing never fires. |
+| `2` | The planner may mark top-level slices compound; each is re-planned once. Grandchildren are always workers. |
+| `3+` | Sub-planners may themselves emit compound slices, up to this many layers. A compound slice at the depth ceiling is demoted to a worker automatically. |
+
+The planner is told how many layers remain and decomposes accordingly — closer to the
+ceiling it widens (more leaves) rather than nesting further, so depth is a budget, not
+a target.
+
+Each goal can override the global default with the **Plan depth** control in the Goal
+Workspace's Review/Target row. It's pre-filled with the current default; change it to
+steer just that run (e.g. bump one genuinely multi-subsystem goal to `2` while the
+session default stays `1`).
+
+<Note>
+**Depth is config, not a rewrite.** Nothing in the DAG, reconciliation, or credential
+resolution is depth-bound — a compound child is spawned through the same path a
+reconciliation unit uses, plans itself, and rolls up like any other work unit. Leaving
+Max plan depth at `1` keeps today's behavior exactly.
+</Note>
+
+## Peer contracts — keep parallel slices coherent
+
+Two sibling slices that must agree on an interface — a backend endpoint and the
+frontend that calls it — often touch **non-overlapping files**, so there's no file
+conflict to catch them disagreeing. They can each invent a slightly different shape
+and still merge clean but broken.
+
+To close that gap, a planner can author a small shared **contract** (an id plus a
+compact typed shape — an endpoint list, a field set) and mark which slices **provide**
+it versus **consume** it. The contract is:
+
+- **injected into both workers**, so the producer and the consumer build against the
+  same declared interface concurrently — no need to serialize one behind the other; and
+- **injected into the reviewer**, which checks conformance and **rejects** a
+  non-conformant peer (a consumer calling a field the contract doesn't declare) instead
+  of letting it merge.
+
+Contracts flow *down* as fixed boundaries: a sub-planner inherits the `provides` /
+`consumes` its parent slice declared and may author new internal contracts among its
+own children — so a deep tree doesn't reinvent a shared interface at every level. This
+is authored by the planner as part of the plan; there's no separate UI step.
+
+## Seeing the whole decomposition — Pathways → Plan
+
+Because a recursive plan is a tree, the **Pathways** panel has a read-only **Plan**
+sub-tab that draws it: the root goal at top, its child work units below, recursively.
+It's where you *understand the shape* of a decomposition (the Goal Workspace Decision
+Tree is where you *act* on it).
+
+![The Pathways Plan sub-tab: a session's recursive plan as a top-down tree — the root goal at top, a compound sub-planner (drawn as a stacked card) and its leaf children below, connected by decompose/depends/contract edges, with a node's detail drawer open showing its full goal](/images/ui-ref-pathways-plan.png)
+
+Everything this guide describes is visible here at a glance:
+
+- **Leaf vs Compound** nodes — a compound slice (sub-planner) is drawn distinctly, so
+  you can see exactly where the plan went recursive and where it bottomed out at
+  workers.
+- **Status tint** — nodes are colored by their work unit's status, so you watch a
+  merge climb the tree bottom-up as grandchildren reconcile into their parent and the
+  parent into the root.
+- **Edges** make the otherwise-invisible coordination visible: solid *decomposes*,
+  dashed *depends on*, and a purple arrow for each **contract** (provider → consumer)
+  — the peer contracts above, drawn as links.
+
+Hover a node for its goal, click for the full slice detail (kind, file scope,
+provides/consumes, steps, contracts); drag to pan, scroll to zoom, **⤢ Fit** to frame
+the tree. See [Reference → Control Tower UI → Pathways](/studio/reference/ui-reference#plan--read-only-plan-decomposition).
+
 ## Remember
 
 <Note>

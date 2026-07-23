@@ -31,6 +31,17 @@ and/or **test** clean before it's even allowed to submit a proposal (toggled in
 Exploration Settings). Failing evidence is attached to the proposal either way, so
 reviewers — human or agent — always see it.
 
+## Retry budget — how many automatic attempts before a human
+
+**Max auto-retries** (Exploration Settings) caps how many *automated* attempts a work
+unit gets — both a reviewer rejecting a proposal (which sends it back for a revise) and
+a worker outright failing count against the same budget — before it stops and
+dead-letters into **Blocked Explorations** for a human to pick up. `1` means one shot
+then escalate; a higher number is more lenient auto-fixing before it asks for help.
+Human or explicit retries (the **Retry** action in the Activity Center) are never
+capped by this — it only governs the unattended loop, so a fully autonomous run can't
+spin forever on a task it can't solve.
+
 ## Promotion branches — a safety layer above "main"
 
 When enabled (session-wide, with a per-goal override), proposals never apply
@@ -118,6 +129,13 @@ Multi-Model or Architecture experiment instead of a single run. You can walk awa
 when you come back, either a completed merge is waiting on `candidate` for you to
 promote, or a decision (a rejected proposal, a paused agent awaiting your steering
 input, or a set of forks awaiting **Pick Winner**) is waiting in the Decision Tree.
+
+For a goal that's really several subsystems at once, raise **Max plan depth** (or the
+per-goal **Plan depth**) so the planner decomposes each subsystem in its own focused
+pass and the pieces reconcile bottom-up — see
+[Guides → Multi-agent profiles → Recursive planning](/studio/guides/multi-agent-profiles#recursive-planning--decompose-a-slice-instead-of-forcing-it-into-one-worker).
+Set **Max auto-retries** to bound how long the unattended loop tries before it hands
+a stuck work unit back to you.
 
 See [Reference → Control Tower UI](/studio/reference/ui-reference) for every control these
 features expose in the extension, and [Reference → API surface](/studio/reference/api-reference)

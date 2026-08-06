@@ -12,13 +12,42 @@ composable settings — each goal can use a different combination.
 
 ## Review policy — who approves a proposal
 
-Set per goal in the Goal Workspace (or as a session default in Model & Agent Studio):
+Set per goal in the Goal Workspace (or as a session default in Model & Agent Studio).
+
+### Two gates, set independently
+
+There are **two** review policies, not one, and they gate different boundaries:
+
+| Policy field | Gates | Applies to |
+|---|---|---|
+| `TaskReviewPolicy` | A child work unit's proposal merging into its parent's branch (worker → candidate) | Fanned-out children — they're never top-level, so their apply never reaches disk |
+| `WorkspaceReviewPolicy` | The top-level goal's own proposal applying into the real on-disk repository | Top-level goals, plus any work unit explicitly linked to its own repository |
+
+Both default to `Human Required`. Because they're independent, you can let a fan-out
+of workers merge among themselves without being asked, while still requiring a human
+before anything reaches your working tree.
+
+Session defaults are `nodalmerge.defaultTaskReviewPolicy` and
+`nodalmerge.defaultWorkspaceReviewPolicy` in VS Code settings.
+
+### The three values
+
+Each gate takes one of:
 
 | Policy | Behavior |
 |---|---|
 | `Human Required` (default) | Every proposal waits at the merge-review gate for manual Accept/Reject. |
 | `Agent Approval` | A reviewer agent evaluates the proposal (build/test evidence, goal satisfaction) and auto-applies on approval, or rejects with notes for a human to see. |
 | `Hybrid` | The reviewer agent approves immediately, then a countdown (default 5 minutes) starts. A human can override (reject) during the window; otherwise it auto-applies at expiry. |
+
+Under `Hybrid`, the reviewer runs inline and — on approval — schedules a timer and
+blocks the immediate apply. The timer service re-fires the apply at expiry, by which
+point the proposal is already `Approved`. A human rejecting before expiry cancels the
+timer.
+
+The countdown is overridable per work unit via `TaskReviewHybridTimeoutMinutes` /
+`WorkspaceReviewHybridTimeoutMinutes`; only the field matching the gate actually in
+play is consulted.
 
 {/* IMAGE: trust-review-policy-selector.png — Goal Workspace Review/Target row
     showing the Review policy dropdown expanded with all three options visible.
@@ -30,6 +59,17 @@ Independent of review policy, a work unit's branch can be required to **build**
 and/or **test** clean before it's even allowed to submit a proposal (toggled in
 Exploration Settings). Failing evidence is attached to the proposal either way, so
 reviewers — human or agent — always see it.
+
+The requirement is also passed to the harness in its kickoff contract, but that is a
+**hint only** — an efficiency measure, so an agent that knows the standard fixes its
+own build before exiting. The guarantee is a mechanical policy rule evaluated when the
+proposal is created, which fires identically whether the branch was edited by Studio's
+native loop or by an external CLI harness that has no knowledge of these settings.
+
+<Note>
+  These two toggles are **session-wide** today, not per-work-unit. A single goal can't
+  yet be held to stricter verification than the rest of the session.
+</Note>
 
 ## Retry budget — how many automatic attempts before a human
 

@@ -71,9 +71,29 @@ the timed loop.
 | Cold start: fresh peer applies the full history + extract | 947 ms |
 | Total update bytes (per-node wire encoding) | 46.5 MB (179.2 bytes/edit) |
 
-Note: cold start currently replays the op history; snapshot-based cold start
-is a planned follow-up and will be bounded by document size instead of
-history length.
+Note: the cold-start row above deliberately measures the **worst case** — a
+fresh peer replaying the entire op history with no snapshot available. It is
+not the only cold-start path.
+
+DAG compaction produces a single signed snapshot node carrying the canonical
+state hash and the frontier it subsumes. The snapshot has *empty parents*, so
+a brand-new peer that has never seen any pre-compaction history can accept it
+directly and rebuild as `snapshot + recent delta` rather than replaying the
+whole log — bounded by state size rather than history length. Incremental
+snapshots chain from a previous snapshot, so a peer already holding the base
+prunes only the delta.
+
+Compaction is opt-in on the server: `--snapshot-interval <N>` (default `0`,
+disabled) triggers a snapshot every N new nodes per room, and
+`--snapshot-max-chain <K>` (default `10`) caps incremental chain depth before
+the sweeper falls back to a full snapshot. A client can also request one
+explicitly, which broadcasts the resulting snapshot pack to every connected
+peer.
+
+Compaction does not require trusting the compacting peer. The snapshot node is
+Ed25519-signed and verified through the normal apply path, and any receiver
+that still holds the pre-compaction log can independently replay it and
+compare canonical hashes.
 
 ## Browser (WASM) throughput on the same trace
 

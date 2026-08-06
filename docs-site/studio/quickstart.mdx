@@ -18,6 +18,12 @@ Or search for `NodalMerge Studio` in VS Code's Extensions panel (<kbd>Ctrl+Shift
 the `nodalmerge` or `nodalmerge-studio` repos required; everything the host needs is
 pulled from NuGet automatically.
 
+<Note>
+  **Prerequisites:** VS Code 1.90+ and the [.NET SDK 10.0](https://dotnet.microsoft.com/download).
+  The host ships with the extension, but it's a .NET process — it needs a .NET runtime on the
+  machine to start.
+</Note>
+
 ## 2. Open the Control Tower
 
 Two ways in:
@@ -60,14 +66,45 @@ this maps agent roles to an LLM provider and model:
       "provider": "anthropic",
       "model": "claude-sonnet-4-6",
       "apiKeyRef": "anthropic-key",
-      "systemPromptHint": "You are an orchestrator agent. Plan work, assign tasks, review results."
+      "systemPrompt": "You are an orchestrator agent. Plan work, assign tasks, review results."
     }
   ]
 }
 ```
 
-`provider` can be `anthropic`, `openai`, or `vscode-lm` (VS Code's built-in Language
-Model API — no API key required). Store API keys via VS Code's `SecretStorage`
+### Choosing a provider
+
+`provider` takes one of five values, in two shapes:
+
+| Provider | Shape | Notes |
+|---|---|---|
+| `anthropic` | HTTP API | Claude models. Needs `apiKeyRef`. `baseUrl` defaults to `https://api.anthropic.com`. |
+| `openai` | HTTP API | GPT models. Needs `apiKeyRef` and `baseUrl`. |
+| `vscode-lm` | HTTP API (proxied) | VS Code's built-in Language Model API — **no API key required**. Inline deployment only. |
+| `claude-cli` | Local CLI harness | Spawns your local `claude` binary in the work unit's branch directory. |
+| `codex-cli` | Local CLI harness | Spawns your local `codex` binary in the work unit's branch directory. |
+
+The first three call an HTTP API. The last two don't: they route the role to a harness executor
+that runs the vendor's own CLI as a subprocess, so prompting, context management, compaction, and
+retries stay with the harness while Studio keeps the goals, work units, leases, review, and replay.
+
+CLI providers take no `baseUrl`, and `apiKeyRef` is optional — leave it blank to use the
+machine's ambient CLI login, or store a key to have it injected as `ANTHROPIC_API_KEY` /
+`OPENAI_API_KEY` for headless use. A blank `model` means the CLI's own default. So the shortest
+possible profile is:
+
+```jsonc
+{
+  "id": "cli-worker",
+  "label": "Worker (local Claude Code CLI)",
+  "domain": "code",
+  "provider": "claude-cli"
+}
+```
+
+If `claude` already works in your terminal, that profile already works.
+
+Store API keys via VS Code's `SecretStorage`
 (**Ctrl+Shift+P → "Preferences: Configure Runtime Arguments"**, or through the
 Model & Agent Studio panel's Profiles tab).
 
